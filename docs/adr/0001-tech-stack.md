@@ -1,31 +1,50 @@
 # ADR-001：技术栈选型
 
-> 索引 ID：`D1` ｜ 状态：提案（未决） ｜ 日期：2026-09-27
+> 索引 ID：`D1` ｜ 状态：**已接受** ｜ 日期：2026-09-27
 
 ## 背景
 
-项目目标是「Agent 接入各种模型」。需要确定语言、运行时、包管理与测试框架，才能定稿 `AGENTS.md` §1 索引中的目录结构与 `10-architecture.md` §5。
+项目目标为「Agent 接入各种模型」的桌面应用。需要确定语言、运行时、UI 框架与包管理，才能定稿目录结构与契约表达形式。
 
 ## 备选方案
 
 | 方案 | 优点 | 缺点 |
 |------|------|------|
-| A：TypeScript + Node 20 + pnpm + Vitest | 流式/WebSocket 生态最好；厂商 SDK 覆盖最全；前后端同构；类型系统适合表达消息契约 | 数值/数据处理生态弱于 Python |
-| B：Python 3.12 + uv + pytest | 模型/数据生态最强；SDK 官方支持普遍好 | 类型表达与工程化约束弱；并发流式偏繁琐 |
-| C：TS 核心 + Python 侧车 | 各取所长 | 双栈维护成本高，早期不划算 |
+| A：TypeScript + Node + Electron/Tauri | 流式与供应商 SDK 生态最全 | 体积大、内存高；Electron 与「高性能原生体验」目标冲突 |
+| B：Python + Qt/TUI | 模型侧生态最强 | 前端体验与分发是弱项 |
+| **C：Rust 后端 + GPUI 前端** | 单可执行文件、无 WebView/Electron；GPU 加速、120 FPS；同一套类型贯通前后端；IO 密集场景 `tokio` 成熟 | GPUI 仍 pre-1.0；Rust 侧无官方 Anthropic Rust SDK，需自建适配层 |
 
 ## 决定
 
-**待定。** 倾向 A（TypeScript），理由：本项目主体是「协议适配 + 流式编排」，属于 IO 密集型，TS 的类型系统能直接把 `11-provider-contract.md` 的契约固化成编译期约束。
+采用 **方案 C**：
+
+- 语言 / 运行时：**Rust（edition 2024，stable ≥ 1.95）+ tokio**
+- HTTP：`reqwest`（rustls）
+- 序列化：`serde` / `serde_json` / `schemars`
+- 前端：**GPUI**，经 `gpui-kit`（含 `gpui-component` 0.6.x）间接依赖，`gpui` 基线 **0.2.2**
+- 存储 / 密钥：`rusqlite`（bundled）+ `keyring`
+- 打包：Windows 用 `cargo-wix`（MSI）
+
+理由（按重要性排序）：
+
+1. GPUI 让「流式渲染 + 大列表 + 代码/ Markdown 原生渲染」不经过 WebView，直接落到 GPU；`gpui-component` 已提供 Markdown、HTML、Tree-sitter 编辑器、虚拟表格等本项目刚需能力。
+2. Rust 的类型系统可以把 `docs/11-provider-contract.md` 的契约固化成**编译期约束**，直接服务于 G-1/G-2。
+3. 单可执行产物 + 系统钥匙串 + 本地 SQLite，符合「本地优先、无云依赖」的产品目标。
 
 ## 影响
 
-- 选 A / C：`src/` 目录按 `10-architecture.md` §5 落地，契约用 TS interface 表达。
-- 选 B：契约改为 Pydantic 模型 + Protocol 类，`docs/` 中伪代码同步替换。
-- 无论哪种：分层与契约内容不变，受影响的只是表达形式。
+- 目录结构按 `research/rust-backend-stack.md` §3 的 cargo workspace 落地。
+- GPUI 相关调用收敛在 `agent-ui` 单一 crate 内，`agent-core` 不感知 UI。
+- 需自建 Anthropic 等原生协议适配层（无官方 Rust SDK）。
+- 需要处理 GPUI pre-1.0 的破坏性升级风险（固定版本 + 隔离层）。
+- 若选 A/B 方案的讨论作废：契约的**表达形式**可能变化，但 `docs/11-provider-contract.md` 的语义不变。
 
 ## 待确认
 
-- 是否需要 Web 前端 / 服务端部署形态
-- 是否需要 Python 生态能力（评测、数据集处理）决定是否上 C 方案
-- 团队 / 使用方熟悉度
+- 是否要求单一二进制（含 SQLite bundled、图标资源）以及目标体积上限。
+- macOS 公证 / Linux 分发是否在近期范围内。
+
+## 相关
+
+- 调研：`research/gpui-frontend-stack.md`、`research/rust-backend-stack.md`
+- 目标：`00-goals-and-routes.md`

@@ -67,29 +67,38 @@ Observability         trace / 日志 / 指标 / 成本
 5. 流式回传 → 归一化为 `StreamEvent`。
 6. Observability 记录 token / latency / cost；失败时交 Policy 决定重试或降级。
 
-## 5. 目录结构（草案，随 ADR-001 定稿）
+## 5. 目录结构（已定稿）
+
+技术栈已定：Rust edition 2024 + tokio + GPUI（见 `adr/0001-tech-stack.md`），cargo workspace 布局如下（完整说明见 `research/rust-backend-stack.md` §3）：
 
 ```
-src/
-  core/            agent 循环、工具编排
-  schema/          内部消息与事件定义
-  providers/       每家一个 adapter + 模型元数据
-  routing/         注册表、路由、降级
-  transport/       http / 流式 / 重试
-  observability/   trace、指标、成本
-  config/          配置与密钥加载
-tests/
+agent/
+  crates/
+    agent-schema/        内部消息 / 事件 / 错误类型（契约唯一来源）
+    agent-core/          agent 循环、工具编排（不依赖任何 provider 与 UI）
+    agent-providers/     Provider trait + 各厂商 adapter
+    agent-routing/       模型注册表、能力协商、路由与兜底
+    agent-transport/     reqwest 封装、SSE 解析、重试、超时
+    agent-store/         SQLite 会话/消息持久化
+    agent-config/        配置 + keyring 密钥
+    agent-observability/ tracing、token/成本统计
+    agent-ui/            GPUI 视图层（**唯一**接触 GPUI 的 crate）
+    agent-app/           二进制入口，组装依赖
+  tests/                 契约测试 + fixtures
 ```
+
+依赖只能向下；`agent-core`、`agent-schema` 不得依赖具体实现 crate。
 
 ## 6. 约束
 
 - 供应商差异不得泄漏到 Core（见 `AGENTS.md` §3）。
 - 每个 adapter 必须可脱离网络单测（用 fixtures + mock transport）。
-- 所有对外调用必须支持 `AbortSignal` 取消。
+- 所有对外调用必须支持取消（`tokio_util::sync::CancellationToken`）。
 - 上下文超限属于可恢复错误，应先裁剪/摘要再重试一次。
+- UI 线程禁止阻塞；GPUI API 只允许出现在 `agent-ui`。
 
 ## 7. 待定问题
 
-- 技术栈 → `adr/0001-tech-stack.md`
-- 是否内置 MCP 客户端
+- 是否内置 MCP 客户端 → `AGENTS.md` §4
 - 记忆（短期/长期）存储方案
+- 首批适配器范围 → `adr/0002-llm-abstraction.md`
