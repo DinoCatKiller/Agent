@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| 状态 | 🚧 HTTP 封装已落地（M2 进行中） |
+| 状态 | 🚧 HTTP + SSE 已落地（M2 进行中） |
 | 边界 | HTTP 客户端封装、SSE 解析、超时 / 取消 / 退避重试。**不含**供应商字段映射（`agent-providers`）、路由策略（`kernel/routing`） |
 | 上游 | `agent-common`（契约类型） |
 | 下游 | `agent-providers` 的适配器 |
@@ -18,7 +18,7 @@
 | 项 | 说明 |
 |----|------|
 | HTTP 封装 ✅ | `reqwest`（rustls）、连接 / 读超时、**流式空闲超时**（`IdleTimeout`）、代理 |
-| SSE 解析 | `bytes_stream` → 事件流；兼容三套事件语义（见 `X1` §2） |
+| SSE 解析 ✅ | `bytes_stream` → `SseEvent`（通用字段 `event`/`data`/`id`/`retry`，字节层切行）；厂商语义留给适配器 |
 | 收尾语义 | 传输错误 / 可恢复坏帧 / **EOF 截断** 三分（`A2` §4） |
 | 取消 | `CallContext.cancel`（`CancellationToken`）接进请求与流 |
 | 重试 | 指数退避 + 抖动，只包 `retryable == true` |

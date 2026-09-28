@@ -7,7 +7,7 @@
 //!
 //! 模块（随 M2 逐步落地，落地前不建空文件）：
 //! - [`http`] reqwest client 封装：连接 / 读超时、**流式空闲超时**、代理、rustls ✅
-//! - `sse`    `bytes_stream` → 事件流；兼容三套事件语义（见 `X1` §2）
+//! - [`sse`] `bytes_stream` → 通用 SSE 事件（厂商语义留给适配器）✅
 //! - `retry`  指数退避 + 抖动，只包 `ProviderError::retryable == true`
 //! - `cancel` 把 `CallContext.cancel`（`CancellationToken`）接进请求与流
 //!
@@ -18,5 +18,7 @@
 //!    **禁止当成功**。
 
 pub mod http;
+pub mod sse;
 
 pub use http::{HttpClient, HttpConfig, IdleTimeout, TransportError};
+pub use sse::{SseDecoder, SseEvent, SseStream, parse_sse};

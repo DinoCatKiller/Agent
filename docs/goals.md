@@ -22,7 +22,7 @@
 
 | 编号 | 目标 | 验收方式 |
 |------|------|---------|
-| G-1 | Core 不依赖任何供应商私有类型 | `agent-core` 的 `Cargo.toml` 里不出现任何 provider crate |
+| G-1 | Core 不依赖任何供应商私有类型 | `features/chat` 的 `Cargo.toml` 里不出现任何 provider crate |
 | G-2 | 契约编译期固化 | 新增适配器必须 `impl Provider`，方法缺失直接编译失败 |
 | G-3 | 适配器可离线测试 | 用 fixtures 回放，断网可跑全绿 |
 | G-4 | UI 永不阻塞 | 网络/流式全部跑在 tokio，UI 线程只做渲染 |

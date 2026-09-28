@@ -37,6 +37,20 @@ pub enum TransportError {
     Cancelled,
 }
 
+impl From<reqwest::Error> for TransportError {
+    /// 把 reqwest 的底层错误归一为传输层错误（超时 vs 其它网络问题）。
+    ///
+    /// 供 `bytes_stream().map(TransportError::from)` 使用，把字节流统一成
+    /// `Stream<Item = Result<Bytes, TransportError>>`，下游（SSE / 适配器）只认一种错误。
+    fn from(err: reqwest::Error) -> Self {
+        if err.is_timeout() {
+            Self::Timeout(err.to_string())
+        } else {
+            Self::Network(err.to_string())
+        }
+    }
+}
+
 /// 传输层配置。字段全部来自配置层（`R1`），不在此处读环境变量或文件。
 #[derive(Debug, Clone)]
 pub struct HttpConfig {

@@ -41,6 +41,7 @@
 | Q5 | 本地模型（Ollama）是否作为一等公民？ | `R2` 路由、M3 是否先做无鉴权分支 |
 | Q6 | 目标产物体积上限？是否需要代码签名 / macOS 公证？ | 打包分发（`X1` §5） |
 | Q7 | 项目正式名称？（当前暂用 `Agent`） | `README.md`、产物名、包名 |
+| Q8 | `features/chat` 的 `repo.rs` 是否现在就需要？（取决于 `kernel/store` 何时落地，`D6` 建议 M5） | `features/chat` 持久化、`kernel/store` 排期 |
 
 
 

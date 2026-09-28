@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 agent-common = { workspace = true }
+bytes = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
