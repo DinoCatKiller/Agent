@@ -7,7 +7,7 @@
 ADR-001 已定「Rust 后端 + GPUI 前端」。实际动手前出现新的判断因素：
 
 1. GPUI 的**表达能力**够用，但**现成样式资源、第三方库与人力供给**远少于 Web/TS 生态。
-2. 用户提出 TUI 的可能性 —— 而 **GPUI 无法做 TUI**（见 `40-research/ui-delivery-options.md` §1）。
+2. 用户提出 TUI 的可能性 —— 而 **GPUI 无法做 TUI**（见 `X4` §1）。
 3. GPUI 上游治理出现不确定性（社区分支 `gpui-ce`、`gpui-unofficial` 高频发版）。
 
 ## 备选方案
@@ -35,4 +35,4 @@ ADR-001 已定「Rust 后端 + GPUI 前端」。实际动手前出现新的判�
 
 ## 未决项
 
-本 ADR 的全部待决项 → 统一登记在 [`S2`](../10-now/open-questions.md) Q1。
+本 ADR 的全部待决项 → 统一登记在 `S2` Q1。

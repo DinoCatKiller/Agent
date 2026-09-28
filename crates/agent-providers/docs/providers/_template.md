@@ -62,6 +62,6 @@
 
 ## 相关
 
-- 契约：[`A2`](../provider-contract.md)、消息映射：[`A3`](../message-protocol.md)
-- 测试要求：[`Q1`](../testing.md)
-- 抽象路线决策：[`D2`](../../30-decisions/0002-llm-abstraction.md)
+- 契约：`A2`、消息映射：`A3`
+- 测试要求：`Q1`
+- 抽象路线决策：`D2`

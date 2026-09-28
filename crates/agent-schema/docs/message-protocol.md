@@ -66,6 +66,6 @@
 
 ## 相关
 
-- 上游：[`A2`](provider-contract.md)
-- 下游：流式 → [`A4`](streaming.md)（待创建）、工具调用 → [`A5`](tool-calling.md)（待创建）
-- 未决项 → [`S2`](../10-now/open-questions.md)
+- 上游：`A2`
+- 下游：流式 → `A4`（待创建）、工具调用 → `A5`（待创建）
+- 未决项 → `S2`

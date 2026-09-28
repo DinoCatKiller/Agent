@@ -6,12 +6,12 @@
 
 定义所有供应商适配器必须实现的统一接口。新增供应商 = 实现本契约 + 注册表登记，核心代码零改动。
 
-技术栈已定（`30-decisions/0001-tech-stack.md`）：本契约用 **Rust** 表达，落地位置为 `agent-schema`（类型）+ `agent-providers`（trait）。抽象路线的取舍见 `30-decisions/0002-llm-abstraction.md`。
+技术栈已定（`D1`）：本契约用 **Rust** 表达，落地位置为 `agent-schema`（类型）+ `agent-providers`（trait）。抽象路线的取舍见 `D2`。
 
 ## 适用范围
 
 - 包含：能力协商、请求/响应、流式事件、错误分类的归一化约定。
-- 不包含：厂商字段差异（`20-spec/providers/*.md`）、路由与兜底策略（`20-spec/model-registry.md`）。
+- 不包含：厂商字段差异（`P*`）、路由与兜底策略（`R2`）。
 
 ## 1. 能力协商
 
@@ -181,14 +181,14 @@ pub struct ProviderError {
 
 ## 6. 新增供应商落地清单
 
-- [ ] 建 `docs/20-spec/providers/<name>.md`：endpoint、鉴权、字段差异、配额、已知坑
+- [ ] 建 `crates/agent-providers/docs/providers/<name>.md`：endpoint、鉴权、字段差异、配额、已知坑
 - [ ] 实现 `Provider`（`chat` 与 `stream` 都要）
 - [ ] 声明 `ModelSpec` 清单：上下文窗口、能力、价格
 - [ ] 错误映射覆盖第 5 节全部类别
-- [ ] 契约测试：用同一份 fixtures 跑通（见 `20-spec/testing.md`）
-- [ ] 密钥走配置层，禁止写死（见 `20-spec/config-and-secrets.md`）
+- [ ] 契约测试：用同一份 fixtures 跑通（见 `Q1`）
+- [ ] 密钥走配置层，禁止写死（见 `R1`）
 - [ ] 在 `AGENTS.md` 索引中回填状态为 ✅
 
 ## 7. 未决项
 
-embedding / rerank 是否纳入契约、`count_tokens` 是否强制实现、首批 adapter 范围 → 统一登记在 [`S2`](../10-now/open-questions.md)。
+embedding / rerank 是否纳入契约、`count_tokens` 是否强制实现、首批 adapter 范围 → 统一登记在 `S2`。

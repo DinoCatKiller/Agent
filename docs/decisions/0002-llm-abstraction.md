@@ -18,7 +18,7 @@
 
 采用 **方案 C**。具体边界：
 
-1. `agent-schema` 定义内部消息 / 流式事件 / 错误类型；`agent-providers` 定义 `Provider` trait，严格对齐 `docs/20-spec/provider-contract.md`。
+1. `agent-schema` 定义内部消息 / 流式事件 / 错误类型；`agent-providers` 定义 `Provider` trait，严格对齐 `A2`。
 2. 首批 adapter 自研：
    - **OpenAI 兼容族**（`reqwest` + SSE）——一份实现覆盖 OpenAI / DeepSeek / 通义 / Kimi / GLM / Ollama / OpenRouter 等。
    - **Anthropic 原生**（content block + `input_json_delta`）——无官方 Rust SDK，协议差异可控。
@@ -29,8 +29,8 @@
 
 - 正面：满足 G-1/G-2；升级不受上游破坏性变更影响；流式事件可直接被 GPUI 消费。
 - 代价：首批适配器的协议细节（SSE 三套语义、工具分片拼接、schema 降级）需自行实现并配 fixture 测试；供应商 API 漂移由自己跟进。
-- 后续动作：`docs/20-spec/provider-contract.md` 从伪代码落成 Rust trait；建立 fixtures 契约测试（见 `docs/20-spec/testing.md`）。
+- 后续动作：`A2` 从伪代码落成 Rust trait；建立 fixtures 契约测试（见 `Q1`）。
 
 ## 未决项
 
-首批是否加入 Gemini 原生、是否本期支持 MCP → 统一登记在 [`S2`](../10-now/open-questions.md) Q3 / Q4。
+首批是否加入 Gemini 原生、是否本期支持 MCP → 统一登记在 `S2` Q3 / Q4。

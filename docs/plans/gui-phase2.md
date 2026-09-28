@@ -72,7 +72,7 @@
 
 ## 5. 相关
 
-- 样式层决策 → [`D4`](../30-decisions/0004-styling-layer.md)
-- 样式可移植性依据 → [`X5`](../40-research/styling-portability.md)
-- UI 形态选择 → [`D3`](../30-decisions/0003-ui-delivery-form.md)、[`X4`](../40-research/ui-delivery-options.md)
-- 未决项 → [`S2`](../10-now/open-questions.md)
+- 样式层决策 → `D4`
+- 样式可移植性依据 → `X5`
+- UI 形态选择 → `D3`、`X4`
+- 未决项 → `S2`

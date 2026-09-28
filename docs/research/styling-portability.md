@@ -15,7 +15,7 @@
 - **不能复用**：CSS 运行时语义（选择器/层叠/伪类/媒体查询/@keyframes/变量作用域），以及现成 React 组件代码与 Tailwind 插件生态。
 - **一条机制差异**：CSS 是**运行时组合**，GPUI 是**编译期组合** → 正确做法是「可变量全部下沉到 token 层（可热加载），只把结构留在编译期」。
 - 先例：`gpui-component` 的 UI 设计本身即从 shadcn/ui 移植（**重写**，不是跑 CSS）。
-- 决策 → [`D4`](../30-decisions/0004-styling-layer.md)；CSS 兼容层已列入后期计划 → [`P0`](../50-plans/gui-phase2.md) 的 L3。
+- 决策 → `D4`；CSS 兼容层已列入后期计划 → `P0` 的 L3。
 
 ## 1. 三层可移植性
 
@@ -76,6 +76,6 @@ crates/agent-ui          ← 业务界面（聊天、会话列表、设置）
 
 ## 6. 相关
 
-- 决策 → [`D4`](../30-decisions/0004-styling-layer.md)
-- 后期计划（L3） → [`P0`](../50-plans/gui-phase2.md)
-- 未决项 → [`S2`](../10-now/open-questions.md) Q2
+- 决策 → `D4`
+- 后期计划（L3） → `P0`
+- 未决项 → `S2` Q2

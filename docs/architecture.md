@@ -9,7 +9,7 @@
 ## 适用范围
 
 - 包含：分层职责、关键对象、一次调用的数据流、目录结构草案。
-- 不包含：具体接口签名（见 `20-spec/provider-contract.md`）、厂商差异（见 `20-spec/providers/`）、路由策略（见 `20-spec/model-registry.md`，待创建）。
+- 不包含：具体接口签名（见 `A2`）、厂商差异（见 `P*`）、路由策略（见 `R2`，待创建）。
 
 ## 1. 目标 / 非目标
 
@@ -69,7 +69,7 @@ Observability         trace / 日志 / 指标 / 成本
 
 ## 5. 目录结构（已定稿）
 
-技术栈已定：Rust edition 2024 + tokio + GPUI（见 `30-decisions/0001-tech-stack.md`），cargo workspace 布局如下（完整说明见 `40-research/rust-backend-stack.md` §3）：
+技术栈已定：Rust edition 2024 + tokio + GPUI（见 `D1`），cargo workspace 布局如下（完整说明见 `X1` §3）：
 
 ```
 agent/
@@ -89,6 +89,8 @@ agent/
 
 依赖只能向下；`agent-core`、`agent-schema` 不得依赖具体实现 crate。
 
+**文档归属**：crate 相关的规格放在该 crate 的 `README.md` / `docs/` 下，跨 crate 的放在根 `docs/`；判定规则见 `AGENTS.md` §1。阶段状态不靠搬文件表达（见 `S1`）。
+
 ## 6. 约束
 
 - 供应商差异不得泄漏到 Core（见 `AGENTS.md` §3）。
@@ -99,4 +101,4 @@ agent/
 
 ## 7. 未决项
 
-是否内置 MCP 客户端、记忆存储方案、首批适配器范围 → 统一登记在 [`S2`](../10-now/open-questions.md)。
+是否内置 MCP 客户端、记忆存储方案、首批适配器范围 → 统一登记在 `S2`。

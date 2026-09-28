@@ -1,7 +1,7 @@
-//! 契约唯一来源（对应 `docs/20-spec/provider-contract.md`，ID `A2`）。
+//! 契约唯一来源（对应 `A2`，ID `A2`）。
 //!
 //! 规则：
-//! 1. 改这里的类型前，先改 `docs/20-spec/` 下的对应规格文档。
+//! 1. 改这里的类型前，先改对应规格文档（`A2` / `A3`，路径见 `AGENTS.md` §2 地图）。
 //! 2. 本 crate 只依赖 `serde` / `serde_json` / `thiserror`，
 //!    **不得**依赖 HTTP、UI 或任何供应商实现。
 

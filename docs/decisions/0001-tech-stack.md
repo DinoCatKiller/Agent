@@ -28,23 +28,23 @@
 理由（按重要性排序）：
 
 1. GPUI 让「流式渲染 + 大列表 + 代码/ Markdown 原生渲染」不经过 WebView，直接落到 GPU；`gpui-component` 已提供 Markdown、HTML、Tree-sitter 编辑器、虚拟表格等本项目刚需能力。
-2. Rust 的类型系统可以把 `docs/20-spec/provider-contract.md` 的契约固化成**编译期约束**，直接服务于 G-1/G-2。
+2. Rust 的类型系统可以把 `A2` 的契约固化成**编译期约束**，直接服务于 G-1/G-2。
 3. 单可执行产物 + 系统钥匙串 + 本地 SQLite，符合「本地优先、无云依赖」的产品目标。
 
 ## 影响
 
-- **UI 交付形态待复核**：GPUI 的表达能力够用，但样式素材、第三方库与人力供给少于 Web/TS 生态；且 GPUI 无法做 TUI。当前建议「先 Ratatui TUI 验证 Core，二期再定 GUI」→ 见 `30-decisions/0003-ui-delivery-form.md` 与 `40-research/ui-delivery-options.md`。
-- 目录结构按 `40-research/rust-backend-stack.md` §3 的 cargo workspace 落地。
+- **UI 交付形态待复核**：GPUI 的表达能力够用，但样式素材、第三方库与人力供给少于 Web/TS 生态；且 GPUI 无法做 TUI。当前建议「先 Ratatui TUI 验证 Core，二期再定 GUI」→ 见 `D3` 与 `X4`。
+- 目录结构按 `X1` §3 的 cargo workspace 落地。
 - GPUI 相关调用收敛在 `agent-ui` 单一 crate 内，`agent-core` 不感知 UI。
 - 需自建 Anthropic 等原生协议适配层（无官方 Rust SDK）。
 - 需要处理 GPUI pre-1.0 的破坏性升级风险（固定版本 + 隔离层）。
-- 若选 A/B 方案的讨论作废：契约的**表达形式**可能变化，但 `docs/20-spec/provider-contract.md` 的语义不变。
+- 若选 A/B 方案的讨论作废：契约的**表达形式**可能变化，但 `A2` 的语义不变。
 
 ## 未决项
 
-产物体积上限、是否需要代码签名与公证 → 统一登记在 [`S2`](../10-now/open-questions.md) Q6。
+产物体积上限、是否需要代码签名与公证 → 统一登记在 `S2` Q6。
 
 ## 相关
 
-- 调研：`40-research/gpui-frontend-stack.md`、`40-research/rust-backend-stack.md`
-- 目标：`20-spec/goals-and-routes.md`
+- 调研：`X2`、`X1`
+- 目标：`G1`

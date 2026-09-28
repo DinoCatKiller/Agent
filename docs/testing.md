@@ -79,6 +79,6 @@ crates/agent-providers/tests/fixtures/
 
 ## 相关
 
-- 上游：[`A2`](provider-contract.md)、[`G1`](../20-spec/goals-and-routes.md)（G-3 断网可测）
-- 下游：评测与回归 → [`Q2`](eval.md)（待创建）
-- 未决项 → [`S2`](../10-now/open-questions.md)
+- 上游：`A2`、`G1`（G-3 断网可测）
+- 下游：评测与回归 → `Q2`（待创建）
+- 未决项 → `S2`

@@ -83,10 +83,10 @@ GPUI 的渲染目标是**窗口像素**（`blade-graphics` → Metal / Vulkan / 
 
 ## 8. 未决项
 
-优先级排序、是否接受「先 TUI 后 GUI」、WebView 具体方案 → 统一登记在 [`S2`](../10-now/open-questions.md) Q1。
+优先级排序、是否接受「先 TUI 后 GUI」、WebView 具体方案 → 统一登记在 `S2` Q1。
 
 ## 相关
 
-- 上游：`20-spec/goals-and-routes.md`
-- 决策：`docs/30-decisions/0003-ui-delivery-form.md`
-- 影响：`docs/30-decisions/0001-tech-stack.md`（UI 部分待复核）
+- 上游：`G1`
+- 决策：`D3`
+- 影响：`D1`（UI 部分待复核）

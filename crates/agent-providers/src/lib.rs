@@ -1,4 +1,4 @@
-//! Provider 契约与运行时注册表（对应 `docs/20-spec/provider-contract.md`，ID `A2`）。
+//! Provider 契约与运行时注册表（对应 `A2`，ID `A2`）。
 //!
 //! 分工：
 //! - 适配器实现 [`Provider`]（每家一个）；

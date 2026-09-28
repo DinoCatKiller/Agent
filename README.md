@@ -1,43 +1,60 @@
 # Agent · 多模型接入客户端
 
-> **人类入口**。1 分钟读完。
-> 完整知识地图（全量文档表）在 [`docs/00-start-here.md`](docs/00-start-here.md)。
+> 人类入口，1 分钟。**文档地图在 [`AGENTS.md`](AGENTS.md) §2** —— 人和 agent 共用那一张表。
 
 ## 这是什么
 
-一个跨平台桌面客户端，统一接入多家大模型（OpenAI 兼容族 / Anthropic / 本地模型），支持流式对话、多会话、模型热切换与工具调用。本地优先：密钥进系统钥匙串，历史进本地 SQLite。
+跨平台桌面客户端，统一接入多家大模型（OpenAI 兼容族 / Anthropic / 本地模型），支持流式对话、多会话、模型热切换与工具调用。本地优先：密钥进系统钥匙串，历史进本地 SQLite。
 
 ## 现在到哪
 
-**阶段：架构与契约已定，尚未落码。**
+**M1 完成**：cargo workspace 建好，契约层（`agent-schema` + `Provider` trait）已落地，4 个单测 + clippy 零告警。
 
-- ✅ 目标与技术路线、自研边界已明确
-- ✅ Provider 接入契约（Rust trait + 类型）已成文
-- ✅ 技术栈、多模型抽象路线已决策
-- 🚧 UI 交付形态待决（GPUI / TUI / Tauri）
-- ⬜ 代码骨架尚未创建
+- 完整阶段状态与下一步 → [`STATUS.md`](STATUS.md)
+- 等你拍板的事 → [`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)
 
-详细状态与下一步见 [`docs/10-now/status.md`](docs/10-now/status.md)。
+## 文档放哪（约定）
 
-## 文档怎么读
+**文档跟着代码走**，不集中堆在一个 `docs/` 里：
 
-| 你是 | 从哪里进 |
-|------|---------|
-| 人（第一次看） | `docs/00-start-here.md` → 它给三条阅读路线 |
-| Agent | `AGENTS.md` → 再按路由表加载命中文档 |
+| 位置 | 放什么 |
+|------|--------|
+| `STATUS.md` / `OPEN-QUESTIONS.md`（根） | 阶段状态、未决问题。**固定路径，就地更新，永不搬家** |
+| `crates/<crate>/README.md` | 该 crate 的门面：边界、用法、状态 |
+| `crates/<crate>/docs/*.md` | 该 crate 的规格细节 |
+| `docs/*.md`（根） | 跨 crate 的规格：架构、测试、目标 |
+| `docs/decisions/` | ADR，只增不改 |
+| `docs/plans/` | 尚无归属 crate 的长期计划 |
+| `docs/research/` | 跨领域调研（其余调研放在它影响的那个 crate 里） |
+| `docs/_template.md` | 新文档模板 |
 
-**不想读全部？** 只读 `docs/10-now/status.md`（现在做什么）和 `docs/10-now/open-questions.md`（等你拍板的事）就够跟上进度。
+**引用规则**：文档之间只写 ID（如 `A2`、`S1`），**不写路径**。路径只在 `AGENTS.md` §2 的地图里出现一次 —— 这样搬文件不用改别的文档。
 
-## 目录速览
+## 目录树
 
 ```
-AGENTS.md        agent 入口（读取协议 + 路由 + 硬约束）
+README.md                 人类入口（本文件）
+AGENTS.md                 agent 入口 + 唯一地图
+STATUS.md                 当前阶段与下一步
+OPEN-QUESTIONS.md         未决问题
 docs/
-  00-start-here.md   唯一知识地图（从这里开始）
-  10-now/            当前状态、未决问题      <- 先看这个
-  20-spec/           规格与契约（改了影响实现）
-  30-decisions/      ADR：为什么这么定（只增不改）
-  40-research/       调研证据（一次性消费）
-  50-plans/          后期计划（二期 GUI / L3 样式引擎）
-  90-templates/      文档模板
+  _template.md            文档模板
+  goals.md                目标、技术路线、自研边界
+  architecture.md         架构与分层
+  testing.md              测试策略
+  decisions/              ADR（0001 技术栈 / 0002 抽象路线 / 0003 UI 形态 / 0004 样式层）
+  plans/gui-phase2.md     二期 GUI + L3 样式引擎
+  research/               跨领域调研（Rust 后端栈、GPUI、UI 形态、样式可移植性）
+crates/
+  agent-schema/           契约唯一来源（+ docs/message-protocol.md）
+  agent-providers/        Provider trait 与适配器（+ docs/contract.md、docs/providers/）
+  agent-app/              二进制入口与冒烟自检
+```
+
+## 快速验证
+
+```powershell
+cargo test --workspace                            # 4 个单测
+cargo clippy --workspace --all-targets -- -D warnings
+cargo run -p agent-app -- self-check              # 契约层冒烟
 ```

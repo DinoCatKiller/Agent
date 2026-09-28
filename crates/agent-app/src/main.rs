@@ -3,7 +3,7 @@
 //! 用法：`cargo run -p agent-app -- self-check`
 //!
 //! 这不是最终 CLI，也**不是** UI 层。M4 起会在 `agent-core` 上长出真实会话命令；
-//! UI 形态未定（见 docs/30-decisions/0003-ui-delivery-form.md），所以这里刻意只依赖契约。
+//! UI 形态未定（见 D3），所以这里刻意只依赖契约。
 
 use agent_providers::{required_capabilities, ProviderRegistry};
 use agent_schema::{
@@ -23,7 +23,7 @@ fn main() {
         None => {
             println!("agent-app {}", env!("CARGO_PKG_VERSION"));
             println!("可用命令: self-check");
-            println!("里程碑与下一步: docs/10-now/status.md");
+            println!("里程碑与下一步: S1");
         }
     }
 }

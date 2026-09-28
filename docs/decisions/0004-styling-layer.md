@@ -5,8 +5,8 @@
 | ID | `D4` |
 | 状态 | **提案（待确认）** |
 | 日期 | 2026-09-28 |
-| 依据 | [`X5`](../40-research/styling-portability.md) |
-| 相关 | [`P0`](../50-plans/gui-phase2.md)（L3 后期计划）、[`D3`](0003-ui-delivery-form.md) |
+| 依据 | `X5` |
+| 相关 | `P0`（L3 后期计划）、`D3` |
 
 ## 背景
 
@@ -40,4 +40,4 @@
 
 ## 相关
 
-- 未决项 → [`S2`](../10-now/open-questions.md) Q2
+- 未决项 → `S2` Q2

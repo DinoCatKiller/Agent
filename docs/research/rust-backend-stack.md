@@ -27,7 +27,7 @@
 
 ## 2. SSE 流式处理的落地要点
 
-- 三套事件语义需要分别解析（详见 `40-research/llm-abstraction.md` §3）：
+- 三套事件语义需要分别解析（详见 `X3` §3）：
   - OpenAI Chat / DeepSeek Chat：data-only SSE，`data: [DONE]` 结束。
   - OpenAI Responses / DeepSeek Responses：语义事件流，`response.completed` 结束。
   - Anthropic Messages：命名事件流（`message_start` / `content_block_delta` / `message_delta` / `message_stop`）。
@@ -82,5 +82,5 @@ agent/
 
 ## 相关
 
-- 上游：`20-spec/goals-and-routes.md`
-- 下游：`docs/30-decisions/0002-llm-abstraction.md`
+- 上游：`G1`
+- 下游：`D2`
