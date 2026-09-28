@@ -1,63 +1,36 @@
-# S1 · 当前阶段与下一步
+# S1 · 当前阶段（概览）
 
 | | |
 |---|---|
 | ID | `S1` |
-| 类型 | 状态 |
+| 类型 | 状态 · **概览** |
 | 更新 | 2026-09-28 |
-| 何时读 | **每次开工第一眼**，5 秒确认「现在到哪」 |
-| 规模 | ~1k token |
+| 何时读 | **每次开工第一眼**，5 秒确认「现在做什么」 |
+| 规模 | ~0.5k token |
 
-> **固定路径，就地更新，永不搬家。** 阶段变化只改本文件内容，不移动任何文件。
+> **本文件只写当前阶段的任务。** 任务完成 → 清空并重写；历史交给 git，长期排期见 `RM`。
+> 任务跨多个 crate 时：**这里只给概览**，细节写在相关 crate 的 `status.md` 里，并从下表链过去。
 
-## TL;DR
+## 当前任务
 
-- **阶段**：M1 完成 —— workspace 建好，契约层（`agent-schema` + `Provider` trait）已落地，4 个单测 + clippy 零告警。
-- **下一步**：**M2 = `agent-transport`**（reqwest + SSE 解析 + 超时/取消 + 退避重试）。
-- **卡点**：不影响 M2–M4；**M5（UI）前必须拍板 `D3`**，**M3 前需定 `S2` Q3（先接哪家）**。
+**M2 · 传输层** ｜ 状态：⬜ 未启动
 
-## 里程碑
+一句话：让「一次模型调用」能真正发出去并流式收回来。
 
-| # | 里程碑 | 状态 |
-|---|--------|------|
-| M0 | 文档体系与关键决策定稿 | ✅ 文档体系完成；`D3` / `D4` 待拍板 |
-| M1 | cargo workspace + 契约层落地 | ✅ 3 个 crate、4 个单测、clippy 零告警、`self-check` 通过 |
-| M2 | `agent-transport`：reqwest + SSE 解析 + 超时/取消 + 退避 | ⬜ **下一步** |
-| M3 | 首个 adapter（OpenAI 兼容族）+ 契约测试 fixtures | ⬜ |
-| M4 | `agent-core`：单轮对话 + 流式贯通（CLI 验证） | ⬜ |
-| M5 | UI 层（形态由 `D3` 定）+ 会话持久化 | ⬜ 被 `D3` 阻塞 |
-| M6 | 工具调用 + 模型路由与兜底 | ⬜ |
+| crate | 本任务中它要做什么 | 细节 |
+|-------|-----------------|------|
+| `crates/agent-transport` | 新建：reqwest 封装、SSE 解析、超时与取消、退避重试 | `crates/agent-transport/status.md` |
+| `crates/agent-schema` | 仅当 `StreamEvent` 需要补字段时才动，否则不碰 | — |
+| `crates/agent-providers` | 本任务不动（fixtures 属 M3） | — |
 
-## 已完成的具体产物
+## 阻塞
 
-| 产物 | 位置 |
-|------|------|
-| cargo workspace（3 crate） | `Cargo.toml`、`crates/*` |
-| 契约类型（消息/请求/响应/事件/错误/能力） | `crates/agent-schema/src/*`（门面：`crates/agent-schema/README.md`） |
-| `Provider` trait + 类型擦除 + 注册表 + 能力推导 | `crates/agent-providers/src/lib.rs`（门面：`crates/agent-providers/README.md`） |
-| 契约冒烟入口 | `cargo run -p agent-app -- self-check` |
-| 契约规格 / 消息协议 / 测试策略 / 供应商模板 | `A2` / `A3` / `Q1` / `PT` |
+- 无。`S2` 的 Q3（首批适配器优先级）在 **M3 前**需拍板，不阻塞 M2。
 
-## 下一步（M2 待办清单）
+## 上一阶段
 
-1. 建 `crates/agent-transport`，同步建它的 `README.md` 并在 `AGENTS.md` §2 登记。
-2. `reqwest` client 封装：连接/读超时、流式空闲超时、代理、rustls。
-3. SSE 解析：`bytes_stream` → 事件；先评估 `eventsource-stream` / `sse-rs`，不满足则自研（200–400 行，有停止条件）。
-4. 实现三分收尾语义（`A2` §4）：**传输错误 / 可恢复坏帧 / EOF 截断**；截断绝不允许静默当成功。
-5. 取消：把 `CallContext.cancel` 接进请求与流。
-6. 退避重试：只包 `ProviderError::retryable == true` 的情况，指数退避 + 抖动。
-7. 按 `Q1` 的 12 条用例补齐 fixtures（重点是 5 截断、6 坏帧、11 无 usage）。
-
-## 决策速查
-
-| ID | 结论 | 状态 |
-|----|------|------|
-| `D1` | 技术栈 = Rust + tokio（UI 待复核） | ✅ 已接受 |
-| `D2` | 多模型抽象 = 契约自研 + 实现可换 | ✅ 已接受 |
-| `D3` | UI 交付形态 | 🚧 待决（阻塞 M5） |
-| `D4` | 样式层路线（token 桥 + 组件层） | 🚧 待确认（阻塞 M5） |
+- **M1 完成**（workspace + 契约层，4 个单测通过）。细节已清空——产物清单见各 crate 的 `README.md`，历史见 git。
 
 ## 相关
 
-- 未决问题 → `S2`
-- 地图 → `AGENTS.md` §2
+- 里程碑与排期定义 → `RM` ｜ 未决问题 → `S2` ｜ 地图 → `AGENTS.md` §2

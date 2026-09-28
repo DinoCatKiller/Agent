@@ -19,7 +19,10 @@
 
 | 位置 | 放什么 |
 |------|--------|
-| `STATUS.md` / `OPEN-QUESTIONS.md`（根） | 阶段状态、未决问题。**固定路径，就地更新，永不搬家** |
+| `STATUS.md`（根） | 阶段**概览**：当前任务是什么、跨哪些 crate。**只写当前任务，完成即重写** |
+| `crates/<crate>/status.md` | 该 crate 在当前任务里的**细节**（按需建立，随任务生灭） |
+| `OPEN-QUESTIONS.md`（根） | 未决问题，固定路径、就地更新 |
+| `docs/roadmap.md` | 里程碑与排期定义（**不含状态**） |
 | `crates/<crate>/README.md` | 该 crate 的门面：边界、用法、状态 |
 | `crates/<crate>/docs/*.md` | 该 crate 的规格细节 |
 | `docs/*.md`（根） | 跨 crate 的规格：架构、测试、目标 |
