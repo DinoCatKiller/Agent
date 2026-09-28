@@ -40,7 +40,7 @@
 | G1 | [目标与技术路线总览](20-spec/goals-and-routes.md) | 争论「要不要自研 / 先做哪个」 | ~2k | ✅ |
 | A1 | [架构与分层](20-spec/architecture.md) | 新建模块、改目录结构 | ~1.4k | ✅ |
 | A2 | [Provider 接入契约](20-spec/provider-contract.md) | 新增/修改供应商、改调用接口 | ~2.5k | ✅ |
-| A3 | 消息与多模态协议 `20-spec/message-protocol.md` | 涉及图片/文件/音频、role 语义 | — | ⬜ |
+| A3 | [消息与多模态协议](20-spec/message-protocol.md) | 涉及图片/文件/音频、role 语义、工具消息回填 | ~1.5k | ✅ |
 | A4 | 流式、取消与超时 `20-spec/streaming.md` | 动 SSE、中断生成、超时 | — | ⬜ |
 | A5 | 工具调用 `20-spec/tool-calling.md` | 工具定义、并行调用、结果回填 | — | ⬜ |
 | A6 | 错误、重试与降级 `20-spec/errors-and-fallback.md` | 限流/超时/审核/不可用 | — | ⬜ |
@@ -49,9 +49,10 @@
 | R2 | 模型注册表与路由 `20-spec/model-registry.md` | 模型清单、路由与兜底 | — | ⬜ |
 | R3 | 可观测性与成本 `20-spec/observability.md` | 日志 / trace / 计费 | — | ⬜ |
 | R4 | 缓存、限流与并发 `20-spec/cache-and-ratelimit.md` | 重复请求、QPS 控制 | — | ⬜ |
-| Q1 | 测试策略 `20-spec/testing.md` | 写单测、契约测试、mock 供应商 | — | ⬜ |
+| Q1 | [测试策略](20-spec/testing.md) | 写单测、契约测试、mock 供应商、加新适配器前 | ~1.4k | ✅ |
 | Q2 | 效果评测与回归 `20-spec/eval.md` | 评测集、prompt 回归 | — | ⬜ |
 | Q3 | 安全与合规 `20-spec/security.md` | 密钥、审计、数据合规 | — | ⬜ |
+| PT | [供应商文档模板](20-spec/providers/_template.md) | 新建某家供应商文档时 | ~0.4k | ✅ |
 | P1–P6 | 各供应商差异 `20-spec/providers/*.md` | 接某一家模型时 | — | ⬜ |
 
 > `⬜` = 文件尚未创建。**不要预建空文件**：需要时复制 `90-templates/doc.md`，写完回填本表。

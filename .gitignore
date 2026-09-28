@@ -1,0 +1,10 @@
+/target
+**/*.rs.bk
+*.pdb
+.idea/
+.vscode/
+*.user
+
+# 密钥与本地配置绝不入库（见 docs/20-spec/config-and-secrets.md，待创建）
+.env
+*.local.toml

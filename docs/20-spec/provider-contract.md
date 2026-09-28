@@ -38,20 +38,21 @@ pub struct ModelSpec {
 ## 2. 统一接口
 
 ```rust
-pub trait Provider: Send + Sync + 'static {
-    fn id(&self) -> &str;
+// 已落地：crates/agent-providers/src/lib.rs
+pub trait Provider: Send + Sync + Clone + 'static {
+    fn id(&self) -> &'static str;
     fn list_models(&self) -> Vec<ModelSpec>;
 
     fn chat(
         &self,
         req: ModelRequest,
-        ctx: &CallContext,
+        ctx: CallContext,
     ) -> impl Future<Output = Result<ModelResponse, ProviderError>> + Send;
 
     fn stream(
         &self,
         req: ModelRequest,
-        ctx: &CallContext,
+        ctx: CallContext,
     ) -> Result<EventStream, ProviderError>;   // 同步返回流句柄，便于 fast-fail
 
     fn count_tokens(&self, req: &ModelRequest) -> Option<u32> { None }
@@ -63,6 +64,7 @@ pub type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send + 'static>>
 - Core 只依赖上面这些方法（G-1/G-2）。
 - `stream` 故意是**同步返回**：鉴权/参数错误要在发出请求前就暴露，而不是等第一次 poll。
 - 厂商特有参数一律走 `req.additional_params`，**不允许污染公共字段**。
+- **`Clone` 是硬要求**：`Provider` 因 RPITIT（`impl Future` 返回值）不是 object-safe，路由层要拿到 `dyn`，就必须把 future 变成 owned（`let this = self.clone(); async move { this.chat(..).await }`）。适配器内部用 `Arc` 持有 client，clone 只是引用计数，代价为零。类型擦除见 `ErasedProvider`。
 
 ## 3. 请求 / 响应
 
@@ -161,19 +163,19 @@ pub enum StreamEvent {
 | `Unknown` | 其它 | 保留 raw 后上抛 |
 
 ```rust
-#[derive(Debug, thiserror::Error)]
-#[error("{provider}: {category:?} (status={status:?})")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProviderError {
     pub provider: String,
     pub category: ErrorCategory,
-    pub retryable: bool,
+    pub retryable: bool,            // 默认取自 category，策略层可覆盖
     pub status: Option<u16>,
     pub request_id: Option<String>,
     pub raw: Option<serde_json::Value>,
-    #[source]
-    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    pub source_message: Option<String>,   // 底层原因已字符串化
 }
 ```
+
+**注意**：这里刻意**不用** `Box<dyn Error>` 作为 `source`。错误对象要能进 `StreamEvent`、日志与 fixtures 回放，因此必须 `Clone + Serialize`；原始原因以字符串保留在 `source_message`。
 
 每个 adapter 必须提供「HTTP 状态 / 错误体 → `ErrorCategory`」的映射表。
 

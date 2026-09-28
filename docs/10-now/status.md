@@ -6,33 +6,44 @@
 | 类型 | 状态（高频更新） |
 | 更新 | 2026-09-28 |
 | 何时读 | **每次开工第一眼**，5 秒确认「现在到哪」 |
-| 规模 | ~0.7k token |
+| 规模 | ~0.8k token |
 
 ## TL;DR
 
-- **阶段**：架构与契约已定，**尚未落码**。
-- **已完成**：目标与技术路线、Provider 接入契约、技术栈决策、多模型抽象决策、GPUI/TUI/样式可移植性调研。
-- **卡点**：UI 交付形态未定（→ D3）＋ 样式层路线未确认（→ D4）＋ S2 的几个问题待拍板。
-- **下一步**：按下面 §下一步 顺序执行。
+- **阶段**：M1 已完成 —— workspace 建好，契约层（`agent-schema` + `Provider` trait）已落地并通过测试。
+- **下一步**：**M2 = `agent-transport`**：reqwest + SSE 解析 + 超时/取消 + 退避重试。
+- **卡点**：不影响 M2/M3/M4；但 **M5（UI）前必须拍 D3（UI 形态）**，**M3 前需定 Q3（先接哪家）**。
+- 当前 `git log` 最新提交即本文档所在提交（见仓库历史）。
 
 ## 里程碑
 
 | # | 里程碑 | 状态 |
 |---|--------|------|
-| M0 | 文档体系与关键决策定稿 | 🚧 剩 D3/D4 + S2 待拍板 |
-| M1 | cargo workspace 骨架 + `agent-schema` 类型落地 | ⬜ |
-| M2 | `agent-transport`：reqwest + SSE 解析 + 超时/重试 | ⬜ |
-| M3 | 首个 adapter（OpenAI 兼容族）+ 契约测试（fixtures 回放） | ⬜ |
-| M4 | `agent-core`：单轮对话 + 流式贯通（无 UI，CLI 验证） | ⬜ |
-| M5 | UI 层（形态由 D3 定）+ 会话持久化 | ⬜ |
+| M0 | 文档体系与关键决策定稿 | ✅ 文档体系完成；D3/D4 仍待拍板 |
+| M1 | cargo workspace + 契约层落地 | ✅ 3 个 crate、4 个单测、clippy 零告警、`self-check` 通过 |
+| M2 | `agent-transport`：reqwest + SSE 解析 + 超时/取消 + 退避 | ⬜ **下一步** |
+| M3 | 首个 adapter（OpenAI 兼容族）+ 契约测试 fixtures | ⬜ |
+| M4 | `agent-core`：单轮对话 + 流式贯通（CLI 验证） | ⬜ |
+| M5 | UI 层（形态由 D3 定）+ 会话持久化 | ⬜ 被 D3 阻塞 |
 | M6 | 工具调用 + 模型路由与兜底 | ⬜ |
 
-## 下一步（按顺序）
+## 已完成的具体产物
 
-1. 用户拍板 D3（UI 形态）、D4（样式层）与 S2 的三个问题。
-2. 建 cargo workspace 骨架（`cargo new`，**不预建空目录**，骨架见 A1 §5）。
-3. 把 `20-spec/provider-contract.md` 落成 `agent-schema` 的类型 + `agent-providers` 的 `Provider` trait。
-4. 建 fixtures 与首个 adapter 的契约测试骨架。
+| 产物 | 位置 |
+|------|------|
+| cargo workspace（3 crate） | `Cargo.toml`、`crates/*` |
+| 契约类型（消息/请求/响应/事件/错误/能力） | `crates/agent-schema/src/*` |
+| `Provider` trait + `ErasedProvider` + 注册表 + 能力推导 | `crates/agent-providers/src/lib.rs` |
+| 契约冒烟入口 | `cargo run -p agent-app -- self-check` |
+| 契约规格 / 消息协议 / 测试策略 / 供应商模板 | `docs/20-spec/{provider-contract,message-protocol,testing}.md`、`docs/20-spec/providers/_template.md` |
+
+## 下一步（M2 待办清单）
+
+1. 建 `crates/agent-transport`：`reqwest` client 封装（超时、代理、rustls）。
+2. SSE 解析：`bytes_stream` → 事件；先评估 `eventsource-stream` / `sse-rs`，按 `Q1` 建坏帧/截断/超时用例。
+3. 把「传输错误 / 可恢复坏帧 / EOF 截断」三分语义实现成可测函数。
+4. 取消：`CallContext.cancel` 接入请求与流。
+5. 退避重试：只包 `ProviderError::retryable == true` 的情况，指数退避 + 抖动。
 
 ## 决策速查
 
@@ -40,8 +51,8 @@
 |----|------|------|
 | D1 | 技术栈 = Rust + tokio（UI 待复核） | ✅ 已接受 |
 | D2 | 多模型抽象 = 契约自研 + 实现可换 | ✅ 已接受 |
-| D3 | UI 交付形态 | 🚧 待决 |
-| D4 | 样式层路线（token 桥 + 组件层） | 🚧 待确认 |
+| D3 | UI 交付形态 | 🚧 待决（阻塞 M5） |
+| D4 | 样式层路线（token 桥 + 组件层） | 🚧 待确认（阻塞 M5） |
 
 ## 相关
 
