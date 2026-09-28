@@ -380,7 +380,7 @@ footer b{font-weight:500;color:var(--text-2)}
       <h1>架构<em>图</em></h1>
       <p>四件事一眼看完：<b>分了几层</b>、<b>一次调用怎么走</b>、<b>crate 之间谁依赖谁</b>、<b>现在做到哪</b>。目标是让「接入第 N 家模型」变成加一个适配器，而不是改核心。</p>
       <div class="src">
-        <span>依据 <b>A1</b> 架构与分层</span>
+        <span>依据 <b>A1</b> 分层 · <b>D5</b> 目录组织</span>
         <span><b>A2</b> Provider 契约</span>
         <span><b>RM</b> 里程碑</span>
         <span><b>S1</b> 当前阶段</span>
@@ -389,8 +389,8 @@ footer b{font-weight:500;color:var(--text-2)}
       <div class="stats">
         <div class="stat is-now"><span class="pill wip"><i></i></span><b>M2</b><span>传输层 · 进行中</span></div>
         <div class="stat"><span class="pill ok"><i></i></span><b>1</b><span>crate 已落地</span></div>
-        <div class="stat"><span class="pill wip"><i></i></span><b>3</b><span>crate 进行中</span></div>
-        <div class="stat"><span class="pill todo"><i></i></span><b>6</b><span>crate 未建</span></div>
+        <div class="stat"><span class="pill wip"><i></i></span><b>6</b><span>进行中（含 3 个功能骨架）</span></div>
+        <div class="stat"><span class="pill todo"><i></i></span><b>4</b><span>crate 未建</span></div>
       </div>
     </div>
 
@@ -401,57 +401,44 @@ footer b{font-weight:500;color:var(--text-2)}
         <h2>运行时分层与一次调用的数据流</h2>
         <p>A1 §2 / §4</p>
       </div>
-      <p class="lead">依赖<b>只能向下</b>。右侧编号 = 一次模型调用的第几步；也就是说，从下往上看是「能力越底层越通用」，从上往下看是「一次请求逐步落地」。</p>
+      <p class="lead">依赖<b>只能向下</b>。右侧编号 = 一次模型调用的第几步；从下往上看是「越底层越通用」，从上往下看是「一次请求逐步落地」。四类目录的切分依据是 <b>D5</b>（代码按功能组织）。</p>
 
       <div class="layers">
         <div class="layer">
-          <div class="l-name"><b>App / CLI</b><code>agent-app</code></div>
-          <div class="l-desc">组装依赖、承载命令。<small>不含业务逻辑</small></div>
+          <div class="l-name"><b>App / CLI</b><code>crates/app</code></div>
+          <div class="l-desc">组装依赖、承载命令。<small>不含业务逻辑；UI 依赖只允许出现在这里与 features/*</small></div>
           <div class="steps"></div>
         </div>
         <div class="arrow"><svg width="12" height="18" viewBox="0 0 12 18" aria-hidden="true"><path d="M6 1v13m0 0-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>依赖向下</span></div>
 
         <div class="layer">
-          <div class="l-name"><b>Agent Core</b><code>agent-core</code></div>
-          <div class="l-desc">循环、规划、记忆、工具编排。<small>不依赖任何 provider 与 UI</small></div>
+          <div class="l-name"><b>功能切片</b><code>crates/features/*</code></div>
+          <div class="l-desc">一个功能一个文件夹：<b>chat</b> / <b>sessions</b> / <b>settings</b>，编排 + 状态 + 界面 + 测试同目录。<small>功能之间可互相依赖，但不能成环（D5）</small></div>
           <div class="steps"><b>1</b></div>
         </div>
         <div class="arrow"><svg width="12" height="18" viewBox="0 0 12 18" aria-hidden="true"><path d="M6 1v13m0 0-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>依赖向下</span></div>
 
         <div class="layer">
-          <div class="l-name"><b>Capability &amp; Policy</b><code>agent-routing</code></div>
-          <div class="l-desc">能力校验、路由与兜底链、重试降级、预算控制。<small>重试/降级策略细则 → A6（未建）</small></div>
-          <div class="steps"><b>2</b><b>3</b><b>6</b></div>
+          <div class="l-name"><b>基础设施</b><code>crates/infra/*</code></div>
+          <div class="l-desc"><b>transport</b>（HTTP / SSE / 超时重试） · <b>providers</b>（适配器） · <b>routing</b>（能力与兜底） · <b>store</b> · <b>config</b> · <b>telemetry</b>。<small>被 features 复用；不得反向依赖 features；收尾三分：传输错误 / 可恢复坏帧 / EOF 截断</small></div>
+          <div class="steps"><b>2</b><b>3</b><b>4</b><b>5</b><b>6</b></div>
         </div>
         <div class="arrow"><svg width="12" height="18" viewBox="0 0 12 18" aria-hidden="true"><path d="M6 1v13m0 0-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>依赖向下</span></div>
 
         <div class="layer">
-          <div class="l-name"><b>Provider Adapter</b><code>agent-providers</code></div>
-          <div class="l-desc">每家一个适配器，实现统一契约 <b>A2</b>。<small>供应商差异到此为止，不许越过这条线</small></div>
-          <div class="steps"><b>4</b></div>
-        </div>
-        <div class="arrow"><svg width="12" height="18" viewBox="0 0 12 18" aria-hidden="true"><path d="M6 1v13m0 0-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>依赖向下</span></div>
-
-        <div class="layer">
-          <div class="l-name"><b>Transport</b><code>agent-transport</code></div>
-          <div class="l-desc">HTTP / SSE / WS、超时、限流、退避重试。<small>收尾三分：传输错误 / 可恢复坏帧 / EOF 截断</small></div>
-          <div class="steps"><b>4</b><b>5</b></div>
-        </div>
-
-        <div class="layer layer-side">
-          <div class="l-name"><b>Observability</b><code>agent-observability</code></div>
-          <div class="l-desc">trace / 日志 / 指标 / 成本。<small>↕ 贯穿各层，只依赖契约，不被任何人依赖</small></div>
-          <div class="steps"><b>6</b></div>
+          <div class="l-name"><b>契约与纯类型</b><code>crates/common</code></div>
+          <div class="l-desc">消息 / 模型 / 流事件 / 错误类型（<b>A2</b> · <b>A3</b>）。<small>地面：不依赖任何人；改它等于改全部</small></div>
+          <div class="steps"></div>
         </div>
       </div>
 
       <div class="flow">
-        <div><b>STEP 1</b><p>Core 组装 <code>InternalMessage[]</code></p></div>
-        <div><b>STEP 2</b><p>Registry 校验能力（vision / tools / json）</p></div>
-        <div><b>STEP 3</b><p>Router 选定 provider + model，含兜底链</p></div>
-        <div><b>STEP 4</b><p>Adapter 转厂商格式 → Transport 发送</p></div>
-        <div><b>STEP 5</b><p>流式回传 → 归一化为 <code>StreamEvent</code></p></div>
-        <div><b>STEP 6</b><p>记录 token / latency / cost；失败交 Policy 决定重试或降级</p></div>
+        <div><b>STEP 1</b><p><code>features/chat</code> 组装 <code>InternalMessage[]</code></p></div>
+        <div><b>STEP 2</b><p><code>infra/routing</code> 校验能力（vision / tools / json）</p></div>
+        <div><b>STEP 3</b><p><code>infra/routing</code> 选定 provider + model，含兜底链</p></div>
+        <div><b>STEP 4</b><p><code>infra/providers</code> 转厂商格式 → <code>infra/transport</code> 发送</p></div>
+        <div><b>STEP 5</b><p>流式回传 → 归一化为 <code>StreamEvent</code>（transport → providers）</p></div>
+        <div><b>STEP 6</b><p><code>infra/telemetry</code> 记录 token / latency / cost；失败交 transport 重试或 routing 降级</p></div>
       </div>
     </section>
 
@@ -462,10 +449,10 @@ footer b{font-weight:500;color:var(--text-2)}
         <h2>crate 依赖图与当前进度</h2>
         <p>A1 §5 / RM / S1</p>
       </div>
-      <p class="lead">实线 = 已规划的直接编译期依赖，虚线 = 规划中尚未接入。不画间接依赖（由传递性体现）—— 所有 crate 最终都落在 <code class="inl">agent-schema</code> 上。</p>
+      <p class="lead">依赖<b>只能向下</b>。同一层内的多条依赖画成<b>总线</b>，不逐条连线，避免线团；间接依赖由传递性体现 —— 所有 crate 最终都落在 <code class="inl">crates/common</code> 上。</p>
 
       <div class="dep-wrap">
-        <svg class="dep" viewBox="0 0 1400 752" role="img" aria-label="crate 依赖图：agent-schema 为契约唯一来源，向上依次是 transport、providers、routing、core、ui，顶端为 agent-app">
+        <svg class="dep" viewBox="0 0 1400 470" role="img" aria-label="crate 依赖图：crates/common 为契约地面，其上依次是 infra/*、features/*，顶端为 app">
           <defs>
             <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
               <path class="arhead" d="M0 1 8 5 0 9"/>
@@ -474,97 +461,121 @@ footer b{font-weight:500;color:var(--text-2)}
 
           <!-- 边：先画线，后画节点，保证节点压住线 -->
           <g>
-            <path class="e" d="M700 92 V150" marker-end="url(#ar)"/>
-            <path class="e dashed" d="M815 64 H1065 V150" marker-end="url(#ar)"/>
-            <path class="e" d="M815 178 H950" marker-end="url(#ar)"/>
-            <path class="e" d="M700 206 V264" marker-end="url(#ar)"/>
-            <path class="e" d="M700 320 V378" marker-end="url(#ar)"/>
-            <path class="e" d="M700 434 V458 H322 V492" marker-end="url(#ar)"/>
-            <path class="e" d="M322 548 V640" marker-end="url(#ar)"/>
-            <path class="e" d="M574 548 V640" marker-end="url(#ar)"/>
-            <path class="e" d="M826 548 V640" marker-end="url(#ar)"/>
-            <path class="e" d="M1078 548 V640" marker-end="url(#ar)"/>
+            <!-- app → features 总线 -->
+            <path class="e" d="M700 76 V110"/>
+            <path class="e" d="M430 110 H970"/>
+            <path class="e" d="M430 110 V130" marker-end="url(#ar)"/>
+            <path class="e" d="M700 110 V130" marker-end="url(#ar)"/>
+            <path class="e" d="M970 110 V130" marker-end="url(#ar)"/>
+            <!-- features → infra 总线 -->
+            <path class="e" d="M430 186 V222"/>
+            <path class="e" d="M700 186 V222"/>
+            <path class="e" d="M970 186 V222"/>
+            <path class="e" d="M112 222 H1287"/>
+            <path class="e" d="M112 222 V260" marker-end="url(#ar)"/>
+            <path class="e" d="M347 222 V260" marker-end="url(#ar)"/>
+            <path class="e" d="M582 222 V260" marker-end="url(#ar)"/>
+            <path class="e" d="M817 222 V260" marker-end="url(#ar)"/>
+            <path class="e" d="M1052 222 V260" marker-end="url(#ar)"/>
+            <path class="e" d="M1287 222 V260" marker-end="url(#ar)"/>
+            <!-- infra → common 总线 -->
+            <path class="e" d="M112 316 V366"/>
+            <path class="e" d="M347 316 V366"/>
+            <path class="e" d="M582 316 V366"/>
+            <path class="e" d="M817 316 V366"/>
+            <path class="e" d="M1052 316 V366"/>
+            <path class="e" d="M1287 316 V366"/>
+            <path class="e" d="M112 366 H1287"/>
+            <path class="e" d="M700 366 V400" marker-end="url(#ar)"/>
           </g>
 
           <!-- 节点 -->
-          <g class="node wip" transform="translate(585,36)">
+          <g class="node wip" transform="translate(585,20)">
             <rect width="230" height="56" rx="14"/>
-            <text class="n" x="16" y="26">agent-app</text>
+            <text class="n" x="16" y="26">crates/app</text>
             <text class="d" x="16" y="45">二进制入口 · 组装依赖</text>
             <circle class="dot wip" cx="214" cy="18" r="4"/>
             <text class="m" x="216" y="45">M4</text>
           </g>
 
-          <g class="node todo" transform="translate(585,150)">
+          <g class="node todo" transform="translate(315,130)">
             <rect width="230" height="56" rx="14"/>
-            <text class="n" x="16" y="26">agent-core</text>
-            <text class="d" x="16" y="45">循环 · 规划 · 工具编排</text>
+            <text class="n" x="16" y="26">features/chat</text>
+            <text class="d" x="16" y="45">对话编排 · 状态 · 界面</text>
             <circle class="dot todo" cx="214" cy="18" r="4"/>
             <text class="m" x="216" y="45">M4</text>
           </g>
 
-          <g class="node todo" transform="translate(950,150)">
+          <g class="node todo" transform="translate(585,130)">
             <rect width="230" height="56" rx="14"/>
-            <text class="n" x="16" y="26">agent-ui</text>
-            <text class="d" x="16" y="45">唯一出口：GPUI 视图</text>
+            <text class="n" x="16" y="26">features/sessions</text>
+            <text class="d" x="16" y="45">会话列表 · 切换 · 重命名</text>
             <circle class="dot todo" cx="214" cy="18" r="4"/>
             <text class="m" x="216" y="45">M5</text>
           </g>
 
-          <g class="node todo" transform="translate(585,264)">
+          <g class="node todo" transform="translate(855,130)">
             <rect width="230" height="56" rx="14"/>
-            <text class="n" x="16" y="26">agent-routing</text>
-            <text class="d" x="16" y="45">注册表 · 能力协商 · 兜底</text>
-            <circle class="dot todo" cx="214" cy="18" r="4"/>
-            <text class="m" x="216" y="45">M6</text>
-          </g>
-
-          <g class="node wip" transform="translate(585,378)">
-            <rect width="230" height="56" rx="14"/>
-            <text class="n" x="16" y="26">agent-providers</text>
-            <text class="d" x="16" y="45">Provider 契约 + 适配器</text>
-            <circle class="dot wip" cx="214" cy="18" r="4"/>
-            <text class="m" x="216" y="45">M3</text>
-          </g>
-
-          <g class="node wip" transform="translate(207,492)">
-            <rect width="230" height="56" rx="14"/>
-            <text class="n" x="16" y="26">agent-transport</text>
-            <text class="d" x="16" y="45">HTTP · SSE · 超时重试</text>
-            <circle class="dot wip" cx="214" cy="18" r="4"/>
-            <text class="m" x="216" y="45">M2</text>
-          </g>
-
-          <g class="node todo" transform="translate(459,492)">
-            <rect width="230" height="56" rx="14"/>
-            <text class="n" x="16" y="26">agent-store</text>
-            <text class="d" x="16" y="45">SQLite 会话持久化</text>
-            <circle class="dot todo" cx="214" cy="18" r="4"/>
-            <text class="m" x="216" y="45">M5</text>
-          </g>
-
-          <g class="node todo" transform="translate(711,492)">
-            <rect width="230" height="56" rx="14"/>
-            <text class="n" x="16" y="26">agent-config</text>
-            <text class="d" x="16" y="45">配置 + keyring 密钥</text>
+            <text class="n" x="16" y="26">features/settings</text>
+            <text class="d" x="16" y="45">设置项 · 密钥录入</text>
             <circle class="dot todo" cx="214" cy="18" r="4"/>
             <text class="m" x="216" y="45">R1</text>
           </g>
 
-          <g class="node todo" transform="translate(963,492)">
-            <rect width="230" height="56" rx="14"/>
-            <text class="n" x="16" y="26">agent-observability</text>
-            <text class="d" x="16" y="45">tracing · token 成本</text>
-            <circle class="dot todo" cx="214" cy="18" r="4"/>
-            <text class="m" x="216" y="45">R3</text>
+          <g class="node wip" transform="translate(5,260)">
+            <rect width="215" height="56" rx="14"/>
+            <text class="n" x="14" y="26">infra/transport</text>
+            <text class="d" x="14" y="45">HTTP · SSE · 超时重试</text>
+            <circle class="dot wip" cx="199" cy="18" r="4"/>
+            <text class="m" x="176" y="45">M2</text>
           </g>
 
-          <g class="bar" transform="translate(70,640)">
-            <rect width="1260" height="62" rx="14"/>
-            <text class="n" x="20" y="27">agent-schema</text>
-            <text class="d" x="20" y="47">契约唯一来源：消息 · 模型 · 流事件 · 错误类型　｜　只依赖 serde / serde_json / thiserror</text>
-            <circle class="dot ok" cx="1240" cy="20" r="4.5"/>
-            <text class="m" x="1242" y="52">M1 · 已落地</text>
+          <g class="node wip" transform="translate(240,260)">
+            <rect width="215" height="56" rx="14"/>
+            <text class="n" x="14" y="26">infra/providers</text>
+            <text class="d" x="14" y="45">Provider 契约 + 适配器</text>
+            <circle class="dot wip" cx="199" cy="18" r="4"/>
+            <text class="m" x="176" y="45">M3</text>
+          </g>
+
+          <g class="node todo" transform="translate(475,260)">
+            <rect width="215" height="56" rx="14"/>
+            <text class="n" x="14" y="26">infra/routing</text>
+            <text class="d" x="14" y="45">注册表 · 能力 · 兜底</text>
+            <circle class="dot todo" cx="199" cy="18" r="4"/>
+            <text class="m" x="176" y="45">M6</text>
+          </g>
+
+          <g class="node todo" transform="translate(710,260)">
+            <rect width="215" height="56" rx="14"/>
+            <text class="n" x="14" y="26">infra/store</text>
+            <text class="d" x="14" y="45">SQLite 会话持久化</text>
+            <circle class="dot todo" cx="199" cy="18" r="4"/>
+            <text class="m" x="176" y="45">M5</text>
+          </g>
+
+          <g class="node todo" transform="translate(945,260)">
+            <rect width="215" height="56" rx="14"/>
+            <text class="n" x="14" y="26">infra/config</text>
+            <text class="d" x="14" y="45">配置 + keyring 密钥</text>
+            <circle class="dot todo" cx="199" cy="18" r="4"/>
+            <text class="m" x="176" y="45">R1</text>
+          </g>
+
+          <g class="node todo" transform="translate(1180,260)">
+            <rect width="215" height="56" rx="14"/>
+            <text class="n" x="14" y="26">infra/telemetry</text>
+            <text class="d" x="14" y="45">tracing · token 成本</text>
+            <circle class="dot todo" cx="199" cy="18" r="4"/>
+            <text class="m" x="176" y="45">R3</text>
+          </g>
+
+          <g class="bar" transform="translate(5,400)">
+            <rect width="1390" height="62" rx="14"/>
+            <text class="n" x="20" y="27">crates/common</text>
+            <text class="d" x="20" y="47">契约唯一来源：消息 · 模型 · 流事件 · 错误类型（A2 / A3）　｜　只依赖 serde / serde_json / thiserror</text>
+            <circle class="dot ok" cx="1370" cy="20" r="4.5"/>
+            <text class="m" x="1250" y="47">M1 · 已落地</text>
           </g>
         </svg>
       </div>
@@ -579,19 +590,20 @@ footer b{font-weight:500;color:var(--text-2)}
 
       <div class="cards">
         <div class="card">
-          <h3>三条依赖规则<small>A1 §2 · 硬约束</small></h3>
+          <h3>依赖规则<small>A1 §5 · D5 · 硬约束</small></h3>
           <ul class="plain">
-            <li><b>只能向下</b>：禁止任何反向依赖。</li>
-            <li><b>Provider 之间禁止互相引用</b>：不共享私有类型。</li>
-            <li><b>Core 禁止 import 任何 provider 私有类型</b>：只认 A2 契约。</li>
+            <li><b>只能向下</b>：<code>app → features/* → infra/* → common</code>，禁止反向。</li>
+            <li><b>infra 不得依赖 features</b>：基础设施不认识业务。</li>
+            <li><b>feature 之间可互相依赖，但不能成环</b>：crate 依赖图天生无环 —— 这是 D5 选「每功能一个 crate」的核心理由。</li>
+            <li><b>UI 依赖只在 features/* 与 app</b>：common / infra 永远不碰 GPUI。</li>
           </ul>
         </div>
         <div class="card">
           <h3>读图要点<small>三处容易看漏的边界</small></h3>
           <ul class="plain">
-            <li><b>agent-schema 是地面</b>：改它等于改全部，契约变更要先动 A2 / A3。</li>
-            <li><b>agent-ui 是唯一出口</b>：GPUI API 只允许出现在这一个 crate 内。</li>
-            <li><b>三个叶子是同级的</b>：store / config / observability 互不依赖，各自只挂在契约上。</li>
+            <li><b>crates/common 是地面</b>：改它等于改全部，契约变更要先动 A2 / A3。</li>
+            <li><b>features/* 是界面的唯一出口</b>：界面代码跟着功能走，不再有单独的 UI crate。</li>
+            <li><b>infra 的六个 crate 互不依赖</b>：transport / providers / routing / store / config / telemetry 各自只挂在 common 上。</li>
           </ul>
         </div>
       </div>
@@ -604,11 +616,11 @@ footer b{font-weight:500;color:var(--text-2)}
         <h2>契约核心：一个 trait、一套事件、九类错误</h2>
         <p>A2 · 已落地（M1）</p>
       </div>
-      <p class="lead">这三样东西是「新增供应商零改核心」的全部依据。<b>加一家供应商 = 实现 trait + 注册表登记一行</b>，不动 Core。</p>
+      <p class="lead">这三样东西是「新增供应商零改核心」的全部依据。<b>加一家供应商 = 实现 trait + 注册表登记一行</b>，不动功能切片。</p>
 
       <div class="cards">
         <div class="card">
-          <h3><code class="inl">Provider</code> trait<small>agent-providers/src/lib.rs</small></h3>
+          <h3><code class="inl">Provider</code> trait<small>crates/infra/providers/src/lib.rs</small></h3>
           <pre><b>pub trait</b> Provider: Send + Sync + Clone + <em>'static</em> {
     <b>fn</b> id(&amp;self) -&gt; &amp;<em>'static</em> str;
     <b>fn</b> list_models(&amp;self) -&gt; Vec&lt;ModelSpec&gt;;
@@ -651,7 +663,7 @@ footer b{font-weight:500;color:var(--text-2)}
           <ul class="plain">
             <li><b>JsonMode ≠ JsonSchema</b>：这是两个能力位。合并会把必然失败的请求打到供应商。</li>
             <li><b>Truncated 是独立变体</b>：流被提前掐断不能当 <code class="inl">Stop</code>。</li>
-            <li><b>工具参数在适配器边界归一化</b>：OpenAI / DeepSeek 给的是 JSON 字符串（可能非法），Anthropic 给结构化 input —— Core 只看到结构化 <code class="inl">Value</code>。</li>
+            <li><b>工具参数在适配器边界归一化</b>：OpenAI / DeepSeek 给的是 JSON 字符串（可能非法），Anthropic 给结构化 input —— 上层只看到结构化 <code class="inl">Value</code>。</li>
           </ul>
         </div>
       </div>
@@ -670,7 +682,7 @@ footer b{font-weight:500;color:var(--text-2)}
         <div class="ms-row">
           <div class="id">M0</div>
           <div class="ttl">文档体系与关键决策定稿</div>
-          <div class="done-criteria">地图可用；D1–D4 均有结论</div>
+          <div class="done-criteria">地图可用；D1–D5 均有结论</div>
           <div class="owns">—</div>
           <div class="stat-cell"><span class="pill ok"><i></i>已完成</span></div>
         </div>
@@ -678,42 +690,42 @@ footer b{font-weight:500;color:var(--text-2)}
           <div class="id">M1</div>
           <div class="ttl">workspace + 契约层</div>
           <div class="done-criteria">契约类型落地、单测通过、clippy -D warnings 干净</div>
-          <div class="owns"><b>agent-schema</b> · <b>agent-providers</b></div>
+          <div class="owns"><b>crates/common</b> · <b>crates/infra/providers</b></div>
           <div class="stat-cell"><span class="pill ok"><i></i>已完成</span></div>
         </div>
         <div class="ms-row now">
           <div class="id">M2</div>
           <div class="ttl">传输层</div>
           <div class="done-criteria">一次真实请求能流式收完；坏帧 / 截断 / 超时均有用例覆盖</div>
-          <div class="owns"><b>agent-transport</b></div>
+          <div class="owns"><b>crates/infra/transport</b></div>
           <div class="stat-cell"><span class="pill wip"><i></i>进行中</span></div>
         </div>
         <div class="ms-row">
           <div class="id">M3</div>
           <div class="ttl">首个适配器</div>
           <div class="done-criteria">OpenAI 兼容族跑通 Q1 的 12 条用例</div>
-          <div class="owns"><b>agent-providers</b></div>
+          <div class="owns"><b>crates/infra/providers</b></div>
           <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
         </div>
         <div class="ms-row">
           <div class="id">M4</div>
           <div class="ttl">Agent 循环</div>
           <div class="done-criteria">CLI 上完成单轮与多轮（含工具结果回填）对话</div>
-          <div class="owns"><b>agent-core</b> · <b>agent-app</b></div>
+          <div class="owns"><b>crates/features/chat</b> · <b>crates/app</b></div>
           <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
         </div>
         <div class="ms-row">
           <div class="id">M5</div>
           <div class="ttl">UI 层 + 会话持久化</div>
           <div class="done-criteria">形态由 D3 决定；会话可存可取（方案细节 → GUI）</div>
-          <div class="owns"><b>agent-ui</b> · <b>agent-store</b></div>
+          <div class="owns"><b>crates/features/{chat,sessions,settings}</b> · <b>crates/infra/store</b></div>
           <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
         </div>
         <div class="ms-row">
           <div class="id">M6</div>
           <div class="ttl">工具调用 + 路由兜底</div>
           <div class="done-criteria">多工具并行、失败降级链生效</div>
-          <div class="owns"><b>agent-core</b> · <b>agent-routing</b></div>
+          <div class="owns"><b>crates/features/chat</b> · <b>crates/infra/routing</b></div>
           <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
         </div>
       </div>
@@ -741,7 +753,7 @@ footer b{font-weight:500;color:var(--text-2)}
       </div>
       <div class="rules">
         <div><b>技术栈已定</b>：Rust edition 2024 + tokio 后端。UI 形态未定（D3）前不写 UI 代码，不引入 Electron / Tauri。</div>
-        <div><b>供应商差异不得泄漏到 Core</b>：核心只依赖 A2 的契约。</div>
+        <div><b>供应商差异不得泄漏到功能切片</b>：核心只依赖 A2 的契约。</div>
         <div><b>一个结论只有一个家</b>：文档之间只许用 ID 引用，不许复制内容。</div>
         <div><b>未决问题只写在 S2</b>；ADR 只增不改。</div>
         <div><b>密钥 / 真实 endpoint 不入库</b>；对外接口流式优先；UI 线程禁止阻塞。</div>
