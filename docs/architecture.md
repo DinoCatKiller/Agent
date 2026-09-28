@@ -94,6 +94,8 @@ agent/
   tests/                 契约测试 + fixtures
 ```
 
+> ⚠️ **本节结构正在复核**：把代码改成**按功能**（而非按层）组织的方案见 `D5`（提案）。`D5` 定稿前以本节为准。
+
 依赖只能向下；`agent-core`、`agent-schema` 不得依赖具体实现 crate。
 
 **文档归属**：crate 相关的规格放在该 crate 的 `README.md` / `docs/` 下，跨 crate 的放在根 `docs/`；判定规则见 `AGENTS.md` §1。阶段状态不靠搬文件表达（见 `S1`）。

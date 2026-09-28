@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent · 架构图</title>
+<meta name="description" content="Agent 多模型接入客户端：分层、调用流、crate 依赖、契约核心与里程碑。">
+<style>
+/* ============================================================
+   设计令牌 —— 单一强调色 + 发丝级描边 + 暖调深色底
+   语义色只出现在「状态点」这一种极小像素上
+   ============================================================ */
+:root{
+  --ground:#08090A;
+  --surface-1:#131419;
+  --surface-2:#1B1D23;
+  --surface-3:#24262E;
+  --hairline:rgba(255,255,255,.07);
+  --hairline-2:rgba(255,255,255,.12);
+  --text:#F7F8F8;
+  --text-2:#9CA3AF;
+  --text-3:#6B7280;
+  --accent:#5E6AD2;
+  --accent-soft:rgba(94,106,210,.14);
+  --ok:#4FB477;
+  --wip:#D9A05B;
+  --todo:#5A6068;
+
+  /* 末尾挂 CJK 无衬线：Latin 走等宽、汉字走可控的思源/苹方，避免落到随机 fallback */
+  --mono:ui-monospace,"Cascadia Mono","JetBrains Mono","SF Mono",Consolas,"Liberation Mono","PingFang SC","Microsoft YaHei UI","Source Han Sans SC",monospace;
+  --sans:"PingFang SC","HarmonyOS Sans SC","MiSans","Microsoft YaHei UI","Microsoft YaHei","Source Han Sans SC","Noto Sans SC",sans-serif;
+
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:40px; --sp-7:64px; --sp-8:96px;
+  --r-s:6px; --r-m:12px; --r-l:16px;
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+html[data-theme="light"]{
+  --ground:#FAFAF8;
+  --surface-1:#FFFFFF;
+  --surface-2:#F4F4F1;
+  --surface-3:#EBEBE7;
+  --hairline:rgba(0,0,0,.09);
+  --hairline-2:rgba(0,0,0,.16);
+  --text:#121316;
+  --text-2:#565963;
+  --text-3:#8B8F99;
+  --accent:#4A56C4;
+  --accent-soft:rgba(74,86,196,.10);
+  --ok:#2E8B57;
+  --wip:#9E6E1E;
+  --todo:#AEB2BA;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--text);
+  font:400 15px/1.6 var(--sans);
+  -webkit-font-smoothing:antialiased;
+  text-wrap:pretty;
+}
+a{color:inherit}
+::selection{background:var(--accent-soft)}
+
+/* 顶部发丝光晕 —— 极低饱和，仅作顶部环境光 */
+body::before{
+  content:"";position:fixed;inset:0 0 auto 0;height:340px;pointer-events:none;z-index:0;
+  background:radial-gradient(900px 300px at 22% -12%,var(--accent-soft),transparent 68%);
+  opacity:.9;
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar{
+  position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;gap:var(--sp-4);
+  padding:0 var(--sp-5);height:56px;
+  background:var(--ground);
+  background:color-mix(in srgb,var(--ground) 82%,transparent);
+  backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--hairline);
+}
+.brand{display:flex;align-items:baseline;gap:var(--sp-3);min-width:0}
+.brand b{font:600 14px/1 var(--mono);letter-spacing:-.01em;white-space:nowrap}
+.brand span{font-size:12px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .spacer{flex:1}
+.tbtn{
+  appearance:none;cursor:pointer;
+  font:500 12px/1 var(--mono);color:var(--text-2);
+  background:var(--surface-1);border:1px solid var(--hairline-2);border-radius:var(--r-s);
+  padding:7px 10px;transition:color .15s var(--ease),border-color .15s var(--ease),background .15s var(--ease);
+}
+.tbtn:hover{color:var(--text);background:var(--surface-2)}
+.tbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- 骨架 ---------- */
+.shell{
+  position:relative;z-index:1;
+  max-width:1500px;margin:0 auto;padding:var(--sp-7) var(--sp-5) var(--sp-8);
+  display:grid;grid-template-columns:168px minmax(0,1fr);gap:56px;
+}
+.nav{position:sticky;top:88px;align-self:start}
+.nav h4{
+  margin:0 0 var(--sp-3);font:500 10px/1 var(--mono);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--text-3);
+}
+.nav a{
+  display:flex;gap:10px;padding:7px 0;text-decoration:none;
+  font-size:13px;color:var(--text-3);border-top:1px solid var(--hairline);
+  transition:color .15s var(--ease);
+}
+.nav a:last-child{border-bottom:1px solid var(--hairline)}
+.nav a i{font:500 11px/1.5 var(--mono);font-style:normal;color:var(--text-3);flex:none;transition:color .15s var(--ease)}
+.nav a:hover{color:var(--text)}
+.nav a[aria-current="true"]{color:var(--text)}
+.nav a[aria-current="true"] i{color:var(--accent)}
+.nav-note{margin-top:var(--sp-4);font-size:11.5px;line-height:1.55;color:var(--text-3)}
+
+/* ---------- 页头 ---------- */
+.hero{margin-bottom:var(--sp-7)}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font:500 10.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--text-3);margin-bottom:var(--sp-4);
+}
+.eyebrow::before{content:"";width:22px;height:1px;background:var(--hairline-2)}
+h1{
+  margin:0;font:600 clamp(38px,6vw,64px)/1.02 var(--mono);
+  letter-spacing:-.035em;
+}
+h1 em{font-style:normal;color:var(--accent)}
+.hero p{margin:var(--sp-4) 0 0;max-width:62ch;color:var(--text-2);font-size:15px}
+.src{display:flex;flex-wrap:wrap;gap:6px var(--sp-3);margin-top:var(--sp-5);font:400 11.5px/1.7 var(--mono);color:var(--text-3)}
+.src b{font-weight:500;color:var(--text-2)}
+
+.stats{display:flex;flex-wrap:wrap;gap:var(--sp-3);margin-top:var(--sp-5)}
+.stat{
+  display:flex;align-items:center;gap:9px;
+  background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-m);
+  padding:10px 14px;
+}
+.stat b{font:600 15px/1 var(--mono)}
+.stat span{font-size:12px;color:var(--text-2)}
+.stat.is-now{border-color:var(--hairline-2);background:var(--surface-2)}
+
+/* ---------- 区块 ---------- */
+section{margin-top:var(--sp-8)}
+.sec-head{display:flex;align-items:baseline;gap:var(--sp-4);padding-bottom:var(--sp-3);border-bottom:1px solid var(--hairline)}
+.sec-head i{font:500 11px/1 var(--mono);font-style:normal;color:var(--accent);flex:none;padding-top:6px}
+.sec-head h2{margin:0;font:600 21px/1.3 var(--sans);letter-spacing:-.015em}
+.sec-head p{margin:0 0 0 auto;font-size:12px;color:var(--text-3);text-align:right}
+.lead{margin:var(--sp-4) 0 var(--sp-5);color:var(--text-2);font-size:14px;max-width:78ch}
+
+/* ---------- 分层图 ---------- */
+.layers{margin-top:var(--sp-5);display:flex;flex-direction:column}
+.layer{
+  display:grid;grid-template-columns:minmax(200px,240px) minmax(0,1fr) 74px;
+  gap:var(--sp-5);align-items:center;
+  background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-m);
+  padding:var(--sp-4) var(--sp-5);
+}
+.layer + .arrow{display:flex;align-items:center;gap:var(--sp-3);padding:7px 0 7px var(--sp-5);color:var(--text-3)}
+.layer + .arrow span{font:400 11px/1 var(--mono)}
+.arrow svg{flex:none;opacity:.55}
+.layer-side{background:var(--surface-2)}
+.l-name{display:flex;flex-direction:column;gap:5px;min-width:0}
+.l-name b{font:600 15px/1.25 var(--sans);letter-spacing:-.01em}
+.l-name code{
+  font:500 11px/1.4 var(--mono);color:var(--text-2);
+  background:var(--surface-2);border:1px solid var(--hairline);border-radius:5px;
+  padding:3px 6px;align-self:flex-start;max-width:100%;overflow-wrap:anywhere;
+}
+.l-side .l-name code,.layer-side .l-name code{background:var(--surface-3)}
+.l-desc{color:var(--text-2);font-size:13.5px;min-width:0}
+.l-desc small{display:block;margin-top:5px;font:400 11.5px/1.5 var(--mono);color:var(--text-3)}
+.steps{display:flex;justify-content:flex-end;gap:5px;flex-wrap:wrap}
+.steps b{
+  font:500 11px/1 var(--mono);width:20px;height:20px;
+  display:grid;place-items:center;border-radius:5px;
+  background:var(--accent-soft);color:var(--accent);border:1px solid transparent;
+}
+
+/* ---------- 调用流 ---------- */
+/* 6 步 -> 3×2，保证末行不出现露底的空格 */
+.flow{margin-top:var(--sp-5);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--hairline);border:1px solid var(--hairline);border-radius:var(--r-m);overflow:hidden}
+.flow div{background:var(--surface-1);padding:var(--sp-4)}
+.flow b{display:block;font:500 10.5px/1 var(--mono);color:var(--accent);margin-bottom:8px}
+.flow p{margin:0;font-size:13px;color:var(--text-2)}
+.flow code{font:400 12px/1.4 var(--mono);color:var(--text)}
+
+/* ---------- 依赖图 ---------- */
+.dep-wrap{
+  margin-top:var(--sp-5);
+  background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-l);
+  padding:var(--sp-5) var(--sp-3) var(--sp-3);
+  overflow-x:auto;
+}
+svg.dep{display:block;width:100%;min-width:1080px;height:auto}
+svg.dep .e{fill:none;stroke:var(--hairline-2);stroke-width:1.25}
+svg.dep .e.dashed{stroke-dasharray:5 5;opacity:.75}
+svg.dep .arhead{fill:none;stroke:var(--hairline-2);stroke-width:1.4}
+svg.dep .node rect{fill:var(--surface-2);stroke:var(--hairline-2);stroke-width:1}
+svg.dep .node.todo rect{fill:var(--surface-1);stroke-dasharray:5 5;stroke:var(--hairline-2)}
+svg.dep .node.done rect{fill:var(--surface-3)}
+svg.dep .node .n{font:500 15px/1 var(--mono);fill:var(--text)}
+svg.dep .node.todo .n{fill:var(--text-2)}
+svg.dep .node .d{font:400 13px/1 var(--sans);fill:var(--text-3)}
+svg.dep .node .m{font:500 12px/1 var(--mono);fill:var(--text-3);text-anchor:end}
+svg.dep .node.done .m,svg.dep .bar .m{fill:var(--ok)}
+svg.dep .node.wip .m{fill:var(--wip)}
+svg.dep .dot{stroke:none}
+svg.dep .dot.ok{fill:var(--ok)}
+svg.dep .dot.wip{fill:var(--wip)}
+svg.dep .dot.todo{fill:var(--todo)}
+svg.dep .ann{font:400 11px/1 var(--mono);fill:var(--text-3)}
+svg.dep .bar rect{fill:var(--surface-3);stroke:var(--hairline-2);stroke-width:1}
+svg.dep .bar .n{font:600 15px/1 var(--mono);fill:var(--text)}
+svg.dep .bar .d{font:400 12.5px/1 var(--sans);fill:var(--text-2)}
+svg.dep .bar .m{font:500 12px/1 var(--mono);text-anchor:end}
+
+.legend{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-5);margin-top:var(--sp-4);font-size:12px;color:var(--text-2)}
+.legend span{display:flex;align-items:center;gap:8px}
+.legend i{width:8px;height:8px;border-radius:50%;flex:none}
+.legend i.ok{background:var(--ok)} .legend i.wip{background:var(--wip)} .legend i.todo{background:transparent;border:1px dashed var(--text-3)}
+.legend svg{flex:none}
+
+/* ---------- 卡片 ---------- */
+.cards{margin-top:var(--sp-5);display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:var(--sp-4)}
+.card{background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-m);padding:var(--sp-5)}
+.card h3{margin:0 0 var(--sp-3);font:600 14px/1.3 var(--sans)}
+.card h3 small{display:block;margin-top:5px;font:400 11.5px/1.5 var(--mono);color:var(--text-3)}
+.card p{margin:0;font-size:13.5px;color:var(--text-2)}
+pre{
+  margin:var(--sp-3) 0 0;padding:var(--sp-4);overflow-x:auto;
+  background:var(--ground);border:1px solid var(--hairline);border-radius:var(--r-s);
+  font:400 12px/1.7 var(--mono);color:var(--text-2);
+}
+pre b{font-weight:500;color:var(--text)}
+pre em{font-style:normal;color:var(--accent)}
+pre i{font-style:normal;color:var(--text-3)}
+code.inl{font:400 12.5px/1 var(--mono);background:var(--surface-2);border:1px solid var(--hairline);border-radius:5px;padding:2px 5px;color:var(--text)}
+
+.tbl{width:100%;border-collapse:collapse;margin-top:var(--sp-3);font-size:13px}
+.tbl th{text-align:left;font:500 10.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);padding:0 0 8px;border-bottom:1px solid var(--hairline)}
+.tbl td{padding:8px 0;border-bottom:1px solid var(--hairline);color:var(--text-2);vertical-align:top}
+.tbl tr:last-child td{border-bottom:0}
+.tbl td.k{color:var(--text);white-space:nowrap;font:500 12.5px/1.5 var(--mono)}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--sp-3)}
+.chips b{
+  font:500 11.5px/1 var(--mono);color:var(--text-2);
+  background:var(--surface-2);border:1px solid var(--hairline);border-radius:5px;padding:5px 8px;
+}
+.chips b.hot{color:var(--accent);border-color:var(--hairline-2);background:var(--accent-soft)}
+
+ul.plain{margin:var(--sp-3) 0 0;padding:0;list-style:none}
+ul.plain li{position:relative;padding-left:18px;margin-bottom:9px;font-size:13.5px;color:var(--text-2)}
+ul.plain li::before{content:"";position:absolute;left:2px;top:8px;width:5px;height:5px;border-radius:1px;background:var(--text-3)}
+ul.plain li b{color:var(--text);font-weight:500}
+
+/* ---------- 里程碑 ---------- */
+.ms{margin-top:var(--sp-5);border:1px solid var(--hairline);border-radius:var(--r-m);overflow:hidden}
+.ms-row{
+  display:grid;grid-template-columns:56px 168px minmax(0,1fr) 176px 88px;
+  gap:var(--sp-4);align-items:center;padding:var(--sp-4) var(--sp-5);
+  background:var(--surface-1);border-top:1px solid var(--hairline);
+}
+.ms-row:first-child{border-top:0}
+.ms-row.now{background:var(--surface-2)}
+.ms-row .id{font:600 12.5px/1 var(--mono);color:var(--text-3)}
+.ms-row.now .id{color:var(--accent)}
+.ms-row .ttl{font-size:14px;color:var(--text);font-weight:500}
+.ms-row .done-criteria{font-size:12.5px;color:var(--text-3)}
+.ms-row .owns{font:400 11.5px/1.6 var(--mono);color:var(--text-3);overflow-wrap:anywhere}
+.ms-row .owns b{color:var(--text-2);font-weight:400}
+.pill{display:inline-flex;align-items:center;gap:7px;font:500 11px/1 var(--mono);white-space:nowrap}
+.pill i{width:7px;height:7px;border-radius:50%;flex:none}
+.pill.ok{color:var(--ok)} .pill.ok i{background:var(--ok)}
+.pill.wip{color:var(--wip)} .pill.wip i{background:var(--wip)}
+.pill.todo{color:var(--text-3)} .pill.todo i{background:transparent;border:1px dashed var(--text-3)}
+.ms-row .stat-cell{display:flex;justify-content:flex-end}
+.note{
+  margin-top:var(--sp-4);padding:var(--sp-4) var(--sp-5);
+  background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-m);
+}
+.note h4{margin:0 0 var(--sp-3);font:500 10.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text-3)}
+
+/* ---------- 约束 ---------- */
+/* 6 条 -> 3×2，宽屏不塌成 4 列露空格 */
+.rules{margin-top:var(--sp-5);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--hairline);border:1px solid var(--hairline);border-radius:var(--r-m);overflow:hidden;counter-reset:r}
+.rules div{background:var(--surface-1);padding:var(--sp-4) var(--sp-5);font-size:13.5px;color:var(--text-2);position:relative;padding-left:52px}
+.rules div::before{
+  counter-increment:r;content:"R" counter(r);
+  position:absolute;left:var(--sp-5);top:var(--sp-4);
+  font:500 10.5px/1.6 var(--mono);color:var(--accent);
+}
+.rules div b{color:var(--text);font-weight:500}
+
+/* ---------- 页脚 ---------- */
+footer{
+  position:relative;z-index:1;max-width:1500px;margin:0 auto;
+  padding:var(--sp-5) var(--sp-5) var(--sp-7);
+  border-top:1px solid var(--hairline);
+  display:flex;flex-wrap:wrap;gap:var(--sp-3) var(--sp-5);
+  font-size:12px;color:var(--text-3);
+}
+footer b{font-weight:500;color:var(--text-2)}
+
+/* ---------- 响应式 ---------- */
+@media (max-width:960px){
+  .shell{grid-template-columns:1fr;gap:var(--sp-6);padding-top:var(--sp-6)}
+  .nav{position:static;display:flex;flex-wrap:wrap;gap:6px}
+  .nav h4,.nav-note{display:none}
+  .nav a{border:0;background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-s);padding:7px 10px}
+  .nav a:last-child{border:1px solid var(--hairline)}
+  .layer{grid-template-columns:1fr;gap:var(--sp-3)}
+  .steps{justify-content:flex-start}
+  .flow{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rules{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ms-row{grid-template-columns:60px minmax(0,1fr);gap:var(--sp-2) var(--sp-4)}
+  .ms-row .done-criteria,.ms-row .owns{grid-column:2}
+  .ms-row .stat-cell{grid-column:2;justify-content:flex-start}
+  .sec-head p{display:none}
+}
+@media (max-width:560px){
+  .flow,.rules{grid-template-columns:minmax(0,1fr)}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+  html{scroll-behavior:auto!important}
+}
+
+/* ---------- 打印 / 存 PDF ---------- */
+@media print{
+  :root,html[data-theme="dark"]{
+    --ground:#FFFFFF;--surface-1:#FFFFFF;--surface-2:#F5F5F3;--surface-3:#EDEDEA;
+    --hairline:rgba(0,0,0,.16);--hairline-2:rgba(0,0,0,.34);
+    --text:#000;--text-2:#3A3D45;--text-3:#6E727C;--accent:#3B46B0;--accent-soft:rgba(59,70,176,.10);
+    --ok:#1F6B41;--wip:#8A5C10;--todo:#9AA0A6;
+  }
+  body::before{display:none}
+  .topbar,.nav{display:none!important}
+  .shell{display:block;max-width:none;padding:0}
+  section{margin-top:32px;break-inside:avoid}
+  .dep-wrap{overflow:visible}
+  svg.dep{min-width:0}
+  a{text-decoration:none}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <b>AGENT</b>
+    <span>多模型接入客户端 · 架构图</span>
+  </div>
+  <div class="spacer"></div>
+  <button class="tbtn" id="theme" type="button" aria-label="切换明暗主题">主题 · 深</button>
+</header>
+
+<div class="shell">
+
+  <nav class="nav" aria-label="目录">
+    <h4>Contents</h4>
+    <a href="#s1"><i>01</i>分层与调用流</a>
+    <a href="#s2"><i>02</i>crate 依赖图</a>
+    <a href="#s3"><i>03</i>契约核心</a>
+    <a href="#s4"><i>04</i>里程碑</a>
+    <a href="#s5"><i>05</i>硬约束</a>
+    <p class="nav-note">本图是 <b>A1</b> 的派生产物。<br>架构变更请先改 A1，再同步此图。</p>
+  </nav>
+
+  <main>
+
+    <div class="hero">
+      <div class="eyebrow">Architecture Map · 一图流</div>
+      <h1>架构<em>图</em></h1>
+      <p>四件事一眼看完：<b>分了几层</b>、<b>一次调用怎么走</b>、<b>crate 之间谁依赖谁</b>、<b>现在做到哪</b>。目标是让「接入第 N 家模型」变成加一个适配器，而不是改核心。</p>
+      <div class="src">
+        <span>依据 <b>A1</b> 架构与分层</span>
+        <span><b>A2</b> Provider 契约</span>
+        <span><b>RM</b> 里程碑</span>
+        <span><b>S1</b> 当前阶段</span>
+        <span>更新 <b>2026-09-28</b></span>
+      </div>
+      <div class="stats">
+        <div class="stat is-now"><span class="pill wip"><i></i></span><b>M2</b><span>传输层 · 进行中</span></div>
+        <div class="stat"><span class="pill ok"><i></i></span><b>1</b><span>crate 已落地</span></div>
+        <div class="stat"><span class="pill wip"><i></i></span><b>3</b><span>crate 进行中</span></div>
+        <div class="stat"><span class="pill todo"><i></i></span><b>6</b><span>crate 未建</span></div>
+      </div>
+    </div>
+
+    <!-- ================= 01 分层 ================= -->
+    <section id="s1">
+      <div class="sec-head">
+        <i>01</i>
+        <h2>运行时分层与一次调用的数据流</h2>
+        <p>A1 §2 / §4</p>
+      </div>
+      <p class="lead">依赖<b>只能向下</b>。右侧编号 = 一次模型调用的第几步；也就是说，从下往上看是「能力越底层越通用」，从上往下看是「一次请求逐步落地」。</p>
+
+      <div class="layers">
+        <div class="layer">
+          <div class="l-name"><b>App / CLI</b><code>agent-app</code></div>
+          <div class="l-desc">组装依赖、承载命令。<small>不含业务逻辑</small></div>
+          <div class="steps"></div>
+        </div>
+        <div class="arrow"><svg width="12" height="18" viewBox="0 0 12 18" aria-hidden="true"><path d="M6 1v13m0 0-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>依赖向下</span></div>
+
+        <div class="layer">
+          <div class="l-name"><b>Agent Core</b><code>agent-core</code></div>
+          <div class="l-desc">循环、规划、记忆、工具编排。<small>不依赖任何 provider 与 UI</small></div>
+          <div class="steps"><b>1</b></div>
+        </div>
+        <div class="arrow"><svg width="12" height="18" viewBox="0 0 12 18" aria-hidden="true"><path d="M6 1v13m0 0-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>依赖向下</span></div>
+
+        <div class="layer">
+          <div class="l-name"><b>Capability &amp; Policy</b><code>agent-routing</code></div>
+          <div class="l-desc">能力校验、路由与兜底链、重试降级、预算控制。<small>重试/降级策略细则 → A6（未建）</small></div>
+          <div class="steps"><b>2</b><b>3</b><b>6</b></div>
+        </div>
+        <div class="arrow"><svg width="12" height="18" viewBox="0 0 12 18" aria-hidden="true"><path d="M6 1v13m0 0-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>依赖向下</span></div>
+
+        <div class="layer">
+          <div class="l-name"><b>Provider Adapter</b><code>agent-providers</code></div>
+          <div class="l-desc">每家一个适配器，实现统一契约 <b>A2</b>。<small>供应商差异到此为止，不许越过这条线</small></div>
+          <div class="steps"><b>4</b></div>
+        </div>
+        <div class="arrow"><svg width="12" height="18" viewBox="0 0 12 18" aria-hidden="true"><path d="M6 1v13m0 0-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span>依赖向下</span></div>
+
+        <div class="layer">
+          <div class="l-name"><b>Transport</b><code>agent-transport</code></div>
+          <div class="l-desc">HTTP / SSE / WS、超时、限流、退避重试。<small>收尾三分：传输错误 / 可恢复坏帧 / EOF 截断</small></div>
+          <div class="steps"><b>4</b><b>5</b></div>
+        </div>
+
+        <div class="layer layer-side">
+          <div class="l-name"><b>Observability</b><code>agent-observability</code></div>
+          <div class="l-desc">trace / 日志 / 指标 / 成本。<small>↕ 贯穿各层，只依赖契约，不被任何人依赖</small></div>
+          <div class="steps"><b>6</b></div>
+        </div>
+      </div>
+
+      <div class="flow">
+        <div><b>STEP 1</b><p>Core 组装 <code>InternalMessage[]</code></p></div>
+        <div><b>STEP 2</b><p>Registry 校验能力（vision / tools / json）</p></div>
+        <div><b>STEP 3</b><p>Router 选定 provider + model，含兜底链</p></div>
+        <div><b>STEP 4</b><p>Adapter 转厂商格式 → Transport 发送</p></div>
+        <div><b>STEP 5</b><p>流式回传 → 归一化为 <code>StreamEvent</code></p></div>
+        <div><b>STEP 6</b><p>记录 token / latency / cost；失败交 Policy 决定重试或降级</p></div>
+      </div>
+    </section>
+
+    <!-- ================= 02 依赖图 ================= -->
+    <section id="s2">
+      <div class="sec-head">
+        <i>02</i>
+        <h2>crate 依赖图与当前进度</h2>
+        <p>A1 §5 / RM / S1</p>
+      </div>
+      <p class="lead">实线 = 已规划的直接编译期依赖，虚线 = 规划中尚未接入。不画间接依赖（由传递性体现）—— 所有 crate 最终都落在 <code class="inl">agent-schema</code> 上。</p>
+
+      <div class="dep-wrap">
+        <svg class="dep" viewBox="0 0 1400 752" role="img" aria-label="crate 依赖图：agent-schema 为契约唯一来源，向上依次是 transport、providers、routing、core、ui，顶端为 agent-app">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path class="arhead" d="M0 1 8 5 0 9"/>
+            </marker>
+          </defs>
+
+          <!-- 边：先画线，后画节点，保证节点压住线 -->
+          <g>
+            <path class="e" d="M700 92 V150" marker-end="url(#ar)"/>
+            <path class="e dashed" d="M815 64 H1065 V150" marker-end="url(#ar)"/>
+            <path class="e" d="M815 178 H950" marker-end="url(#ar)"/>
+            <path class="e" d="M700 206 V264" marker-end="url(#ar)"/>
+            <path class="e" d="M700 320 V378" marker-end="url(#ar)"/>
+            <path class="e" d="M700 434 V458 H322 V492" marker-end="url(#ar)"/>
+            <path class="e" d="M322 548 V640" marker-end="url(#ar)"/>
+            <path class="e" d="M574 548 V640" marker-end="url(#ar)"/>
+            <path class="e" d="M826 548 V640" marker-end="url(#ar)"/>
+            <path class="e" d="M1078 548 V640" marker-end="url(#ar)"/>
+          </g>
+
+          <!-- 节点 -->
+          <g class="node wip" transform="translate(585,36)">
+            <rect width="230" height="56" rx="14"/>
+            <text class="n" x="16" y="26">agent-app</text>
+            <text class="d" x="16" y="45">二进制入口 · 组装依赖</text>
+            <circle class="dot wip" cx="214" cy="18" r="4"/>
+            <text class="m" x="216" y="45">M4</text>
+          </g>
+
+          <g class="node todo" transform="translate(585,150)">
+            <rect width="230" height="56" rx="14"/>
+            <text class="n" x="16" y="26">agent-core</text>
+            <text class="d" x="16" y="45">循环 · 规划 · 工具编排</text>
+            <circle class="dot todo" cx="214" cy="18" r="4"/>
+            <text class="m" x="216" y="45">M4</text>
+          </g>
+
+          <g class="node todo" transform="translate(950,150)">
+            <rect width="230" height="56" rx="14"/>
+            <text class="n" x="16" y="26">agent-ui</text>
+            <text class="d" x="16" y="45">唯一出口：GPUI 视图</text>
+            <circle class="dot todo" cx="214" cy="18" r="4"/>
+            <text class="m" x="216" y="45">M5</text>
+          </g>
+
+          <g class="node todo" transform="translate(585,264)">
+            <rect width="230" height="56" rx="14"/>
+            <text class="n" x="16" y="26">agent-routing</text>
+            <text class="d" x="16" y="45">注册表 · 能力协商 · 兜底</text>
+            <circle class="dot todo" cx="214" cy="18" r="4"/>
+            <text class="m" x="216" y="45">M6</text>
+          </g>
+
+          <g class="node wip" transform="translate(585,378)">
+            <rect width="230" height="56" rx="14"/>
+            <text class="n" x="16" y="26">agent-providers</text>
+            <text class="d" x="16" y="45">Provider 契约 + 适配器</text>
+            <circle class="dot wip" cx="214" cy="18" r="4"/>
+            <text class="m" x="216" y="45">M3</text>
+          </g>
+
+          <g class="node wip" transform="translate(207,492)">
+            <rect width="230" height="56" rx="14"/>
+            <text class="n" x="16" y="26">agent-transport</text>
+            <text class="d" x="16" y="45">HTTP · SSE · 超时重试</text>
+            <circle class="dot wip" cx="214" cy="18" r="4"/>
+            <text class="m" x="216" y="45">M2</text>
+          </g>
+
+          <g class="node todo" transform="translate(459,492)">
+            <rect width="230" height="56" rx="14"/>
+            <text class="n" x="16" y="26">agent-store</text>
+            <text class="d" x="16" y="45">SQLite 会话持久化</text>
+            <circle class="dot todo" cx="214" cy="18" r="4"/>
+            <text class="m" x="216" y="45">M5</text>
+          </g>
+
+          <g class="node todo" transform="translate(711,492)">
+            <rect width="230" height="56" rx="14"/>
+            <text class="n" x="16" y="26">agent-config</text>
+            <text class="d" x="16" y="45">配置 + keyring 密钥</text>
+            <circle class="dot todo" cx="214" cy="18" r="4"/>
+            <text class="m" x="216" y="45">R1</text>
+          </g>
+
+          <g class="node todo" transform="translate(963,492)">
+            <rect width="230" height="56" rx="14"/>
+            <text class="n" x="16" y="26">agent-observability</text>
+            <text class="d" x="16" y="45">tracing · token 成本</text>
+            <circle class="dot todo" cx="214" cy="18" r="4"/>
+            <text class="m" x="216" y="45">R3</text>
+          </g>
+
+          <g class="bar" transform="translate(70,640)">
+            <rect width="1260" height="62" rx="14"/>
+            <text class="n" x="20" y="27">agent-schema</text>
+            <text class="d" x="20" y="47">契约唯一来源：消息 · 模型 · 流事件 · 错误类型　｜　只依赖 serde / serde_json / thiserror</text>
+            <circle class="dot ok" cx="1240" cy="20" r="4.5"/>
+            <text class="m" x="1242" y="52">M1 · 已落地</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="legend">
+        <span><i class="ok"></i>已落地</span>
+        <span><i class="wip"></i>进行中</span>
+        <span><i class="todo"></i>未建（虚线框）</span>
+        <span><svg width="26" height="8" aria-hidden="true"><path d="M0 4h22" stroke="var(--hairline-2)" stroke-width="1.25" fill="none"/></svg>已规划依赖</span>
+        <span><svg width="26" height="8" aria-hidden="true"><path d="M0 4h22" stroke="var(--hairline-2)" stroke-width="1.25" stroke-dasharray="5 5" fill="none"/></svg>规划中（尚未接入）</span>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <h3>三条依赖规则<small>A1 §2 · 硬约束</small></h3>
+          <ul class="plain">
+            <li><b>只能向下</b>：禁止任何反向依赖。</li>
+            <li><b>Provider 之间禁止互相引用</b>：不共享私有类型。</li>
+            <li><b>Core 禁止 import 任何 provider 私有类型</b>：只认 A2 契约。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>读图要点<small>三处容易看漏的边界</small></h3>
+          <ul class="plain">
+            <li><b>agent-schema 是地面</b>：改它等于改全部，契约变更要先动 A2 / A3。</li>
+            <li><b>agent-ui 是唯一出口</b>：GPUI API 只允许出现在这一个 crate 内。</li>
+            <li><b>三个叶子是同级的</b>：store / config / observability 互不依赖，各自只挂在契约上。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 03 契约 ================= -->
+    <section id="s3">
+      <div class="sec-head">
+        <i>03</i>
+        <h2>契约核心：一个 trait、一套事件、九类错误</h2>
+        <p>A2 · 已落地（M1）</p>
+      </div>
+      <p class="lead">这三样东西是「新增供应商零改核心」的全部依据。<b>加一家供应商 = 实现 trait + 注册表登记一行</b>，不动 Core。</p>
+
+      <div class="cards">
+        <div class="card">
+          <h3><code class="inl">Provider</code> trait<small>agent-providers/src/lib.rs</small></h3>
+          <pre><b>pub trait</b> Provider: Send + Sync + Clone + <em>'static</em> {
+    <b>fn</b> id(&amp;self) -&gt; &amp;<em>'static</em> str;
+    <b>fn</b> list_models(&amp;self) -&gt; Vec&lt;ModelSpec&gt;;
+
+    <b>fn</b> chat(&amp;self, req: ModelRequest, ctx: CallContext)
+        -&gt; <i>impl</i> Future&lt;Output = Result&lt;ModelResponse, ProviderError&gt;&gt;;
+
+    <b>fn</b> stream(&amp;self, req: ModelRequest, ctx: CallContext)
+        -&gt; Result&lt;EventStream, ProviderError&gt;;  <i>// 同步返回</i>
+}</pre>
+          <p style="margin-top:12px">两个刻意的设计：<b>stream 同步返回</b>——鉴权 / 参数错误必须在发出请求前暴露，而不是等第一次 poll；<b>Clone 是硬要求</b>——trait 因 <code class="inl">impl Future</code> 不是 object-safe，路由层要拿到 <code class="inl">dyn</code> 就得靠 <code class="inl">ErasedProvider</code> 把 future 变成 owned。</p>
+        </div>
+
+        <div class="card">
+          <h3>归一化流事件<small>Delta 必须可无状态拼接</small></h3>
+          <table class="tbl">
+            <thead><tr><th>事件</th><th>载荷</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="k">Start</td><td>response_id, model</td><td>首个事件</td></tr>
+              <tr><td class="k">Delta</td><td>kind: Text｜Thinking｜ToolArgs</td><td>增量，顺序即语义</td></tr>
+              <tr><td class="k">ToolCall</td><td>call</td><td>分片拼装完成后一次性给出</td></tr>
+              <tr><td class="k">Usage</td><td>usage</td><td>结束前必给一次，缺失也要补默认值</td></tr>
+              <tr><td class="k">Error</td><td>error</td><td>之后不再发任何事件</td></tr>
+              <tr><td class="k">End</td><td>finish_reason</td><td>末个事件</td></tr>
+            </tbody>
+          </table>
+          <p style="margin-top:12px"><b>收尾三分</b>（硬约束）：传输错误 → <code class="inl">Error</code> 停止；可恢复坏帧 → 跳过继续；<b>EOF 无终止记录 → 必须补 <code class="inl">End{Truncated}</code> 或 <code class="inl">Error</code>，禁止静默当成功</b>。</p>
+        </div>
+
+        <div class="card">
+          <h3>错误分类与默认策略<small>ProviderError · 9 类 · Clone + Serialize</small></h3>
+          <div class="chips">
+            <b>Auth</b><b>RateLimit</b><b>Timeout</b><b>InvalidRequest</b><b>Server</b><b>ContextOverflow</b><b>ContentFilter</b><b>Truncated</b><b>Unknown</b>
+          </div>
+          <p style="margin-top:12px">刻意<b>不用 <code class="inl">Box&lt;dyn Error&gt;</code></b>：错误要进 <code class="inl">StreamEvent</code>、日志与 fixtures 回放，所以必须 <code class="inl">Clone + Serialize</code>，底层原因以字符串留在 <code class="inl">source_message</code>。</p>
+        </div>
+
+        <div class="card">
+          <h3>三个必须知道的设计决定<small>踩过坑才定下来的</small></h3>
+          <ul class="plain">
+            <li><b>JsonMode ≠ JsonSchema</b>：这是两个能力位。合并会把必然失败的请求打到供应商。</li>
+            <li><b>Truncated 是独立变体</b>：流被提前掐断不能当 <code class="inl">Stop</code>。</li>
+            <li><b>工具参数在适配器边界归一化</b>：OpenAI / DeepSeek 给的是 JSON 字符串（可能非法），Anthropic 给结构化 input —— Core 只看到结构化 <code class="inl">Value</code>。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 04 里程碑 ================= -->
+    <section id="s4">
+      <div class="sec-head">
+        <i>04</i>
+        <h2>里程碑与当前进度</h2>
+        <p>RM 定义 · S1 状态</p>
+      </div>
+      <p class="lead">完成的标志是<b>能演示</b>，不是「代码写完」。先让一次调用端到端跑通（M2 → M3 → M4），再把 UI 接上（M5）。</p>
+
+      <div class="ms">
+        <div class="ms-row">
+          <div class="id">M0</div>
+          <div class="ttl">文档体系与关键决策定稿</div>
+          <div class="done-criteria">地图可用；D1–D4 均有结论</div>
+          <div class="owns">—</div>
+          <div class="stat-cell"><span class="pill ok"><i></i>已完成</span></div>
+        </div>
+        <div class="ms-row">
+          <div class="id">M1</div>
+          <div class="ttl">workspace + 契约层</div>
+          <div class="done-criteria">契约类型落地、单测通过、clippy -D warnings 干净</div>
+          <div class="owns"><b>agent-schema</b> · <b>agent-providers</b></div>
+          <div class="stat-cell"><span class="pill ok"><i></i>已完成</span></div>
+        </div>
+        <div class="ms-row now">
+          <div class="id">M2</div>
+          <div class="ttl">传输层</div>
+          <div class="done-criteria">一次真实请求能流式收完；坏帧 / 截断 / 超时均有用例覆盖</div>
+          <div class="owns"><b>agent-transport</b></div>
+          <div class="stat-cell"><span class="pill wip"><i></i>进行中</span></div>
+        </div>
+        <div class="ms-row">
+          <div class="id">M3</div>
+          <div class="ttl">首个适配器</div>
+          <div class="done-criteria">OpenAI 兼容族跑通 Q1 的 12 条用例</div>
+          <div class="owns"><b>agent-providers</b></div>
+          <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
+        </div>
+        <div class="ms-row">
+          <div class="id">M4</div>
+          <div class="ttl">Agent 循环</div>
+          <div class="done-criteria">CLI 上完成单轮与多轮（含工具结果回填）对话</div>
+          <div class="owns"><b>agent-core</b> · <b>agent-app</b></div>
+          <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
+        </div>
+        <div class="ms-row">
+          <div class="id">M5</div>
+          <div class="ttl">UI 层 + 会话持久化</div>
+          <div class="done-criteria">形态由 D3 决定；会话可存可取（方案细节 → GUI）</div>
+          <div class="owns"><b>agent-ui</b> · <b>agent-store</b></div>
+          <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
+        </div>
+        <div class="ms-row">
+          <div class="id">M6</div>
+          <div class="ttl">工具调用 + 路由兜底</div>
+          <div class="done-criteria">多工具并行、失败降级链生效</div>
+          <div class="owns"><b>agent-core</b> · <b>agent-routing</b></div>
+          <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
+        </div>
+      </div>
+
+      <div class="note">
+        <h4>等你拍板 · 会卡住里程碑的三件事（S2）</h4>
+        <div class="chips">
+          <b class="hot">Q1 · UI 交付形态 → 阻塞 M5</b>
+          <b class="hot">Q3 · 首批适配器优先级 → 阻塞 M3</b>
+          <b class="hot">Q2 · 样式层是否按 D4 执行 → 阻塞 M5</b>
+          <b>Q4 · 是否支持 MCP</b>
+          <b>Q5 · 本地模型是否一等公民</b>
+          <b>Q6 · 产物体积 / 签名</b>
+          <b>Q7 · 项目正式名称</b>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 05 约束 ================= -->
+    <section id="s5">
+      <div class="sec-head">
+        <i>05</i>
+        <h2>硬约束（始终生效）</h2>
+        <p>AGENTS.md §4</p>
+      </div>
+      <div class="rules">
+        <div><b>技术栈已定</b>：Rust edition 2024 + tokio 后端。UI 形态未定（D3）前不写 UI 代码，不引入 Electron / Tauri。</div>
+        <div><b>供应商差异不得泄漏到 Core</b>：核心只依赖 A2 的契约。</div>
+        <div><b>一个结论只有一个家</b>：文档之间只许用 ID 引用，不许复制内容。</div>
+        <div><b>未决问题只写在 S2</b>；ADR 只增不改。</div>
+        <div><b>密钥 / 真实 endpoint 不入库</b>；对外接口流式优先；UI 线程禁止阻塞。</div>
+        <div><b>文档跟代码走</b>：改某个 crate 的行为，同批次更新它的 README / docs。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <span><b>来源</b> A1 · A2 · A3 · RM · S1 · S2 · AGENTS.md</span>
+  <span><b>维护</b> 本图是派生产物，唯一结论来源仍是 A1；改架构先改 A1，再同步此图。</span>
+  <span><b>查看</b> 直接双击打开即离线可用；Ctrl/⌘ + P 可导出 PDF（自动切浅色）。</span>
+</footer>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  var btn=document.getElementById('theme');
+  var KEY='agent-arch-theme';
+
+  function read(){
+    try{ return localStorage.getItem(KEY); }catch(e){ return null; }
+  }
+  function write(v){
+    try{ localStorage.setItem(KEY,v); }catch(e){}
+  }
+  function apply(t){
+    root.setAttribute('data-theme',t);
+    btn.textContent = t==='dark' ? '主题 · 深' : '主题 · 浅';
+  }
+
+  var saved=read();
+  if(!saved){
+    saved = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  apply(saved);
+
+  btn.addEventListener('click',function(){
+    var next = root.getAttribute('data-theme')==='dark' ? 'light' : 'dark';
+    apply(next); write(next);
+  });
+
+  /* 目录高亮 */
+  var links=[].slice.call(document.querySelectorAll('.nav a'));
+  var secs=links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if(!en.isIntersecting) return;
+        links.forEach(function(a,i){
+          if(secs[i]===en.target) a.setAttribute('aria-current','true');
+          else a.removeAttribute('aria-current');
+        });
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>

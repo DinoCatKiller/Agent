@@ -9,7 +9,7 @@
 | 规模 | ~0.6k token |
 
 > **本文件只描述当前任务；任务完成即清空或重写。** 概览在根 `STATUS.md`（`S1`）。
-> ⚠️ 现状：crate 本体尚未创建。本文件随任务先立，`Cargo.toml` / `README.md` / `src/` 在 M2 启动时补齐。
+> 现状：crate 骨架已建（`Cargo.toml` / `README.md` / `src/lib.rs`，已登记进 workspace 与地图）；HTTP / SSE / 重试等实现待补。
 
 ## 任务
 
@@ -17,8 +17,8 @@
 
 ### 待办
 
-- [ ] 建 `crates/agent-transport`：`Cargo.toml` + `README.md` + `src/lib.rs`，并在 `AGENTS.md` §2 地图登记
-- [ ] reqwest client 封装：连接 / 读超时、**流式空闲超时**、代理、rustls
+- [x] 建 `crates/agent-transport`：`Cargo.toml` + `README.md` + `src/lib.rs`，并在 `AGENTS.md` §2 地图登记
+- [x] reqwest client 封装：连接 / 读超时、**流式空闲超时**、代理、rustls（`src/http.rs`）
 - [ ] SSE 解析：`bytes_stream` → 事件流。先评估 `eventsource-stream` / `sse-rs`；不满足则自研（200–400 行，含停止条件）
 - [ ] 三分收尾语义（`A2` §4）：传输错误 / 可恢复坏帧 / **EOF 截断** —— 截断绝不允许静默当成功
 - [ ] 取消：把 `CallContext.cancel` 接进请求与流

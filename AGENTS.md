@@ -62,6 +62,7 @@
 |----|------|------|--------|------|------|
 | G1 | 目标、技术路线、自研边界 | `docs/goals.md` | 争论「要不要自研 / 先做哪个」 | ~2k | ✅ |
 | A1 | 架构与分层 | `docs/architecture.md` | 新建模块、改目录结构 | ~1.6k | ✅ |
+| A1-V | 架构图（`A1`/`RM`/`S1` 的**可视化**，离线 HTML） | `docs/architecture-map.html` | 想一眼看懂分层 / 依赖 / 进度 | 1 张图 | ✅ |
 | Q1 | 测试策略 | `docs/testing.md` | 写单测、契约测试、加适配器前 | ~1.4k | ✅ |
 | Q2 | 效果评测与回归 | `docs/eval.md` | 建评测集、prompt 回归 | — | ⬜ |
 | Q3 | 安全与合规 | `docs/security.md` | 密钥、审计、数据合规 | — | ⬜ |
@@ -88,6 +89,7 @@
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
+| — | crate 门面 | `crates/agent-transport/README.md` | 动传输层 / SSE 前 | ~0.6k | ✅ |
 | A4 | 流式、取消与超时 | `crates/agent-transport/docs/streaming.md` | 动 SSE / 中断 / 超时 | — | ⬜ |
 | R4 | 缓存、限流与并发 | `crates/agent-transport/docs/cache-and-ratelimit.md` | 重复请求、QPS 控制 | — | ⬜ |
 
@@ -116,6 +118,7 @@
 | D2 | 多模型抽象：契约自研 | `docs/decisions/0002-llm-abstraction.md` | 是否引入 rig / genai | ~1k | ✅ 已接受 |
 | D3 | UI 交付形态 | `docs/decisions/0003-ui-delivery-form.md` | 定 UI 技术、讨论分阶段 | ~0.9k | 🚧 待决 |
 | D4 | 样式层建设路线 | `docs/decisions/0004-styling-layer.md` | 样式怎么组织、能否复用 TS 生态 | ~0.6k | 🚧 待确认 |
+| D5 | 代码按功能组织（Django 式） | `docs/decisions/0005-feature-oriented-layout.md` | 新建 crate / 功能、移动目录时 | ~1.5k | 🚧 提案待确认 |
 
 ### 计划与跨领域调研
 
@@ -135,6 +138,7 @@
 |------|------|
 | 现在做什么 / 下一步 | `S1` → 命中任务后进它所链接的 `crates/<crate>/status.md` |
 | 整体排期 / 完成标准 | `RM` |
+| 一眼看懂整体架构 / 当前进度 | `A1-V`（图）；事实仍以 `A1` + `RM` + `S1` 为准 |
 | 等用户拍板的事 | `S2` |
 | 新增 / 修改供应商 | `A2` → `PT` → 对应 `P*` → `X3` |
 | 写传输 / SSE / 重试 | `A4`（⬜ 先建）→ `Q1` → `A2` |

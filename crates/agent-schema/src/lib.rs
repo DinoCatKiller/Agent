@@ -12,8 +12,8 @@ pub mod model;
 pub mod stream;
 
 pub use completion::{
-    FinishReason, ModelRequest, ModelResponse, ResponseFormat, ToolCall, ToolChoice, ToolDefinition,
-    Usage,
+    FinishReason, ModelRequest, ModelResponse, ResponseFormat, ToolCall, ToolChoice,
+    ToolDefinition, Usage,
 };
 pub use error::{ErrorCategory, ProviderError};
 pub use message::{ContentPart, Message, Role};

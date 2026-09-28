@@ -46,7 +46,10 @@ pub enum ResponseFormat {
     /// 只保证合法 JSON，不保证 schema 一致（DeepSeek Chat 仅有此档）。
     JsonObject,
     /// 严格 schema 输出；适配器负责把 schema 清洗成该供应商支持的子集。
-    JsonSchema { name: String, schema: Value },
+    JsonSchema {
+        name: String,
+        schema: Value,
+    },
 }
 
 /// 归一化请求。
