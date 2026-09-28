@@ -1,6 +1,6 @@
 # ADR-001：技术栈选型
 
-> 索引 ID：`D1` ｜ 状态：**已接受** ｜ 日期：2026-09-27
+> 索引 ID：`D1` ｜ 状态：**已接受**（UI 交付形态复核中 → 见 ADR-003） ｜ 日期：2026-09-27
 
 ## 背景
 
@@ -33,6 +33,7 @@
 
 ## 影响
 
+- **UI 交付形态待复核**：GPUI 的表达能力够用，但样式素材、第三方库与人力供给少于 Web/TS 生态；且 GPUI 无法做 TUI。当前建议「先 Ratatui TUI 验证 Core，二期再定 GUI」→ 见 `adr/0003-ui-delivery-form.md` 与 `research/ui-delivery-options.md`。
 - 目录结构按 `research/rust-backend-stack.md` §3 的 cargo workspace 落地。
 - GPUI 相关调用收敛在 `agent-ui` 单一 crate 内，`agent-core` 不感知 UI。
 - 需自建 Anthropic 等原生协议适配层（无官方 Rust SDK）。

@@ -68,6 +68,7 @@
 | X1 | Rust 后端技术路线 | `docs/research/rust-backend-stack.md` | 定 crate 选型、workspace 结构、SSE/存储/密钥/打包 | ✅ |
 | X2 | GPUI 前端技术路线 | `docs/research/gpui-frontend-stack.md` | 动 UI、升 GPUI 版本、遇到平台/IME/渲染问题 | ✅ |
 | X3 | 多模型统一抽象路线 | `docs/research/llm-abstraction.md` | 讨论要不要用 rig/genai、协议归一化、工具/结构化输出差异 | ✅ |
+| X4 | UI 交付形态（GPUI / TUI / WebView） | `docs/research/ui-delivery-options.md` | 讨论界面怎么做、TUI 用什么、GPUI 能不能做终端 | ✅ |
 
 ### 1.7 决策记录与模板
 
@@ -76,6 +77,7 @@
 | D0 | ADR 模板 | `docs/adr/_template.md` | 要写新 ADR 时 | ✅ |
 | D1 | ADR-001 技术栈选型（Rust + GPUI） | `docs/adr/0001-tech-stack.md` | 涉及语言/框架/依赖选型 | ✅ 已接受 |
 | D2 | ADR-002 多模型抽象路线（自研契约） | `docs/adr/0002-llm-abstraction.md` | 是否引入 rig/genai、契约归属 | ✅ 已接受 |
+| D3 | ADR-003 UI 交付形态（提案） | `docs/adr/0003-ui-delivery-form.md` | 决定 GPUI / TUI / Tauri，或是否分阶段 | 🚧 待决 |
 | T0 | 文档骨架模板 | `docs/_template.md` | 新建任何 `docs/` 文档时 | ✅ |
 
 ## 2. 任务 → 加载清单
@@ -84,7 +86,9 @@
 |------|---------|
 | 新增一家模型供应商 | A2 → 对应 P* → X3 → R2 → Q1 |
 | 写第一个 Provider adapter | A2 → X1 → X3 → Q1 |
-| 动 UI / GPUI 相关 | X2 → A4 |
+| 决定界面形态 / 换 UI 技术 | X4 → D3 → X1/X2 |
+| 动 UI / GPUI 相关 | X2 → X4 §5 → A4 |
+| 写 TUI（Ratatui） | X4 §2/§4 → A4 → Q1 |
 | 修一个调用 Bug | A6 → 对应 P* → Q1 |
 | 加一种输入模态（图/文件） | A3 → A2 → 相关 P* |
 | 做模型路由 / 兜底 | R2 → A6 → R3 |
