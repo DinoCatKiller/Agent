@@ -8,10 +8,13 @@
 
 ## 现在到哪
 
-**M1 完成**：cargo workspace 建好，契约层（`agent-schema` + `Provider` trait）已落地，4 个单测 + clippy 零告警。
+状态**只在一处维护**，本文件不重复（重复必然腐烂）：
 
-- 完整阶段状态与下一步 → [`STATUS.md`](STATUS.md)
-- 等你拍板的事 → [`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)
+| 想知道 | 去哪 |
+|--------|------|
+| 现在做什么、下一步 | [`STATUS.md`](STATUS.md)（一屏内） |
+| 等你拍板的事 | [`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md) |
+| 整体排期与「完成」的定义 | [`docs/roadmap.md`](docs/roadmap.md) |
 
 ## 文档放哪（约定）
 

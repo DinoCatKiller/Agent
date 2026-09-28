@@ -22,7 +22,7 @@
 | M2 | 传输层 | 一次真实请求能**流式收完**；坏帧 / 截断 / 超时均有用例覆盖 | `agent-transport` |
 | M3 | 首个适配器 | OpenAI 兼容族跑通 `Q1` 的 12 条用例 | `agent-providers` |
 | M4 | Agent 循环 | CLI 上完成单轮与多轮（含工具结果回填）对话 | `agent-core`、`agent-app` |
-| M5 | UI 层 + 会话持久化 | 形态由 `D3` 决定；会话可存可取 | `agent-ui`、`agent-store` |
+| M5 | UI 层 + 会话持久化 | 形态由 `D3` 决定；会话可存可取 | `agent-ui`、`agent-store`（方案细节 → `GUI`） |
 | M6 | 工具调用 + 路由兜底 | 多工具并行、失败降级链生效 | `agent-core`、`agent-routing` |
 
 ## 排序原则

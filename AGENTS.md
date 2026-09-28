@@ -33,7 +33,17 @@
 
 ## 2. 地图
 
-规模为估算 token（≈KB × 350，中文），用于判断「读它值不值」。
+规模为估算 token（≈KB × 350，中文），用于判断读取成本。
+
+**ID 前缀含义**（看 ID 就知道它大概是什么、属于谁）：
+
+| 前缀 | 含义 | 前缀 | 含义 |
+|------|------|------|------|
+| `S1` / `S2` | 状态概览 / 未决问题 | `P1–P6` / `PT` | 供应商文档 / 供应商模板 |
+| `G1` | 目标与技术路线 | `X1–X5` | 调研（一次性消费，会过时） |
+| `A1–A7` | 架构与契约（跨 crate 或归属某 crate） | `D0–D4` | 决策 ADR（只增不改） |
+| `R1–R4` | 运行时（配置 / 路由 / 观测 / 限流） | `RM` | 里程碑排期（**不含状态**） |
+| `Q1–Q3` | 质量（测试 / 评测 / 安全） | `GUI` | 二期 GUI 与 L3 计划 |
 
 ### 状态与排期
 
@@ -78,7 +88,6 @@
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| — | **当前任务细节（M2）** | `crates/agent-transport/status.md` | 正在做 M2 时 | ~0.6k | ✅ |
 | A4 | 流式、取消与超时 | `crates/agent-transport/docs/streaming.md` | 动 SSE / 中断 / 超时 | — | ⬜ |
 | R4 | 缓存、限流与并发 | `crates/agent-transport/docs/cache-and-ratelimit.md` | 重复请求、QPS 控制 | — | ⬜ |
 
@@ -112,11 +121,13 @@
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| P0 | 二期 GUI + L3 样式引擎 | `docs/plans/gui-phase2.md` | 排后期计划、讨论 L3 何时做 | ~1.5k | ✅ |
+| GUI | 二期 GUI + L3 样式引擎 | `docs/plans/gui-phase2.md` | 排后期计划、讨论 L3 何时做 | ~1.5k | ✅ |
 | X1 | Rust 后端技术路线 | `docs/research/rust-backend-stack.md` | 定 crate 选型、SSE / 存储 / 密钥 / 打包 | ~1.9k | ✅ |
 | X2 | GPUI 前端技术路线 | `docs/research/gpui-frontend-stack.md` | 动 UI、升 GPUI、平台 / IME / 渲染问题 | ~2k | ✅ |
 | X4 | UI 交付形态对比 | `docs/research/ui-delivery-options.md` | 讨论 TUI / GUI / WebView 怎么选 | ~2.5k | ✅ |
 | X5 | TS 样式资产移植可行性 | `docs/research/styling-portability.md` | 想复用 Web 样式 / 设计系统 | ~2.5k | ✅ |
+
+> **迁移预告**：`X2` / `X4` / `X5` 与 `D3` / `D4` / `GUI` 都属于 UI 领域；`crates/agent-ui` 落地后整体迁入该 crate。因为引用只写 ID，迁移不需要改其它文档。
 
 ## 3. 路由（任务 → 加载清单）
 
@@ -132,7 +143,7 @@
 | 决定 UI 技术 | `D3` → `X4`（GPUI 细节 → `X2`） |
 | 样式怎么组织 | `D4` → `X5` |
 | 「自研还是找现成轮子」 | `G1` §3 → `X1`/`X2`/`X3` |
-| 长期排期 / L3 | `P0` |
+| 长期排期 / L3 | `RM` → `GUI` |
 | 推翻某个决定 | 对应 `D*` → 写**新** ADR（旧的不改） |
 
 ## 4. 硬约束（始终生效）

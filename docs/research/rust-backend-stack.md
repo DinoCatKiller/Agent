@@ -1,6 +1,13 @@
 # X1 · Rust 后端技术路线调研
 
-> 索引 ID：`X1` ｜ 状态：✅ 调研完成 ｜ 最后更新：2026-09-27
+| | |
+|---|---|
+| ID | `X1` |
+| 类型 | 调研（一次性消费，会过时） |
+| 状态 | ✅ 完成 |
+| 更新 | 2026-09-28 |
+| 何时读 | 定 crate 选型、SSE / 存储 / 密钥 / 打包方案时 |
+| 规模 | ~1.9k token |
 
 ## 目的
 
@@ -36,26 +43,10 @@
 - 收尾语义要区分三类：传输错误、可恢复的坏帧、**EOF 无终止记录（截断）**；消费者应排空到流结束而不是见 `Err` 就停（rig 的做法可直接借鉴）。
 - 必须有**空闲超时**兜底：部分厂商不发 `[DONE]`。
 
-## 3. 工程结构（cargo workspace，草案）
+## 3. 工程结构
 
-```
-agent/
-  Cargo.toml            # workspace
-  crates/
-    agent-core/         # Agent 循环、工具编排；不依赖任何 provider
-    agent-schema/       # 内部消息 / 事件 / 错误类型（契约的唯一来源）
-    agent-providers/    # Provider trait 定义 + 各厂商 adapter
-    agent-routing/      # 模型注册表、能力协商、路由与兜底
-    agent-transport/    # reqwest 封装、SSE 解析、重试、超时
-    agent-store/        # SQLite 会话/消息持久化
-    agent-config/       # 配置 + keyring 密钥
-    agent-observability/# tracing 初始化、token/成本统计
-    agent-ui/           # GPUI 视图层（唯一接触 GPUI 的 crate）
-    agent-app/          # 二进制入口，组装依赖
-  tests/                # 契约测试 + fixtures
-```
-
-约束：依赖只能向下；`agent-core` 与 `agent-schema` 不得依赖 `gpui`、`reqwest` 之外的具体实现。
+目录结构已定稿 → 见 `A1` §5（crate 划分、依赖方向、文档归属规则都写在那里）。
+本文**不再重复**该内容，避免两处漂移（这里原先有一份草案，已删除）。
 
 ## 4. 密钥与配置
 
@@ -74,11 +65,15 @@ agent/
 
 其他：GPUI 应用不需要 WebView/Electron 运行时，产物为单个可执行文件，体积优势明显。
 
-## 6. 待办
+## 6. 本文不再维护待办
 
-- [ ] 用 `wiremock` 建 first adapter 的 fixtures 骨架
-- [ ] 验证 `sse-rs` vs `eventsource-stream` 在坏帧/截断/超时下的行为差异，据此决定是否自研
-- [ ] 验证 `keyring` 在 Windows 与本机环境的读写行为
+原先这里挂了三条行动项，现在它们各有归属，**不要在本文件堆积待办**：
+
+| 行动项 | 现在的归属 |
+|--------|-----------|
+| fixtures / mock HTTP 骨架 | `Q1`（测试策略）+ `crates/agent-transport/status.md`（M2） |
+| `sse-rs` vs `eventsource-stream` 行为差异验证 | `crates/agent-transport/status.md`（M2 待办） |
+| `keyring` 在 Windows 的读写验证 | 配置与密钥落地时（`R1`） |
 
 ## 相关
 
