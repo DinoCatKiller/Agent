@@ -23,7 +23,7 @@
 |----|------|---------|------|
 | **L1 设计令牌** | 配色、间距刻度、圆角、字号/行高、字重、阴影、透明度、层级 | ✅ **完全可移植，收益最大** | `tailwind.config` / CSS 变量 / 设计工具导出 → JSON → codegen 成 Rust `Theme`。GPUI 的 `Theme` 是 `Global`，**可运行时切换**，token 层能热加载、不用重编译 |
 | **L2 布局与工具类** | `flex` / `gap` / `p-*` / `rounded-*` / `text-*` / `border-*` / `overflow-*` | ✅ **大部分可移植** | GPUI 用 `taffy` 做布局，**Flexbox 语义与 Web 一致**；工具类可近乎 1:1 映射成 Rust 方法链（宏或代码生成） |
-| **L3 CSS 运行时语义** | 选择器、层叠、继承、`:hover`/`:focus`、媒体查询、`@keyframes`、CSS 变量作用域、`backdrop-filter`、`mix-blend-mode` | ❌ **一期不可移植**（列入后期计划） | GPUI 里没有「选择器」与层叠概念。要支持它 = 自己实现一个简化 CSS 引擎 → 成本远超收益，挪到 P0 的 L3 |
+| **L3 CSS 运行时语义** | 选择器、层叠、继承、`:hover`/`:focus`、媒体查询、`@keyframes`、CSS 变量作用域、`backdrop-filter`、`mix-blend-mode` | ❌ **一期不可移植**（列入后期计划） | GPUI 里没有「选择器」与层叠概念。要支持它 = 自己实现一个简化 CSS 引擎 → 成本远超收益，挪到 GUI 的 L3 |
 
 ## 2. 必须接受的机制差异
 

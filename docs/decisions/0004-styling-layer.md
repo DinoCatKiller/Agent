@@ -18,9 +18,9 @@
 
 | 方案 | 说明 | 评价 |
 |------|------|------|
-| A：把 CSS 引擎移植到 GPUI | 在 GPUI 上实现选择器 + 层叠 + 变量作用域 | ❌ 一期不做。成本≈自研简化版 style 系统，收益低于成本 → 挪到 **L3 后期计划**（P0） |
+| A：把 CSS 引擎移植到 GPUI | 在 GPUI 上实现选择器 + 层叠 + 变量作用域 | ❌ 一期不做。成本≈自研简化版 style 系统，收益低于成本 → 挪到 **L3 后期计划**（GUI） |
 | B：**Token 桥 + 工具类子集 + 自建组件层** | 设计令牌做成 JSON 唯一来源 → codegen 成 Rust Theme；工具类用宏覆盖常用子集；组件对标 shadcn 结构重写 | ✅ 采纳。一次投入小、收益集中在「设计资产复用 + 主题可热切换」 |
-| C：GPUIX / Tauri 用真 CSS | 放弃纯 GPUI 渲染 | 保留为逃生通道：若 B 的观感上限不够，二期评估（P0） |
+| C：GPUIX / Tauri 用真 CSS | 放弃纯 GPUI 渲染 | 保留为逃生通道：若 B 的观感上限不够，二期评估（GUI） |
 
 ## 决定
 
@@ -30,7 +30,7 @@
 2. 建 `agent-ui-kit` 于 `gpui-base`（无样式行为基座）之上：组件**对标 shadcn/ui 的结构与交互重写**，不抄代码。
 3. `tw!("flex gap-2 p-4 rounded-lg bg-surface")` 宏覆盖常用 utility **子集**（flex/gap/spacing/rounded/typography/border/color + 状态变体），不追求 Tailwind 全量。
 4. 状态样式由宏展开为 GPUI 显式状态 API（`hover:bg-x` → `.hover(|s| s.bg(x))`）；响应式用 `responsive(window_width, …)` helper 手动分支。
-5. **L3（CSS 运行时兼容）列入后期计划**，见 P0；触发条件与停止条件都写在那里。
+5. **L3（CSS 运行时兼容）列入后期计划**，见 GUI；触发条件与停止条件都写在那里。
 
 ## 影响
 
