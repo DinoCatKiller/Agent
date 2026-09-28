@@ -45,7 +45,7 @@ pub struct ModelSpec {
 ## 2. 统一接口
 
 ```rust
-// 已落地：crates/infra/providers/src/lib.rs
+// 已落地：crates/kernel/providers/src/lib.rs
 pub trait Provider: Send + Sync + Clone + 'static {
     fn id(&self) -> &'static str;
     fn list_models(&self) -> Vec<ModelSpec>;
@@ -188,7 +188,7 @@ pub struct ProviderError {
 
 ## 6. 新增供应商落地清单
 
-- [ ] 建 `crates/infra/providers/docs/providers/<name>.md`：endpoint、鉴权、字段差异、配额、已知坑
+- [ ] 建 `crates/kernel/providers/docs/providers/<name>.md`：endpoint、鉴权、字段差异、配额、已知坑
 - [ ] 实现 `Provider`（`chat` 与 `stream` 都要）
 - [ ] 声明 `ModelSpec` 清单：上下文窗口、能力、价格
 - [ ] 错误映射覆盖第 5 节全部类别

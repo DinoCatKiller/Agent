@@ -21,8 +21,8 @@
 
 | 影响范围 | 放哪 |
 |---------|------|
-| 只影响一个 crate（基础设施） | `crates/infra/<crate>/README.md`（门面）或 `crates/infra/<crate>/docs/*.md`（细节） |
-| 只影响一个**功能切片** | `crates/features/<功能>/`：README.md（门面）+ `src/` + `tests/` + 可选 `docs/` |
+| **机制**（怎么发 HTTP / 怎么连库） | `crates/kernel/<crate>/README.md`（门面）+ `docs/*.md`（细节）。**kernel 不许出现业务名词**（`D6`） |
+| **语义**（业务：对话 / 会话 / 设置） | `crates/features/<功能>/`：README + `src/{service,repo,ui,领域类型}.rs` + `tests/`（`D6` §3） |
 | 影响多个 crate / 全项目 | 根 `docs/*.md` |
 | 决策（只增不改） | `docs/decisions/NNNN-<slug>.md` |
 | 长期计划（尚无归属 crate） | `docs/plans/*.md` |
@@ -30,7 +30,7 @@
 | 当前阶段状态 · **某 crate 的细节** | `crates/<crate>/status.md`（按需建立，随任务生灭） |
 | 未决问题 | 根 `OPEN-QUESTIONS.md` |
 | 里程碑与排期（**不含状态**） | `docs/roadmap.md` |
-| 模板 | `docs/_template.md`、`docs/decisions/_template.md`、`crates/infra/providers/docs/providers/_template.md` |
+| 模板 | `docs/_template.md`、`docs/decisions/_template.md`、`crates/kernel/providers/docs/providers/_template.md` |
 
 ## 2. 地图
 
@@ -42,7 +42,7 @@
 |------|------|------|------|
 | `S1` / `S2` | 状态概览 / 未决问题 | `P1–P6` / `PT` | 供应商文档 / 供应商模板 |
 | `G1` | 目标与技术路线 | `X1–X5` | 调研（一次性消费，会过时） |
-| `A1–A7` | 架构与契约（跨 crate 或归属某 crate） | `D0–D5` | 决策 ADR（只增不改） |
+| `A1–A7` | 架构与契约（跨 crate 或归属某 crate） | `D0–D6` | 决策 ADR（只增不改） |
 | `R1–R4` | 运行时（配置 / 路由 / 观测 / 限流） | `RM` | 里程碑排期（**不含状态**） |
 | `Q1–Q3` | 质量（测试 / 评测 / 安全） | `GUI` | 二期 GUI 与 L3 计划 |
 
@@ -76,23 +76,23 @@
 | — | crate 门面 | `crates/common/README.md` | 改契约类型前 | ~0.7k | ✅ |
 | A3 | 消息与多模态协议 | `crates/common/docs/message-protocol.md` | 改消息 / 内容块 / tool_call_id | ~1.5k | ✅ |
 
-### `crates/infra/providers`
+### `crates/kernel/providers`
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| — | crate 门面 | `crates/infra/providers/README.md` | 加供应商、改 trait | ~0.8k | ✅ |
-| A2 | Provider 接入契约 | `crates/infra/providers/docs/contract.md` | 改调用接口、新增供应商 | ~2.6k | ✅ |
-| X3 | 多模型抽象路线调研 | `crates/infra/providers/docs/abstraction-research.md` | 质疑要不要自研抽象 | ~2.3k | ✅ |
-| PT | 供应商文档模板 | `crates/infra/providers/docs/providers/_template.md` | 新建某家供应商文档 | ~0.4k | ✅ |
-| P1–P6 | 各供应商差异 | `crates/infra/providers/docs/providers/*.md` | 接某一家模型时 | — | ⬜ |
+| — | crate 门面 | `crates/kernel/providers/README.md` | 加供应商、改 trait | ~0.8k | ✅ |
+| A2 | Provider 接入契约 | `crates/kernel/providers/docs/contract.md` | 改调用接口、新增供应商 | ~2.6k | ✅ |
+| X3 | 多模型抽象路线调研 | `crates/kernel/providers/docs/abstraction-research.md` | 质疑要不要自研抽象 | ~2.3k | ✅ |
+| PT | 供应商文档模板 | `crates/kernel/providers/docs/providers/_template.md` | 新建某家供应商文档 | ~0.4k | ✅ |
+| P1–P6 | 各供应商差异 | `crates/kernel/providers/docs/providers/*.md` | 接某一家模型时 | — | ⬜ |
 
-### `crates/infra/transport`（M2 正在建）
+### `crates/kernel/transport`（M2 正在建）
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| — | crate 门面 | `crates/infra/transport/README.md` | 动传输层 / SSE 前 | ~0.6k | ✅ |
-| A4 | 流式、取消与超时 | `crates/infra/transport/docs/streaming.md` | 动 SSE / 中断 / 超时 | — | ⬜ |
-| R4 | 缓存、限流与并发 | `crates/infra/transport/docs/cache-and-ratelimit.md` | 重复请求、QPS 控制 | — | ⬜ |
+| — | crate 门面 | `crates/kernel/transport/README.md` | 动传输层 / SSE 前 | ~0.6k | ✅ |
+| A4 | 流式、取消与超时 | `crates/kernel/transport/docs/streaming.md` | 动 SSE / 中断 / 超时 | — | ⬜ |
+| R4 | 缓存、限流与并发 | `crates/kernel/transport/docs/cache-and-ratelimit.md` | 重复请求、QPS 控制 | — | ⬜ |
 
 ### `crates/features/*`（功能切片：一个功能 = 一个文件夹，见 `D5`）
 
@@ -104,14 +104,14 @@
 | A5 | 工具调用 | `crates/features/chat/docs/tool-calling.md` | 工具定义、并行调用、结果回填 | — | ⬜ |
 | A7 | 上下文与 Token | `crates/features/chat/docs/context-and-tokens.md` | 裁剪、摘要、计费 | — | ⬜ |
 
-### `crates/infra/*`（其他基础设施，按需创建）
+### `crates/kernel/*`（机制内核，按需创建）
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| A6 | 错误、重试与降级 | `crates/infra/transport/docs/errors-and-fallback.md` | 限流 / 超时 / 审核 / 不可用 | — | ⬜ |
-| R1 | 配置与密钥 | `crates/infra/config/docs/config-and-secrets.md` | 加配置项、接密钥 | — | ⬜ |
-| R2 | 模型注册表与路由 | `crates/infra/routing/docs/model-registry.md` | 模型清单、路由与兜底 | — | ⬜ |
-| R3 | 可观测性与成本 | `crates/infra/telemetry/docs/observability.md` | 日志 / trace / 计费 | — | ⬜ |
+| A6 | 错误、重试与降级 | `crates/kernel/transport/docs/errors-and-fallback.md` | 限流 / 超时 / 审核 / 不可用 | — | ⬜ |
+| R1 | 配置与密钥 | `crates/kernel/config/docs/config-and-secrets.md` | 加配置项、接密钥 | — | ⬜ |
+| R2 | 模型注册表与路由 | `crates/kernel/routing/docs/model-registry.md` | 模型清单、路由与兜底 | — | ⬜ |
+| R3 | 可观测性与成本 | `crates/kernel/telemetry/docs/observability.md` | 日志 / trace / 计费 | — | ⬜ |
 
 ### `crates/app`
 
@@ -128,7 +128,8 @@
 | D2 | 多模型抽象：契约自研 | `docs/decisions/0002-llm-abstraction.md` | 是否引入 rig / genai | ~1k | ✅ 已接受 |
 | D3 | UI 交付形态 | `docs/decisions/0003-ui-delivery-form.md` | 定 UI 技术、讨论分阶段 | ~0.9k | 🚧 待决 |
 | D4 | 样式层建设路线 | `docs/decisions/0004-styling-layer.md` | 样式怎么组织、能否复用 TS 生态 | ~0.6k | 🚧 待确认 |
-| D5 | 代码按功能组织（Django 式） | `docs/decisions/0005-feature-oriented-layout.md` | 新建 crate / 功能、移动目录时 | ~1.6k | ✅ 已接受 |
+| D5 | 代码按功能组织（Django 式） | `docs/decisions/0005-feature-oriented-layout.md` | 新建 crate / 功能、移动目录时 | ~1.6k | ✅ 已接受（部分被 `D6` 修订） |
+| D6 | kernel（机制）与 features（语义）的判据 | `docs/decisions/0006-kernel-vs-features.md` | 决定代码放哪、质疑"这算功能吗" | ~1.6k | ✅ 已接受 |
 
 ### 计划与跨领域调研
 
@@ -140,7 +141,7 @@
 | X4 | UI 交付形态对比 | `docs/research/ui-delivery-options.md` | 讨论 TUI / GUI / WebView 怎么选 | ~2.5k | ✅ |
 | X5 | TS 样式资产移植可行性 | `docs/research/styling-portability.md` | 想复用 Web 样式 / 设计系统 | ~2.5k | ✅ |
 
-> **迁移预告**：`X2` / `X4` / `X5` 与 `D3` / `D4` / `GUI` 都属于 UI 领域；`crates/agent-ui` 落地后整体迁入该 crate。因为引用只写 ID，迁移不需要改其它文档。
+> **迁移预告**：`X2` / `X4` / `X5` 与 `D3` / `D4` / `GUI` 都属于 UI 领域；按 `D5`，界面代码**跟功能走**——`features/*` 各自持有 `ui.rs`（`gpui` 仅出现在 `features/*` 与 `app`），不再有独立 `agent-ui` crate。因为引用只写 ID，迁移不需要改其它文档。
 
 ## 3. 路由（任务 → 加载清单）
 
@@ -153,8 +154,9 @@
 | 新增 / 修改供应商 | `A2` → `PT` → 对应 `P*` → `X3` |
 | 写传输 / SSE / 重试 | `A4`（⬜ 先建）→ `Q1` → `A2` |
 | 改契约类型 | 对应 crate 的 README → `A2` / `A3` |
-| 新增功能 / 新建 feature | `D5` → 该功能的 `crates/features/<功能>/README.md` |
-| 新建模块 / 改目录结构 | `A1` §5 → `D5` → `G1` |
+| 新增功能 / 新建 feature | `D5` + `D6` §1 判据 → 该功能的 `crates/features/<功能>/README.md` |
+| 「这段代码该放哪」 | `D6` §1 判据（机制 → kernel / 语义 → features） |
+| 新建模块 / 改目录结构 | `A1` §5 → `D5` / `D6` → `G1` |
 | 决定 UI 技术 | `D3` → `X4`（GPUI 细节 → `X2`） |
 | 样式怎么组织 | `D4` → `X5` |
 | 「自研还是找现成轮子」 | `G1` §3 → `X1`/`X2`/`X3` |
@@ -164,7 +166,7 @@
 ## 4. 硬约束（始终生效）
 
 1. **技术栈已定**：Rust（edition 2024）+ tokio 后端。UI 形态未定（D3）前**不写 UI 代码**，不引入 Electron / Tauri 等替代方案。
-2. 供应商差异**不得泄漏**到 `agent-core`；核心只依赖 `A2` 的契约。
+2. 供应商差异**不得泄漏**到编排核心（落在 `features/chat`）；`features/*` 只依赖 `A2` 的契约。
 3. **一个结论只有一个家**：其它文档只许用 ID 引用，不许复制内容。
 4. 未决问题只写在 `S2`；ADR 只增不改。
 5. 密钥 / 真实 endpoint 不入库；对外接口流式优先；UI 线程禁止阻塞。

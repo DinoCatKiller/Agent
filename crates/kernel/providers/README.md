@@ -5,7 +5,7 @@
 | 状态 | 🚧 契约已落地（M1）；**尚无任何适配器**（M3 起） |
 | 边界 | 定义 `Provider` trait 与注册表；持有各家的协议实现。**不含** Agent 循环、路由策略、UI |
 | 上游 | `agent-common` |
-| 下游 | `agent-core` / `agent-routing`（通过 `ProviderRegistry`） |
+| 下游 | `features/*`（如 `chat`，编排核心）/ `kernel/routing`（通过 `ProviderRegistry`） |
 | 何时读 | 加/改一家供应商、改 trait、讨论抽象是否合适 |
 
 ## 这个 crate 是什么
@@ -33,7 +33,7 @@
 
 ## 加一家供应商的步骤
 
-1. 复制模板 `crates/infra/providers/docs/providers/_template.md` → `docs/providers/<name>.md`，填协议 / 鉴权 / 字段映射 / 错误映射。
+1. 复制模板 `crates/kernel/providers/docs/providers/_template.md` → `docs/providers/<name>.md`，填协议 / 鉴权 / 字段映射 / 错误映射。
 2. 写适配器：实现 `Provider`（`chat` 与 `stream` 都要）+ 用 `Arc<Client>` 包住连接。
 3. 声明 `ModelSpec` 清单（上下文窗口、能力、价格）。
 4. 错误映射表覆盖 `A2` §5 的全部类别。

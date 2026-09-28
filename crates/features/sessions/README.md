@@ -4,19 +4,32 @@
 |---|---|
 | ID | —（功能切片，非索引文档） |
 | 状态 | 🚧 **骨架**（尚无实现） |
-| 边界 | 会话的语义与生命周期：创建、列举、重命名、切换、删除 |
-| 依赖 | `agent-common` ｜ `infra/store`（持久化实现在那） |
-| 不允许 | 写 SQL；依赖 `app`；被 `infra/*` 依赖 |
+| 边界 | **语义**：会话的语义与生命周期 —— 创建、列举、重命名、切换、删除 |
+| 依赖 | `agent-common` ｜ `kernel/store`（连接 / 迁移 / 事务在那） |
+| 不允许 | 建连接池或事务机制；依赖 `app`；被 `kernel/*` 依赖 |
 | 何时读 | 改会话列表、会话切换、会话元信息时 |
+
+## 内部布局（`D6` §3，按需创建）
+
+```
+src/
+  lib.rs        模块声明 + 对外导出
+  session.rs    领域类型：Session { id, title, created_at, updated_at }
+  service.rs    业务编排：创建 / 列举 / 重命名 / 切换 / 删除
+  repo.rs       本功能自己的查询（"最近 20 条"这类）—— 调 kernel/store 的机制
+  ui.rs         本功能的界面（会话列表）—— 等 D3 定了再建
+tests/          本功能的测试（用假 repo 替换 kernel/store，可离线跑 —— Q1）
+docs/           本功能的规格（按需）
+```
 
 ## 第一个任务（尚未开始）
 
-- [ ] 会话模型：`Session { id, title, created_at, updated_at }` + 标题自动生成规则
-- [ ] 定义与 `infra/store` 的端口（trait），使本切片可脱离 SQLite 单测
+- [ ] 会话模型 + 标题自动生成规则（生成逻辑在本切片；触发点是 `chat` 落盘时调用）
+- [ ] 定义与 `kernel/store` 的端口（trait），使本切片可脱离 SQLite 单测
 - [ ] 列举 / 切换 / 重命名 / 删除 的行为与测试
-- [ ] 界面：等 `D3` 定了再写 `ui.rs`（会话列表）
+- [ ] 界面：等 `D3` 定了再写 `ui.rs`
 
 ## 相关
 
-- 组织决策：`D5` ｜ UI 形态：`D3` ｜ 契约：`A3`
-- 持久化实现：`crates/infra/store`（待建）
+- 组织决策：`D5`、`D6` ｜ UI 形态：`D3` ｜ 契约：`A3`
+- 机制（连接与事务）：`crates/kernel/store`（待建）

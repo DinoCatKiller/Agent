@@ -76,29 +76,33 @@ Observability         trace / 日志 / 指标 / 成本
 
 ## 5. 目录结构（已定稿）
 
-按 `D5`（**已接受**）：**代码按功能组织**，crate 目录本身表达它属于哪一类。
+按 `D5` + `D6`：**代码按功能组织（垂直切片）**，目录本身表达它属于哪一类。
 
 ```
 crates/
   common/                 契约与纯类型（无 IO，包名 agent-common）
-  infra/                  基础设施：被 features 复用
+  kernel/                 机制内核：跨功能复用的技术能力，**不许出现业务名词**（`D6` §1）
     transport/            HTTP / SSE / 超时 / 取消 / 重试
     providers/            供应商适配器 + 注册表 + 模型清单
     routing/              模型注册表查询、能力协商、路由与兜底
-    store/                SQLite 会话与消息持久化
-    config/               配置 + 密钥（keyring）
-    telemetry/            tracing / token / 成本
-  features/               用户可见功能：一个功能一个文件夹（Django app）
-    chat/  sessions/  settings/
-  app/                    二进制入口（包名 agent-app，组装 infra + features + UI）
+    store/                SQLite 连接 / 迁移 / 事务（**不是**业务查询）
+    config/               配置文件与钥匙串读写
+    telemetry/            tracing 初始化 / token 成本
+  features/               语义层：一个功能一个文件夹（垂直切片）
+    chat/                 service.rs + repo.rs + ui.rs + 领域类型 + tests/
+    sessions/             同上
+    settings/             同上
+  app/                    二进制入口（包名 agent-app，组装 kernel + features + UI）
 ```
 
-**依赖方向（硬规则）**：`app → features/* → infra/* → common`，只能向下。
+**依赖方向（硬规则）**：`app → features/* → kernel/* → common`，只能向下。
 
 - `common` 不依赖任何人（契约纯净度靠这条保证）。
 - feature 之间可以互相依赖（Django 里 app 也互相 import），但**不可能成环**——crate 依赖图天生无环，这是 `D5` 选"每功能一个 crate"的核心理由。
-- `infra/*` 不得依赖 `features/*`；UI 依赖（`gpui` 等）只允许出现在 `features/*` 与 `app`。
-- crate **按需创建**，不预建空目录；规格文档归属映射见 `D5`。
+- `kernel/*` 不得依赖 `features/*`；UI 依赖（`gpui` 等）只允许出现在 `features/*` 与 `app`。
+- **落点判据（`D6` §1）**：这是「怎么发 HTTP / 怎么连库 / 怎么读钥匙串」（机制）→ `kernel/*`；这是「对话怎么进行、会话怎么命名」（语义）→ `features/<功能>/`。
+- feature 内部文件布局见 `D6` §3；**按需创建，不预建空文件**（`ui.rs` 等 `D3`，`repo.rs` 等真需要持久化）。
+- 规格文档归属映射见 `D5`。
 
 **文档归属**：crate 相关的规格放在该 crate 的 `README.md` / `docs/` 下，跨 crate 的放在根 `docs/`；判定规则见 `AGENTS.md` §1。阶段状态不靠搬文件表达（见 `S1`）。
 

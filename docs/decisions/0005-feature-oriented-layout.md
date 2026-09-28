@@ -9,6 +9,9 @@
 | 何时读 | 新建 crate / 新增功能、移动目录结构时 |
 | 规模 | ~1.6k token |
 
+> **已被 `D6` 部分修订**（2026-09-28）：命名 `infra/*` → `kernel/*`，并补上「什么算功能 / 什么算机制」的判据与 feature 内部文件布局。
+> 本文**原文不改**（ADR 只增不改）；两处冲突时以 `D6` 为准。
+
 ## 背景
 
 原先（`A1` §5）按**架构层**切 crate：`schema / providers / transport / core / routing / store / config / observability / ui / app`。
@@ -34,7 +37,7 @@ crates/
   common/                 # 契约与纯类型（无 IO）—— 原 agent-schema，包名 agent-common
     src/{message,model,completion,stream,error}.rs
     docs/message-protocol.md
-  infra/                  # 基础设施：被 features 复用
+  kernel/                  # 基础设施：被 features 复用
     transport/            #   HTTP / SSE / 超时 / 取消 / 重试
     providers/            #   供应商适配器 + 注册表 + 模型清单
     routing/              #   模型注册表查询、能力协商、路由与兜底
@@ -45,18 +48,18 @@ crates/
     chat/                 #   一次对话：编排 + 状态 + ui + tests
     sessions/             #   会话列表与管理
     settings/             #   设置项与密钥录入
-  app/                    # 二进制入口：组装 infra + features + UI（包名 agent-app）
+  app/                    # 二进制入口：组装 kernel + features + UI（包名 agent-app）
 ```
 
 **依赖方向（硬规则）**
 
 ```
-app  →  features/*  →  infra/*  →  common        （只能向下，不能反向）
+app  →  features/*  →  kernel/*  →  common        （只能向下，不能反向）
 ```
 
 - `common` 不依赖任何人（契约纯净度靠这条保证）。
 - feature **之间可以互相依赖**（Django 里 app 也互相 import），但**不可能成环**——crate 依赖图天生无环。这是选 C 而非 B 的核心理由。
-- `infra/*` 不得依赖 `features/*`；UI 技术（`gpui` 等）只允许出现在 `features/*` 与 `app`。
+- `kernel/*` 不得依赖 `features/*`；UI 技术（`gpui` 等）只允许出现在 `features/*` 与 `app`。
 
 **已确认的首批 feature**（2026-09-28）：`chat` / `sessions` / `settings`，三者目前都是**骨架**（只有边界说明与 README 待办，不预写实现）。
 
@@ -66,9 +69,9 @@ app  →  features/*  →  infra/*  →  common        （只能向下，不能�
 |---------|--------|-------------|
 | 加一个功能 | `crates/features/<新功能>/` | **1** |
 | 在聊天里加图片输入 | `features/chat/`（契约要加能力位时才带上 `common/`） | 1（偶发 2） |
-| 加一家 OpenAI 兼容供应商 | `infra/providers/`（模型清单 + 一行注册） | **1** |
-| 接一个异构协议（Anthropic 原生） | `infra/providers/` | **1** |
-| 改存储格式 | `infra/store/` | **1** |
+| 加一家 OpenAI 兼容供应商 | `kernel/providers/`（模型清单 + 一行注册） | **1** |
+| 接一个异构协议（Anthropic 原生） | `kernel/providers/` | **1** |
+| 改存储格式 | `kernel/store/` | **1** |
 | 改 UI 主题 | `features/*/ui` + `common` 的主题 token | 2 |
 
 > **原则**：跨文件夹是**真实耦合的信号**。目标不是消灭它，而是让**常见改动只落在一处**。硬凑"永不跨目录"只会把耦合藏起来。
@@ -78,17 +81,17 @@ app  →  features/*  →  infra/*  →  common        （只能向下，不能�
 | 规格 | 新位置 |
 |------|--------|
 | `A1` 架构与分层 | 根 `docs/architecture.md`（跨 crate） |
-| `A2` Provider 契约 | `crates/infra/providers/docs/contract.md` |
+| `A2` Provider 契约 | `crates/kernel/providers/docs/contract.md` |
 | `A3` 消息协议 | `crates/common/docs/message-protocol.md` |
-| `A4` 流式 / 取消 / 超时 | `crates/infra/transport/docs/streaming.md` |
+| `A4` 流式 / 取消 / 超时 | `crates/kernel/transport/docs/streaming.md` |
 | `A5` 工具调用 | `crates/features/chat/docs/tool-calling.md` |
-| `A6` 错误 / 重试 / 降级 | `crates/infra/transport/docs/errors-and-fallback.md` |
+| `A6` 错误 / 重试 / 降级 | `crates/kernel/transport/docs/errors-and-fallback.md` |
 | `A7` 上下文与 Token | `crates/features/chat/docs/context-and-tokens.md` |
-| `R1` 配置与密钥 | `crates/infra/config/docs/config-and-secrets.md` |
-| `R2` 模型注册表与路由 | `crates/infra/routing/docs/model-registry.md` |
-| `R3` 可观测性与成本 | `crates/infra/telemetry/docs/observability.md` |
-| `R4` 缓存 / 限流 / 并发 | `crates/infra/transport/docs/cache-and-ratelimit.md` |
-| `P*` 各供应商差异 | `crates/infra/providers/docs/providers/*.md` |
+| `R1` 配置与密钥 | `crates/kernel/config/docs/config-and-secrets.md` |
+| `R2` 模型注册表与路由 | `crates/kernel/routing/docs/model-registry.md` |
+| `R3` 可观测性与成本 | `crates/kernel/telemetry/docs/observability.md` |
+| `R4` 缓存 / 限流 / 并发 | `crates/kernel/transport/docs/cache-and-ratelimit.md` |
+| `P*` 各供应商差异 | `crates/kernel/providers/docs/providers/*.md` |
 | `Q1`–`Q3` 质量 | 根 `docs/`（跨 crate） |
 
 ## 与 UI 形态的关系（不阻塞 `D3`）
@@ -101,12 +104,12 @@ app  →  features/*  →  infra/*  →  common        （只能向下，不能�
 
 ## 影响
 
-- **迁移已完成**：`agent-schema` → `crates/common`（包名 `agent-common`）；`agent-providers` → `crates/infra/providers`；`agent-transport` → `crates/infra/transport`；`agent-app` → `crates/app`。均用 `git mv` 保留历史。
+- **迁移已完成**：`agent-schema` → `crates/common`（包名 `agent-common`）；`agent-providers` → `crates/kernel/providers`；`agent-transport` → `crates/kernel/transport`；`agent-app` → `crates/app`。均用 `git mv` 保留历史。
 - 新建三个 feature crate 骨架：`features/{chat,sessions,settings}`。
 - 每个 feature 的 `README.md` = "这个功能的门面"（边界 / 依赖 / 待办）。
-- **不预建空目录**：`infra/store`、`infra/config`、`infra/routing`、`infra/telemetry` 只在该功能开工时创建。
+- **不预建空目录**：`kernel/store`、`kernel/config`、`kernel/routing`、`kernel/telemetry` 只在该功能开工时创建。
 
 ## 未决项
 
 - `features/chat` 与 `sessions` 的边界细节：会话标题自动生成属于谁？（建议：生成逻辑在 `sessions`，触发在 `chat` 落盘时）
-- 是否把"模型管理页"独立成 feature（当前：模型清单属 `infra/providers`，选择动作在 `chat` 的 UI）
+- 是否把"模型管理页"独立成 feature（当前：模型清单属 `kernel/providers`，选择动作在 `chat` 的 UI）

@@ -4,7 +4,7 @@ members = [
     # 契约与纯类型（无 IO）
     "crates/common",
     # 基础设施：被 features 复用
-    "crates/infra/*",
+    "crates/kernel/*",
     # 用户可见功能：一个功能一个文件夹（D5）
     "crates/features/*",
     # 二进制入口
@@ -21,7 +21,7 @@ rust-version = "1.95"
 [workspace.dependencies]
 # 内部 crate
 agent-common = { path = "crates/common" }
-agent-providers = { path = "crates/infra/providers" }
+agent-providers = { path = "crates/kernel/providers" }
 
 # 外部依赖：只加「这一阶段真的用得上」的，见 `X1`
 serde = { version = "1", features = ["derive"] }

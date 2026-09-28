@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | 状态 | 🚧 HTTP 封装已落地（M2 进行中） |
-| 边界 | HTTP 客户端封装、SSE 解析、超时 / 取消 / 退避重试。**不含**供应商字段映射（`agent-providers`）、路由策略（`agent-routing`） |
+| 边界 | HTTP 客户端封装、SSE 解析、超时 / 取消 / 退避重试。**不含**供应商字段映射（`agent-providers`）、路由策略（`kernel/routing`） |
 | 上游 | `agent-common`（契约类型） |
 | 下游 | `agent-providers` 的适配器 |
 | 何时读 | 动 SSE / 中断 / 超时 / 重试前 |
@@ -32,4 +32,4 @@
 ## 相关
 
 - 传输规格 → `A4`（M2 落地时创建）｜ 契约 → `A2` ｜ 测试 → `Q1` ｜ 选型 → `X1` §2
-- 当前任务细节 → `crates/infra/transport/status.md` ｜ 概览 → `S1`
+- 当前任务细节 → `crates/kernel/transport/status.md` ｜ 概览 → `S1`

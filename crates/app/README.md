@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | 状态 | 🚧 M1 阶段：只有契约层冒烟自检 |
-| 边界 | 组装依赖、承载 CLI 命令。**不含**业务逻辑（都在 `agent-core` 等库 crate 里） |
+| 边界 | 组装依赖、承载 CLI 命令。**不含**业务逻辑（都在 `features/*` 里） |
 | 上游 | 目前依赖 `agent-common` / `agent-providers` |
 | 下游 | 无（最终产物） |
 | 何时读 | 想跑起来看一眼、或新增 CLI 命令时 |
@@ -33,7 +33,7 @@ cargo run -p agent-app -- self-check
 
 ## 下一步（M4）
 
-按 `S1` 的里程碑，M4 会在 `agent-core` 上长出真实会话命令；UI 形态由 `D3` 决定，之前这里只做 CLI。
+按 `S1` 的里程碑，M4 会在 `features/chat` 上长出真实会话命令；UI 形态由 `D3` 决定，之前这里只做 CLI。
 
 ## 相关
 

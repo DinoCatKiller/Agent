@@ -17,7 +17,7 @@
 
 ### 待办
 
-- [x] 建 `crates/infra/transport`：`Cargo.toml` + `README.md` + `src/lib.rs`，并在 `AGENTS.md` §2 地图登记
+- [x] 建 `crates/kernel/transport`：`Cargo.toml` + `README.md` + `src/lib.rs`，并在 `AGENTS.md` §2 地图登记
 - [x] reqwest client 封装：连接 / 读超时、**流式空闲超时**、代理、rustls（`src/http.rs`）
 - [ ] SSE 解析：`bytes_stream` → 事件流。先评估 `eventsource-stream` / `sse-rs`；不满足则自研（200–400 行，含停止条件）
 - [ ] 三分收尾语义（`A2` §4）：传输错误 / 可恢复坏帧 / **EOF 截断** —— 截断绝不允许静默当成功

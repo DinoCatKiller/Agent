@@ -13,15 +13,15 @@
 
 ## 当前任务
 
-**M2 · 传输层** ｜ 状态：⬜ 未启动
+**M2 · 传输层** ｜ 状态：🚧 进行中（HTTP 封装已落地，SSE / 收尾 / 取消 / 重试 / fixtures 待建）
 
 一句话：让「一次模型调用」能真正发出去并流式收回来。
 
 | crate | 本任务中它要做什么 | 细节 |
 |-------|-----------------|------|
-| `crates/infra/transport` | 新建：reqwest 封装、SSE 解析、超时与取消、退避重试 | `crates/infra/transport/status.md` |
+| `crates/kernel/transport` | 新建：reqwest 封装、SSE 解析、超时与取消、退避重试 | `crates/kernel/transport/status.md` |
 | `crates/common` | 仅当 `StreamEvent` 需要补字段时才动，否则不碰 | — |
-| `crates/infra/providers` | 本任务不动（fixtures 属 M3） | — |
+| `crates/kernel/providers` | 本任务不动（fixtures 属 M3） | — |
 
 ## 阻塞
 

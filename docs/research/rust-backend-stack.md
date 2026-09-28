@@ -71,8 +71,8 @@
 
 | 行动项 | 现在的归属 |
 |--------|-----------|
-| fixtures / mock HTTP 骨架 | `Q1`（测试策略）+ `crates/infra/transport/status.md`（M2） |
-| `sse-rs` vs `eventsource-stream` 行为差异验证 | `crates/infra/transport/status.md`（M2 待办） |
+| fixtures / mock HTTP 骨架 | `Q1`（测试策略）+ `crates/kernel/transport/status.md`（M2） |
+| `sse-rs` vs `eventsource-stream` 行为差异验证 | `crates/kernel/transport/status.md`（M2 待办） |
 | `keyring` 在 Windows 的读写验证 | 配置与密钥落地时（`R1`） |
 
 ## 相关

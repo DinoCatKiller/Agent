@@ -2,7 +2,7 @@
 //!
 //! 用法：`cargo run -p agent-app -- self-check`
 //!
-//! 这不是最终 CLI，也**不是** UI 层。M4 起会在 `agent-core` 上长出真实会话命令；
+//! 这不是最终 CLI，也**不是** UI 层。M4 起会在 `features/chat` 上长出真实会话命令；
 //! UI 形态未定（见 D3），所以这里刻意只依赖契约。
 
 use agent_providers::{required_capabilities, ProviderRegistry};

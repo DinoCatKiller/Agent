@@ -26,8 +26,8 @@
 | `crates/<类别>/<crate>/status.md` | 该 crate 在当前任务里的**细节**（按需建立，随任务生灭） |
 | `OPEN-QUESTIONS.md`（根） | 未决问题，固定路径、就地更新 |
 | `docs/roadmap.md` | 里程碑与排期定义（**不含状态**） |
-| `crates/features/<功能>/` | **功能切片**（`D5`）：一个功能一个文件夹 —— README + `src/` + `tests/` + 可选 `docs/` 同目录 |
-| `crates/infra/<crate>/` | 基础设施：README.md（门面）+ `docs/*.md`（规格细节） |
+| `crates/features/<功能>/` | **语义**（`D6`）：一个功能一个文件夹 —— README + `src/{service,repo,ui,领域类型}.rs` + `tests/` 同目录 |
+| `crates/kernel/<crate>/` | **机制**（`D6`）：README.md（门面）+ `docs/*.md`（规格细节）。不许出现业务名词 |
 | `docs/*.md`（根） | 跨 crate 的规格：架构、测试、目标 |
 | `docs/decisions/` | ADR，只增不改 |
 | `docs/plans/` | 尚无归属 crate 的长期计划 |
@@ -53,12 +53,13 @@ docs/
   research/               跨领域调研（Rust 后端栈、GPUI、UI 形态、样式可移植性）
 crates/
   common/                 契约与纯类型（无 IO）：消息 / 事件 / 错误（+ docs/message-protocol.md）
-  infra/                  基础设施（被 features 复用）
+  kernel/                 机制内核：跨功能复用的技术能力，**不许出现业务名词**（D6）
     transport/            HTTP / SSE / 超时 / 取消 / 重试（M2 在建）
     providers/            Provider trait 与适配器（+ docs/contract.md、docs/providers/）
-  features/               用户可见功能：一个功能一个文件夹（Django app 式，见 D5）
-    chat/                 一次对话：编排 + 状态 + 界面 + 测试
-    sessions/             会话列表与管理
+    （routing / store / config / telemetry 按需创建）
+  features/               语义层：一个功能一个文件夹（垂直切片，D5 + D6）
+    chat/                 一次对话：service + repo + ui + 领域类型 + tests
+    sessions/             会话：列表 / 切换 / 命名
     settings/             设置项与密钥录入
   app/                    二进制入口与冒烟自检
 ```
