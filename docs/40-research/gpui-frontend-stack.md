@@ -112,5 +112,5 @@ fn main() {
 
 ## 相关
 
-- 上游：`00-goals-and-routes.md`
-- 下游：`docs/adr/0001-tech-stack.md`
+- 上游：`20-spec/goals-and-routes.md`
+- 下游：`docs/30-decisions/0001-tech-stack.md`

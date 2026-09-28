@@ -77,7 +77,7 @@
 
 采用**方案 C：契约自研 + 实现可换**。
 
-1. `agent-schema` 定义内部消息/事件/错误；`agent-providers` 定义 `Provider` trait（对齐 `docs/11-provider-contract.md`）。**契约所有权必须在自己手上**——这是 G-1/G-2 的前提。
+1. `agent-schema` 定义内部消息/事件/错误；`agent-providers` 定义 `Provider` trait（对齐 `docs/20-spec/provider-contract.md`）。**契约所有权必须在自己手上**——这是 G-1/G-2 的前提。
 2. 首批 adapter：
    - **OpenAI 兼容族**自研（`reqwest` + SSE），成本低且覆盖 DeepSeek / 通义 / Kimi / GLM / Ollama / OpenRouter 等一大票供应商。
    - **Anthropic 原生**协议自研（或短期以 `genai`/自有实现对照验证），因为它没有官方 Rust SDK，且协议差异集中在 content block 与 `input_json_delta`，可控。
@@ -86,5 +86,5 @@
 
 ## 相关
 
-- 上游：`docs/11-provider-contract.md`（A2）
-- 决策：`docs/adr/0002-llm-abstraction.md`
+- 上游：`docs/20-spec/provider-contract.md`（A2）
+- 决策：`docs/30-decisions/0002-llm-abstraction.md`

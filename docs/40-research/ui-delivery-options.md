@@ -81,14 +81,12 @@ GPUI 的渲染目标是**窗口像素**（`blade-graphics` → Metal / Vulkan / 
 3. **二期再决定 GUI**：在 GPUI（原生、素材少）/ Tauri+TS（Web 渲染、素材多）/ GPUIX（前沿）之间选，此时 Core 已稳定，UI 只是消费者。
 4. 若「一期就必须有富交互 GUI」是硬约束，则权衡变为：**GPUI（好看但要自己造素材）vs Tauri+TS（素材多但背 WebView）**。
 
-## 8. 待确认
+## 8. 未决项
 
-- 你的优先级排序：**最快跑通** > **最终体验** > **人力供给**，还是别的顺序？
-- 交付形态是否允许「先 TUI 后 GUI」的两阶段？
-- 若走 WebView GUI，是否接受 Tauri（Rust + Web 前端），还是只接受纯 TS（Electron）？
+优先级排序、是否接受「先 TUI 后 GUI」、WebView 具体方案 → 统一登记在 [`S2`](../10-now/open-questions.md) Q1。
 
 ## 相关
 
-- 上游：`00-goals-and-routes.md`
-- 决策：`docs/adr/0003-ui-delivery-form.md`
-- 影响：`docs/adr/0001-tech-stack.md`（UI 部分待复核）
+- 上游：`20-spec/goals-and-routes.md`
+- 决策：`docs/30-decisions/0003-ui-delivery-form.md`
+- 影响：`docs/30-decisions/0001-tech-stack.md`（UI 部分待复核）

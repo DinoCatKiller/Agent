@@ -1,4 +1,4 @@
-# 10 · 架构总览
+# A1 · 架构总览
 
 > 索引 ID：`A1` ｜ 状态：🚧 草案 ｜ 最后更新：2026-09-27
 
@@ -9,7 +9,7 @@
 ## 适用范围
 
 - 包含：分层职责、关键对象、一次调用的数据流、目录结构草案。
-- 不包含：具体接口签名（见 `11-provider-contract.md`）、厂商差异（见 `providers/`）、路由策略（见 `21-model-registry.md`，待创建）。
+- 不包含：具体接口签名（见 `20-spec/provider-contract.md`）、厂商差异（见 `20-spec/providers/`）、路由策略（见 `20-spec/model-registry.md`，待创建）。
 
 ## 1. 目标 / 非目标
 
@@ -69,7 +69,7 @@ Observability         trace / 日志 / 指标 / 成本
 
 ## 5. 目录结构（已定稿）
 
-技术栈已定：Rust edition 2024 + tokio + GPUI（见 `adr/0001-tech-stack.md`），cargo workspace 布局如下（完整说明见 `research/rust-backend-stack.md` §3）：
+技术栈已定：Rust edition 2024 + tokio + GPUI（见 `30-decisions/0001-tech-stack.md`），cargo workspace 布局如下（完整说明见 `40-research/rust-backend-stack.md` §3）：
 
 ```
 agent/
@@ -97,8 +97,6 @@ agent/
 - 上下文超限属于可恢复错误，应先裁剪/摘要再重试一次。
 - UI 线程禁止阻塞；GPUI API 只允许出现在 `agent-ui`。
 
-## 7. 待定问题
+## 7. 未决项
 
-- 是否内置 MCP 客户端 → `AGENTS.md` §4
-- 记忆（短期/长期）存储方案
-- 首批适配器范围 → `adr/0002-llm-abstraction.md`
+是否内置 MCP 客户端、记忆存储方案、首批适配器范围 → 统一登记在 [`S2`](../10-now/open-questions.md)。
