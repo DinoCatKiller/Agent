@@ -21,15 +21,15 @@
 
 | 层 | 位置 | 测什么 | 依赖 |
 |----|------|--------|------|
-| 契约测试 | `crates/agent-providers/tests/` | 适配器对 fixtures 的解析与归一化、错误映射 | 无网络（mock HTTP 或直接喂字节） |
+| 契约测试 | `crates/infra/providers/tests/` | 适配器对 fixtures 的解析与归一化、错误映射 | 无网络（mock HTTP 或直接喂字节） |
 | 单元测试 | 各 crate 内 `#[cfg(test)]` | 纯函数：能力推导、schema 清洗、增量拼接 | 无 |
 | 冒烟 | `cargo run -p agent-app -- self-check` | 契约类型可构造/可序列化/能力协商可拒绝 | 无 |
-| 端到端 | `crates/agent-app/tests/` | Core 的多轮工具循环（M4 起） | 无（用假 provider） |
+| 端到端 | `crates/app/tests/` | Core 的多轮工具循环（M4 起） | 无（用假 provider） |
 
 ## 2. Fixtures 约定
 
 ```
-crates/agent-providers/tests/fixtures/
+crates/infra/providers/tests/fixtures/
   <provider>/                     # 如 openai-compatible / anthropic
     <case>/                       # 如 stream_text_basic
       request.json                # 我们发出去（归一化后的 ModelRequest）

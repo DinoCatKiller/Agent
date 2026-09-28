@@ -67,7 +67,7 @@ Observability         trace / 日志 / 指标 / 成本
 
 ## 4. 一次调用的数据流
 
-1. Core 组装 `InternalMessage[]`。
+1. 对话切片（`crates/features/chat`）组装 `InternalMessage[]`。
 2. Registry 校验能力（是否需要 vision / tools / json）。
 3. Router 选定 provider + model（含兜底链）。
 4. Adapter 转换为厂商格式 → Transport 发送。
@@ -76,27 +76,29 @@ Observability         trace / 日志 / 指标 / 成本
 
 ## 5. 目录结构（已定稿）
 
-技术栈已定：Rust edition 2024 + tokio + GPUI（见 `D1`），cargo workspace 布局如下（完整说明见 `X1` §3）：
+按 `D5`（**已接受**）：**代码按功能组织**，crate 目录本身表达它属于哪一类。
 
 ```
-agent/
-  crates/
-    agent-schema/        内部消息 / 事件 / 错误类型（契约唯一来源）
-    agent-core/          agent 循环、工具编排（不依赖任何 provider 与 UI）
-    agent-providers/     Provider trait + 各厂商 adapter
-    agent-routing/       模型注册表、能力协商、路由与兜底
-    agent-transport/     reqwest 封装、SSE 解析、重试、超时
-    agent-store/         SQLite 会话/消息持久化
-    agent-config/        配置 + keyring 密钥
-    agent-observability/ tracing、token/成本统计
-    agent-ui/            GPUI 视图层（**唯一**接触 GPUI 的 crate）
-    agent-app/           二进制入口，组装依赖
-  tests/                 契约测试 + fixtures
+crates/
+  common/                 契约与纯类型（无 IO，包名 agent-common）
+  infra/                  基础设施：被 features 复用
+    transport/            HTTP / SSE / 超时 / 取消 / 重试
+    providers/            供应商适配器 + 注册表 + 模型清单
+    routing/              模型注册表查询、能力协商、路由与兜底
+    store/                SQLite 会话与消息持久化
+    config/               配置 + 密钥（keyring）
+    telemetry/            tracing / token / 成本
+  features/               用户可见功能：一个功能一个文件夹（Django app）
+    chat/  sessions/  settings/
+  app/                    二进制入口（包名 agent-app，组装 infra + features + UI）
 ```
 
-> ⚠️ **本节结构正在复核**：把代码改成**按功能**（而非按层）组织的方案见 `D5`（提案）。`D5` 定稿前以本节为准。
+**依赖方向（硬规则）**：`app → features/* → infra/* → common`，只能向下。
 
-依赖只能向下；`agent-core`、`agent-schema` 不得依赖具体实现 crate。
+- `common` 不依赖任何人（契约纯净度靠这条保证）。
+- feature 之间可以互相依赖（Django 里 app 也互相 import），但**不可能成环**——crate 依赖图天生无环，这是 `D5` 选"每功能一个 crate"的核心理由。
+- `infra/*` 不得依赖 `features/*`；UI 依赖（`gpui` 等）只允许出现在 `features/*` 与 `app`。
+- crate **按需创建**，不预建空目录；规格文档归属映射见 `D5`。
 
 **文档归属**：crate 相关的规格放在该 crate 的 `README.md` / `docs/` 下，跨 crate 的放在根 `docs/`；判定规则见 `AGENTS.md` §1。阶段状态不靠搬文件表达（见 `S1`）。
 
@@ -106,7 +108,7 @@ agent/
 - 每个 adapter 必须可脱离网络单测（用 fixtures + mock transport）。
 - 所有对外调用必须支持取消（`tokio_util::sync::CancellationToken`）。
 - 上下文超限属于可恢复错误，应先裁剪/摘要再重试一次。
-- UI 线程禁止阻塞；GPUI API 只允许出现在 `agent-ui`。
+- UI 线程禁止阻塞；UI 依赖只允许出现在 `features/*` 与 `app`（见 `D5`）。
 
 ## 7. 未决项
 

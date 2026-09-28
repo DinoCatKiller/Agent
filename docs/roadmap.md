@@ -18,7 +18,7 @@
 | # | 里程碑 | 完成标准（Done 的定义） | 承接 crate |
 |---|--------|----------------------|-----------|
 | M0 | 文档体系与关键决策定稿 | 地图可用；`D1`–`D4` 均有结论 | — |
-| M1 | workspace + 契约层 | 契约类型落地、单测通过、`clippy -D warnings` 干净 | `agent-schema`、`agent-providers` |
+| M1 | workspace + 契约层 | 契约类型落地、单测通过、`clippy -D warnings` 干净 | `agent-common`、`agent-providers` |
 | M2 | 传输层 | 一次真实请求能**流式收完**；坏帧 / 截断 / 超时均有用例覆盖 | `agent-transport` |
 | M3 | 首个适配器 | OpenAI 兼容族跑通 `Q1` 的 12 条用例 | `agent-providers` |
 | M4 | Agent 循环 | CLI 上完成单轮与多轮（含工具结果回填）对话 | `agent-core`、`agent-app` |

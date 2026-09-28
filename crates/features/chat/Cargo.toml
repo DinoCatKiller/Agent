@@ -1,0 +1,10 @@
+[package]
+name = "agent-chat"
+description = "功能切片 chat：一次对话的编排、状态与界面"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+agent-common = { workspace = true }

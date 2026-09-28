@@ -1,25 +1,29 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/agent-schema",
-    "crates/agent-providers",
-    "crates/agent-transport",
-    "crates/agent-app",
+    # 契约与纯类型（无 IO）
+    "crates/common",
+    # 基础设施：被 features 复用
+    "crates/infra/*",
+    # 用户可见功能：一个功能一个文件夹（D5）
+    "crates/features/*",
+    # 二进制入口
+    "crates/app",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-# 与后续 UI 层对齐：gpui-kit 需要 ≥1.95（见 docs/40-research/gpui-frontend-stack.md）
+# 与后续 UI 层对齐：gpui-kit 需要 ≥1.95（见 `X2`）
 rust-version = "1.95"
 
 [workspace.dependencies]
 # 内部 crate
-agent-schema = { path = "crates/agent-schema" }
-agent-providers = { path = "crates/agent-providers" }
+agent-common = { path = "crates/common" }
+agent-providers = { path = "crates/infra/providers" }
 
-# 外部依赖：只加「这一阶段真的用得上」的，见 docs/40-research/rust-backend-stack.md
+# 外部依赖：只加「这一阶段真的用得上」的，见 `X1`
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

@@ -21,7 +21,8 @@
 
 | 影响范围 | 放哪 |
 |---------|------|
-| 只影响一个 crate | `crates/<crate>/README.md`（门面）或 `crates/<crate>/docs/*.md`（细节） |
+| 只影响一个 crate（基础设施） | `crates/infra/<crate>/README.md`（门面）或 `crates/infra/<crate>/docs/*.md`（细节） |
+| 只影响一个**功能切片** | `crates/features/<功能>/`：README.md（门面）+ `src/` + `tests/` + 可选 `docs/` |
 | 影响多个 crate / 全项目 | 根 `docs/*.md` |
 | 决策（只增不改） | `docs/decisions/NNNN-<slug>.md` |
 | 长期计划（尚无归属 crate） | `docs/plans/*.md` |
@@ -29,7 +30,7 @@
 | 当前阶段状态 · **某 crate 的细节** | `crates/<crate>/status.md`（按需建立，随任务生灭） |
 | 未决问题 | 根 `OPEN-QUESTIONS.md` |
 | 里程碑与排期（**不含状态**） | `docs/roadmap.md` |
-| 模板 | `docs/_template.md`、`docs/decisions/_template.md`、`crates/agent-providers/docs/providers/_template.md` |
+| 模板 | `docs/_template.md`、`docs/decisions/_template.md`、`crates/infra/providers/docs/providers/_template.md` |
 
 ## 2. 地图
 
@@ -41,7 +42,7 @@
 |------|------|------|------|
 | `S1` / `S2` | 状态概览 / 未决问题 | `P1–P6` / `PT` | 供应商文档 / 供应商模板 |
 | `G1` | 目标与技术路线 | `X1–X5` | 调研（一次性消费，会过时） |
-| `A1–A7` | 架构与契约（跨 crate 或归属某 crate） | `D0–D4` | 决策 ADR（只增不改） |
+| `A1–A7` | 架构与契约（跨 crate 或归属某 crate） | `D0–D5` | 决策 ADR（只增不改） |
 | `R1–R4` | 运行时（配置 / 路由 / 观测 / 限流） | `RM` | 里程碑排期（**不含状态**） |
 | `Q1–Q3` | 质量（测试 / 评测 / 安全） | `GUI` | 二期 GUI 与 L3 计划 |
 
@@ -68,46 +69,55 @@
 | Q3 | 安全与合规 | `docs/security.md` | 密钥、审计、数据合规 | — | ⬜ |
 | T0 | 文档模板 | `docs/_template.md` | 新建任何文档 | ~0.3k | ✅ |
 
-### `crates/agent-schema`
+### `crates/common`
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| — | crate 门面 | `crates/agent-schema/README.md` | 改契约类型前 | ~0.7k | ✅ |
-| A3 | 消息与多模态协议 | `crates/agent-schema/docs/message-protocol.md` | 改消息 / 内容块 / tool_call_id | ~1.5k | ✅ |
+| — | crate 门面 | `crates/common/README.md` | 改契约类型前 | ~0.7k | ✅ |
+| A3 | 消息与多模态协议 | `crates/common/docs/message-protocol.md` | 改消息 / 内容块 / tool_call_id | ~1.5k | ✅ |
 
-### `crates/agent-providers`
-
-| ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
-|----|------|------|--------|------|------|
-| — | crate 门面 | `crates/agent-providers/README.md` | 加供应商、改 trait | ~0.8k | ✅ |
-| A2 | Provider 接入契约 | `crates/agent-providers/docs/contract.md` | 改调用接口、新增供应商 | ~2.6k | ✅ |
-| X3 | 多模型抽象路线调研 | `crates/agent-providers/docs/abstraction-research.md` | 质疑要不要自研抽象 | ~2.3k | ✅ |
-| PT | 供应商文档模板 | `crates/agent-providers/docs/providers/_template.md` | 新建某家供应商文档 | ~0.4k | ✅ |
-| P1–P6 | 各供应商差异 | `crates/agent-providers/docs/providers/*.md` | 接某一家模型时 | — | ⬜ |
-
-### `crates/agent-transport`（M2 正在建）
+### `crates/infra/providers`
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| — | crate 门面 | `crates/agent-transport/README.md` | 动传输层 / SSE 前 | ~0.6k | ✅ |
-| A4 | 流式、取消与超时 | `crates/agent-transport/docs/streaming.md` | 动 SSE / 中断 / 超时 | — | ⬜ |
-| R4 | 缓存、限流与并发 | `crates/agent-transport/docs/cache-and-ratelimit.md` | 重复请求、QPS 控制 | — | ⬜ |
+| — | crate 门面 | `crates/infra/providers/README.md` | 加供应商、改 trait | ~0.8k | ✅ |
+| A2 | Provider 接入契约 | `crates/infra/providers/docs/contract.md` | 改调用接口、新增供应商 | ~2.6k | ✅ |
+| X3 | 多模型抽象路线调研 | `crates/infra/providers/docs/abstraction-research.md` | 质疑要不要自研抽象 | ~2.3k | ✅ |
+| PT | 供应商文档模板 | `crates/infra/providers/docs/providers/_template.md` | 新建某家供应商文档 | ~0.4k | ✅ |
+| P1–P6 | 各供应商差异 | `crates/infra/providers/docs/providers/*.md` | 接某一家模型时 | — | ⬜ |
 
-### `crates/agent-core`（待建）
-
-| ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
-|----|------|------|--------|------|------|
-| A5 | 工具调用 | `crates/agent-core/docs/tool-calling.md` | 工具定义、并行调用、结果回填 | — | ⬜ |
-| A6 | 错误、重试与降级 | `crates/agent-core/docs/errors-and-fallback.md` | 限流 / 超时 / 审核 / 不可用 | — | ⬜ |
-| A7 | 上下文与 Token | `crates/agent-core/docs/context-and-tokens.md` | 裁剪、摘要、计费 | — | ⬜ |
-
-### 其他 crate（待建）
+### `crates/infra/transport`（M2 正在建）
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| R1 | 配置与密钥 | `crates/agent-config/docs/config-and-secrets.md` | 加配置项、接密钥 | — | ⬜ |
-| R2 | 模型注册表与路由 | `crates/agent-routing/docs/model-registry.md` | 模型清单、路由与兜底 | — | ⬜ |
-| R3 | 可观测性与成本 | `crates/agent-observability/docs/observability.md` | 日志 / trace / 计费 | — | ⬜ |
+| — | crate 门面 | `crates/infra/transport/README.md` | 动传输层 / SSE 前 | ~0.6k | ✅ |
+| A4 | 流式、取消与超时 | `crates/infra/transport/docs/streaming.md` | 动 SSE / 中断 / 超时 | — | ⬜ |
+| R4 | 缓存、限流与并发 | `crates/infra/transport/docs/cache-and-ratelimit.md` | 重复请求、QPS 控制 | — | ⬜ |
+
+### `crates/features/*`（功能切片：一个功能 = 一个文件夹，见 `D5`）
+
+| ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
+|----|------|------|--------|------|------|
+| — | 对话功能门面 | `crates/features/chat/README.md` | 改对话逻辑 / 界面时 | ~0.6k | ✅ 骨架 |
+| — | 会话功能门面 | `crates/features/sessions/README.md` | 改会话列表 / 切换时 | ~0.5k | ✅ 骨架 |
+| — | 设置功能门面 | `crates/features/settings/README.md` | 加设置项 / 改密钥录入时 | ~0.5k | ✅ 骨架 |
+| A5 | 工具调用 | `crates/features/chat/docs/tool-calling.md` | 工具定义、并行调用、结果回填 | — | ⬜ |
+| A7 | 上下文与 Token | `crates/features/chat/docs/context-and-tokens.md` | 裁剪、摘要、计费 | — | ⬜ |
+
+### `crates/infra/*`（其他基础设施，按需创建）
+
+| ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
+|----|------|------|--------|------|------|
+| A6 | 错误、重试与降级 | `crates/infra/transport/docs/errors-and-fallback.md` | 限流 / 超时 / 审核 / 不可用 | — | ⬜ |
+| R1 | 配置与密钥 | `crates/infra/config/docs/config-and-secrets.md` | 加配置项、接密钥 | — | ⬜ |
+| R2 | 模型注册表与路由 | `crates/infra/routing/docs/model-registry.md` | 模型清单、路由与兜底 | — | ⬜ |
+| R3 | 可观测性与成本 | `crates/infra/telemetry/docs/observability.md` | 日志 / trace / 计费 | — | ⬜ |
+
+### `crates/app`
+
+| ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
+|----|------|------|--------|------|------|
+| — | 二进制入口门面 | `crates/app/README.md` | 想跑起来看一眼、新增 CLI 命令 | ~0.5k | ✅ |
 
 ### 决策记录（只增不改）
 
@@ -118,7 +128,7 @@
 | D2 | 多模型抽象：契约自研 | `docs/decisions/0002-llm-abstraction.md` | 是否引入 rig / genai | ~1k | ✅ 已接受 |
 | D3 | UI 交付形态 | `docs/decisions/0003-ui-delivery-form.md` | 定 UI 技术、讨论分阶段 | ~0.9k | 🚧 待决 |
 | D4 | 样式层建设路线 | `docs/decisions/0004-styling-layer.md` | 样式怎么组织、能否复用 TS 生态 | ~0.6k | 🚧 待确认 |
-| D5 | 代码按功能组织（Django 式） | `docs/decisions/0005-feature-oriented-layout.md` | 新建 crate / 功能、移动目录时 | ~1.5k | 🚧 提案待确认 |
+| D5 | 代码按功能组织（Django 式） | `docs/decisions/0005-feature-oriented-layout.md` | 新建 crate / 功能、移动目录时 | ~1.6k | ✅ 已接受 |
 
 ### 计划与跨领域调研
 
@@ -143,7 +153,8 @@
 | 新增 / 修改供应商 | `A2` → `PT` → 对应 `P*` → `X3` |
 | 写传输 / SSE / 重试 | `A4`（⬜ 先建）→ `Q1` → `A2` |
 | 改契约类型 | 对应 crate 的 README → `A2` / `A3` |
-| 新建模块 / 改目录结构 | `A1` → `G1` |
+| 新增功能 / 新建 feature | `D5` → 该功能的 `crates/features/<功能>/README.md` |
+| 新建模块 / 改目录结构 | `A1` §5 → `D5` → `G1` |
 | 决定 UI 技术 | `D3` → `X4`（GPUI 细节 → `X2`） |
 | 样式怎么组织 | `D4` → `X5` |
 | 「自研还是找现成轮子」 | `G1` §3 → `X1`/`X2`/`X3` |

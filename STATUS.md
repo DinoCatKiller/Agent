@@ -19,9 +19,9 @@
 
 | crate | 本任务中它要做什么 | 细节 |
 |-------|-----------------|------|
-| `crates/agent-transport` | 新建：reqwest 封装、SSE 解析、超时与取消、退避重试 | `crates/agent-transport/status.md` |
-| `crates/agent-schema` | 仅当 `StreamEvent` 需要补字段时才动，否则不碰 | — |
-| `crates/agent-providers` | 本任务不动（fixtures 属 M3） | — |
+| `crates/infra/transport` | 新建：reqwest 封装、SSE 解析、超时与取消、退避重试 | `crates/infra/transport/status.md` |
+| `crates/common` | 仅当 `StreamEvent` 需要补字段时才动，否则不碰 | — |
+| `crates/infra/providers` | 本任务不动（fixtures 属 M3） | — |
 
 ## 阻塞
 

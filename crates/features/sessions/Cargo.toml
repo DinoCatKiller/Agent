@@ -1,0 +1,10 @@
+[package]
+name = "agent-sessions"
+description = "功能切片 sessions：会话的创建、列举、重命名与切换"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+agent-common = { workspace = true }

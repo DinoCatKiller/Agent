@@ -37,7 +37,7 @@ ADR-001 已定「Rust 后端 + GPUI 前端」。实际动手前出现新的判�
 ## 影响
 
 - 若采纳分阶段方案：`agent-ui` 改为 `agent-tui`（Ratatui）先落地，但**接口仍按「UI 无关的事件流 + 命令通道」设计**，为二期 GUI 留位。
-- `agent-core` / `agent-schema` / `agent-providers` 完全不受影响（这是本方案成立的前提）。
+- `agent-core` / `agent-common` / `agent-providers` 完全不受影响（这是本方案成立的前提）。
 - ADR-001 的「前端 = GPUI」部分被本 ADR 覆盖或顺延。
 
 ## 未决项

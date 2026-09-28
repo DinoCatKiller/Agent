@@ -23,11 +23,11 @@
 | 位置 | 放什么 |
 |------|--------|
 | `STATUS.md`（根） | 阶段**概览**：当前任务是什么、跨哪些 crate。**只写当前任务，完成即重写** |
-| `crates/<crate>/status.md` | 该 crate 在当前任务里的**细节**（按需建立，随任务生灭） |
+| `crates/<类别>/<crate>/status.md` | 该 crate 在当前任务里的**细节**（按需建立，随任务生灭） |
 | `OPEN-QUESTIONS.md`（根） | 未决问题，固定路径、就地更新 |
 | `docs/roadmap.md` | 里程碑与排期定义（**不含状态**） |
-| `crates/<crate>/README.md` | 该 crate 的门面：边界、用法、状态 |
-| `crates/<crate>/docs/*.md` | 该 crate 的规格细节 |
+| `crates/features/<功能>/` | **功能切片**（`D5`）：一个功能一个文件夹 —— README + `src/` + `tests/` + 可选 `docs/` 同目录 |
+| `crates/infra/<crate>/` | 基础设施：README.md（门面）+ `docs/*.md`（规格细节） |
 | `docs/*.md`（根） | 跨 crate 的规格：架构、测试、目标 |
 | `docs/decisions/` | ADR，只增不改 |
 | `docs/plans/` | 尚无归属 crate 的长期计划 |
@@ -52,9 +52,15 @@ docs/
   plans/gui-phase2.md     二期 GUI + L3 样式引擎
   research/               跨领域调研（Rust 后端栈、GPUI、UI 形态、样式可移植性）
 crates/
-  agent-schema/           契约唯一来源（+ docs/message-protocol.md）
-  agent-providers/        Provider trait 与适配器（+ docs/contract.md、docs/providers/）
-  agent-app/              二进制入口与冒烟自检
+  common/                 契约与纯类型（无 IO）：消息 / 事件 / 错误（+ docs/message-protocol.md）
+  infra/                  基础设施（被 features 复用）
+    transport/            HTTP / SSE / 超时 / 取消 / 重试（M2 在建）
+    providers/            Provider trait 与适配器（+ docs/contract.md、docs/providers/）
+  features/               用户可见功能：一个功能一个文件夹（Django app 式，见 D5）
+    chat/                 一次对话：编排 + 状态 + 界面 + 测试
+    sessions/             会话列表与管理
+    settings/             设置项与密钥录入
+  app/                    二进制入口与冒烟自检
 ```
 
 ## 快速验证

@@ -25,7 +25,7 @@
 
 采用 **方案 C**。具体边界：
 
-1. `agent-schema` 定义内部消息 / 流式事件 / 错误类型；`agent-providers` 定义 `Provider` trait，严格对齐 `A2`。
+1. `agent-common` 定义内部消息 / 流式事件 / 错误类型；`agent-providers` 定义 `Provider` trait，严格对齐 `A2`。
 2. 首批 adapter 自研：
    - **OpenAI 兼容族**（`reqwest` + SSE）——一份实现覆盖 OpenAI / DeepSeek / 通义 / Kimi / GLM / Ollama / OpenRouter 等。
    - **Anthropic 原生**（content block + `input_json_delta`）——无官方 Rust SDK，协议差异可控。
