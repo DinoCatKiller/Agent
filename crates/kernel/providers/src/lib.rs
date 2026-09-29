@@ -187,7 +187,10 @@ mod tests {
 
     #[test]
     fn plain_request_only_needs_text() {
-        assert_eq!(required_capabilities(&base_request()), vec![Capability::Text]);
+        assert_eq!(
+            required_capabilities(&base_request()),
+            vec![Capability::Text]
+        );
     }
 
     #[test]

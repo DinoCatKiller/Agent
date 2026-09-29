@@ -4,7 +4,7 @@
 |---|---|
 | ID | `S1` |
 | 类型 | 状态 · **概览** |
-| 更新 | 2026-09-28 |
+| 更新 | 2026-09-29 |
 | 何时读 | **每次开工第一眼**，5 秒确认「现在做什么」 |
 | 规模 | ~0.5k token |
 
@@ -13,23 +13,26 @@
 
 ## 当前任务
 
-**M2 · 传输层** ｜ 状态：🚧 进行中（HTTP 封装已落地，SSE / 收尾 / 取消 / 重试 / fixtures 待建）
+**M3 · 首个适配器** ｜ 状态：⬜ 未启动（**开工前先拍板 `S2` 的 Q3**）
 
-一句话：让「一次模型调用」能真正发出去并流式收回来。
+一句话：让首个适配器跑通 `Q1` 的 12 条用例，端到端兑现「一次真实请求能流式收完」。
 
 | crate | 本任务中它要做什么 | 细节 |
 |-------|-----------------|------|
-| `crates/kernel/transport` | 新建：reqwest 封装、SSE 解析、超时与取消、退避重试 | `crates/kernel/transport/status.md` |
-| `crates/common` | 仅当 `StreamEvent` 需要补字段时才动，否则不碰 | — |
-| `crates/kernel/providers` | 本任务不动（fixtures 属 M3） | — |
+| `crates/kernel/providers` | 首个适配器：厂商字段映射、错误映射覆盖 `A2` §5 全部类别、`Q1` §2 的契约 fixtures（`tests/fixtures/`） | 开工时建 `crates/kernel/providers/status.md` |
+| `crates/kernel/transport` | **不动**（M2 已收口） | — |
+| `crates/common` | 仅当契约需补字段时才动 | — |
 
 ## 阻塞
 
-- 无。`S2` 的 Q3（首批适配器优先级）在 **M3 前**需拍板，不阻塞 M2。
+- **`S2` Q3（首批适配器优先级）必须拍板**：OpenAI 兼容族先行，还是 Anthropic 优先——它决定先写哪份 fixtures 与哪篇 `P*`；`RM` 要求 M3 前定。
+- 相关但不阻塞：`S2` Q5（Ollama 是否一等公民）影响 M3 是否先做无鉴权分支。
 
 ## 上一阶段
 
-- **M1 完成**（workspace + 契约层，4 个单测通过）。细节已清空——产物清单见各 crate 的 `README.md`，历史见 git。
+- **M2 完成**：传输层 HTTP / SSE / 三分收尾 / 取消，规格见 `A4`；端到端管线由 `tests/fixtures/*.sse` + `tests/pipeline.rs` 固定。
+  crate 级细节文件已随任务删除（产物清单见 `crates/kernel/transport/README.md`，历史见 git）。
+- **重试未随 M2 做**：随 `A6`（错误、重试与降级）落地。
 
 ## 相关
 

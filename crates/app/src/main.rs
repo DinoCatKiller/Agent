@@ -5,11 +5,11 @@
 //! 这不是最终 CLI，也**不是** UI 层。M4 起会在 `features/chat` 上长出真实会话命令；
 //! UI 形态未定（见 D3），所以这里刻意只依赖契约。
 
-use agent_providers::{required_capabilities, ProviderRegistry};
 use agent_common::{
     Capability, DeltaKind, ErrorCategory, FinishReason, Message, ModelRequest, ModelSpec, Pricing,
-    ProviderError, ResponseFormat, StreamEvent, ToolCall, ToolDefinition, ToolChoice, Usage,
+    ProviderError, ResponseFormat, StreamEvent, ToolCall, ToolChoice, ToolDefinition, Usage,
 };
+use agent_providers::{ProviderRegistry, required_capabilities};
 use serde_json::json;
 
 fn main() {
@@ -74,7 +74,11 @@ fn self_check() {
     println!("模型支持: {:?}", spec.capabilities);
     println!(
         "缺失能力: {missing:?} -> {}",
-        if missing.is_empty() { "通过" } else { "拒绝" }
+        if missing.is_empty() {
+            "通过"
+        } else {
+            "拒绝"
+        }
     );
 
     // 该模型只有 JsonMode（合法 JSON），不支持严格 schema 输出 → 必须被拒绝

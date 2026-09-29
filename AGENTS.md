@@ -91,7 +91,7 @@
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
 | — | crate 门面 | `crates/kernel/transport/README.md` | 动传输层 / SSE 前 | ~0.6k | ✅ |
-| A4 | 流式、取消与超时 | `crates/kernel/transport/docs/streaming.md` | 动 SSE / 中断 / 超时 | — | ⬜ |
+| A4 | 流式、取消与超时 | `crates/kernel/transport/docs/streaming.md` | 动 SSE / 中断 / 超时 / 装配一次调用 | ~2k | ✅ |
 | R4 | 缓存、限流与并发 | `crates/kernel/transport/docs/cache-and-ratelimit.md` | 重复请求、QPS 控制 | — | ⬜ |
 
 ### `crates/features/*`（功能切片：一个功能 = 一个文件夹，见 `D5`）

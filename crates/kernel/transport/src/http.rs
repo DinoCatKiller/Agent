@@ -15,7 +15,10 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures::Stream;
-use reqwest::{Client, ClientBuilder, Proxy};
+use reqwest::{Client, ClientBuilder, Proxy, RequestBuilder, Response};
+use tokio_util::sync::CancellationToken;
+
+use crate::cancel::cancellable;
 
 /// 传输层错误。
 ///
@@ -114,6 +117,19 @@ impl HttpClient {
         Ok(Self { client, config })
     }
 
+    /// 发送请求，并把 `token` 接进这次调用（**请求阶段**取消）。
+    ///
+    /// **不**判定 HTTP 状态码：4xx / 5xx 同样返回 `Ok(Response)`——
+    /// 「状态 → `ErrorCategory`」是适配器的映射表（`A2` §5）。
+    pub async fn send(
+        &self,
+        request: RequestBuilder,
+        token: &CancellationToken,
+    ) -> Result<Response, TransportError> {
+        let send = async { request.send().await.map_err(TransportError::from) };
+        cancellable(token, send).await
+    }
+
     /// 底层客户端，用于 `get` / `post` 等构造请求。
     pub fn client(&self) -> &Client {
         &self.client
@@ -127,10 +143,19 @@ impl HttpClient {
         self.config.stream_idle_timeout
     }
 
-    /// 给响应字节流套上空闲超时。SSE 解析前调用（见 `A4`）。
-    pub fn guard_idle<S>(&self, stream: S) -> IdleTimeout<S>
+    /// 给**已归一化**的字节流套上空闲超时（SSE 解析前调用，见 `A4`）。
+    ///
+    /// 输入必须是 `Item = Result<T, TransportError>`——即先做错误归一化：
+    ///
+    /// ```text
+    /// client.guard_idle(response.bytes_stream().map(TransportError::from))
+    /// ```
+    ///
+    /// 这样输出仍是 `Result<T, TransportError>`，可以直接接 `parse_sse` /
+    /// `finalize` / `guard`，而不会出现 `Result<Result<_, _>, _>` 的嵌套。
+    pub fn guard_idle<S, T>(&self, stream: S) -> IdleTimeout<S>
     where
-        S: Stream + Unpin,
+        S: Stream<Item = Result<T, TransportError>> + Unpin,
     {
         IdleTimeout::new(stream, self.config.stream_idle_timeout)
     }
@@ -140,6 +165,10 @@ impl HttpClient {
 /// [`TransportError::IdleTimeout`]，收到数据则重置计时。
 ///
 /// 用「相邻数据间隔」而非「整体耗时」作为判据，长回答不会误杀。
+///
+/// **不做错误归一化**：要求上游已经是 `Result<T, TransportError>`
+/// （由 `bytes_stream().map(TransportError::from)` 完成），输出类型不变，
+/// 因此可以嵌进管线的任意位置。
 pub struct IdleTimeout<S> {
     stream: S,
     idle: Duration,
@@ -156,17 +185,21 @@ impl<S> IdleTimeout<S> {
     }
 }
 
-impl<S: Stream + Unpin> Stream for IdleTimeout<S> {
-    type Item = Result<S::Item, TransportError>;
+impl<S, T> Stream for IdleTimeout<S>
+where
+    S: Stream<Item = Result<T, TransportError>> + Unpin,
+{
+    type Item = Result<T, TransportError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         match Pin::new(&mut this.stream).poll_next(cx) {
             Poll::Ready(Some(item)) => {
+                // 任何一帧（含错误帧）都算「有动静」，重置空闲计时。
                 this.sleep
                     .as_mut()
                     .reset(tokio::time::Instant::now() + this.idle);
-                Poll::Ready(Some(Ok(item)))
+                Poll::Ready(Some(item))
             }
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => match this.sleep.as_mut().poll(cx) {
@@ -209,7 +242,10 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn idle_timeout_fires_when_stream_stalls() {
         let idle = Duration::from_millis(50);
-        let mut stream = IdleTimeout::new(futures::stream::pending::<u8>(), idle);
+        let mut stream = IdleTimeout::new(
+            futures::stream::pending::<Result<u8, TransportError>>(),
+            idle,
+        );
 
         let got = tokio::time::timeout(Duration::from_secs(5), stream.next())
             .await
@@ -223,16 +259,35 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn idle_timeout_passes_items_and_completion_through() {
-        let items: Vec<u8> = vec![1, 2, 3];
-        let mut stream = IdleTimeout::new(
-            futures::stream::iter(items.clone()),
-            Duration::from_millis(50),
-        );
+        let items = vec![
+            Ok::<u8, TransportError>(1),
+            Ok(2),
+            Err(TransportError::Network("mid-stream".into())),
+        ];
+        let mut stream = IdleTimeout::new(futures::stream::iter(items), Duration::from_millis(50));
 
-        let mut got = Vec::new();
-        while let Some(item) = stream.next().await {
-            got.push(item.expect("items arrive immediately, no timeout"));
-        }
-        assert_eq!(got, items);
+        // 原样透传（含错误帧），不改变类型、不吞错。
+        assert!(matches!(stream.next().await, Some(Ok(1))));
+        assert!(matches!(stream.next().await, Some(Ok(2))));
+        assert!(matches!(
+            stream.next().await,
+            Some(Err(TransportError::Network(_)))
+        ));
+        assert!(stream.next().await.is_none(), "上游结束后本流也结束");
+    }
+
+    #[tokio::test]
+    async fn send_returns_cancelled_without_touching_the_network() {
+        // 断网可测（G-3）：127.0.0.1:1 上没有服务，若真去连必然失败；
+        // 这里因为「先查取消」必须立刻返回 Cancelled，绝不发起连接。
+        let client = HttpClient::new(HttpConfig::default()).expect("client builds");
+        let token = CancellationToken::new();
+        token.cancel();
+
+        let request = client.client().post("http://127.0.0.1:1/v1/chat");
+        assert!(matches!(
+            client.send(request, &token).await,
+            Err(TransportError::Cancelled)
+        ));
     }
 }
