@@ -1,0 +1,6 @@
+data: {"id":"chatcmpl-9","object":"chat.completion.chunk","created":1727700000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"weather","arguments":"{\"city\":\"Shang"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-9","object":"chat.completion.chunk","created":1727700000,"model":"gpt-4o","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"hai\"}"}}]},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+

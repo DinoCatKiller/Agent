@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| 状态 | 🚧 契约已落地（M1）；**尚无任何适配器**（M3 起） |
+| 状态 | ✅ 首个适配器已落地（M3，OpenAI 兼容族，见 [`openai`](src/openai.rs) 与 `P1`） |
 | 边界 | 定义 `Provider` trait 与注册表；持有各家的协议实现。**不含** Agent 循环、路由策略、UI |
 | 上游 | `agent-common` |
 | 下游 | `features/*`（如 `chat`，编排核心）/ `kernel/routing`（通过 `ProviderRegistry`） |
@@ -22,6 +22,7 @@
 | `ProviderRegistry` | `register` / `get` / `ids` / `models` / `find_model` |
 | `required_capabilities()` | 从 `ModelRequest` 推导所需能力，供路由阶段 fast-fail（4 个单测覆盖） |
 | `CallContext` | `request_id` + `cancel: CancellationToken` |
+| [`openai`](src/openai.rs) | OpenAI 兼容适配器：`OpenAiCompatible` + `OpenAiFramePolicy`（SSE→归一化、工具分片拼装、错误映射覆盖 `A2` §5），契约测试 12 用例全绿 |
 
 ## 两个必须知道的设计决定
 
@@ -33,12 +34,12 @@
 
 ## 加一家供应商的步骤
 
-1. 复制模板 `crates/kernel/providers/docs/providers/_template.md` → `docs/providers/<name>.md`，填协议 / 鉴权 / 字段映射 / 错误映射。
+1. 复制模板 [`crates/kernel/providers/docs/providers/_template.md`](docs/providers/_template.md) → `docs/providers/<name>.md`，填协议 / 鉴权 / 字段映射 / 错误映射。
 2. 写适配器：实现 `Provider`（`chat` 与 `stream` 都要）+ 用 `Arc<Client>` 包住连接。
 3. 声明 `ModelSpec` 清单（上下文窗口、能力、价格）。
 4. 错误映射表覆盖 `A2` §5 的全部类别。
 5. 按 `Q1` 的 12 条用例建 fixtures 契约测试。
-6. 在 `AGENTS.md` §2 地图登记该供应商文档并把状态改成 ✅。
+6. 在 [`AGENTS.md`](../../../AGENTS.md) §2 地图登记该供应商文档并把状态改成 ✅。
 
 ## 相关
 

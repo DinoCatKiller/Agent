@@ -22,12 +22,15 @@ rust-version = "1.95"
 # 内部 crate
 agent-common = { path = "crates/common" }
 agent-providers = { path = "crates/kernel/providers" }
+agent-transport = { path = "crates/kernel/transport" }
 
 # 外部依赖：只加「这一阶段真的用得上」的，见 `X1`
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 futures = "0.3"
+# 流式装配：适配器把「请求 → 字节流 → SSE → 归一化事件」拼成一条 EventStream（M3 用）
+async-stream = "0.3"
 # 与 reqwest 的字节流类型一致（reqwest 亦依赖它，无新增传递成本）
 bytes = "1"
 # rustls：无 OpenSSL 依赖，交叉编译友好；stream 用于 bytes_stream，json 供上层复用

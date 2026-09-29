@@ -1,0 +1,1 @@
+{ "model": "gpt-4o", "notes": "基础流式文本：role 帧 → 两个内容帧（末帧带 finish_reason）→ usage 帧 → [DONE]。手工按真实抓包格式整理，待真机重录。", "recorded_at": "2026-09-29" }

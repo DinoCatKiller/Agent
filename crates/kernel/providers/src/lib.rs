@@ -1,8 +1,15 @@
 //! Provider 契约与运行时注册表（对应 `A2`，ID `A2`）。
 //!
 //! 分工：
-//! - 适配器实现 [`Provider`]（每家一个）；
+//! - 适配器实现 [`Provider`]（每家一个，见 [`openai`]）；
 //! - 路由层通过 [`ProviderRegistry`] 拿到 `dyn ErasedProvider`，不依赖任何具体实现。
+
+pub mod openai;
+
+pub use openai::{
+    OpenAiCompatible, OpenAiConfig, OpenAiFramePolicy, map_finish_reason, map_http_error,
+    openai_default_models, parse_chat_response,
+};
 
 use std::collections::HashMap;
 use std::future::Future;

@@ -1,0 +1,1 @@
+{ "model": "gpt-4o", "notes": "供应商未回 usage（未开 include_usage 的兼容实现）：End 前仍以 Usage::default() 发一次（Q1 用例 11）。", "recorded_at": "2026-09-29" }

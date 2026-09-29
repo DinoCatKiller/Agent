@@ -1,0 +1,1 @@
+{ "model": "gpt-4o", "notes": "工具参数跨两个 delta 分片，拼装后必须是可解析的完整 JSON（Q1 用例 3）。无 usage 帧，验证缺省补 default（同时覆盖用例 11 路径）。", "recorded_at": "2026-09-29" }
