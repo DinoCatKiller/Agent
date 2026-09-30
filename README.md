@@ -22,19 +22,19 @@
 
 | 位置 | 放什么 |
 |------|--------|
-| `STATUS.md`（根） | 阶段**概览**：当前任务是什么、跨哪些 crate。**只写当前任务，完成即重写** |
+| [`STATUS.md`](STATUS.md)（根） | 阶段**概览**：当前任务是什么、跨哪些 crate。**只写当前任务，完成即重写** |
 | `crates/<类别>/<crate>/status.md` | 该 crate 在当前任务里的**细节**（按需建立，随任务生灭） |
-| `OPEN-QUESTIONS.md`（根） | 未决问题，固定路径、就地更新 |
-| `docs/roadmap.md` | 里程碑与排期定义（**不含状态**） |
+| [`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)（根） | 未决问题，固定路径、就地更新 |
+| [`docs/roadmap.md`](docs/roadmap.md) | 里程碑与排期定义（**不含状态**） |
 | `crates/features/<功能>/` | **语义**（`D6`）：一个功能一个文件夹 —— README + `src/{service,repo,ui,领域类型}.rs` + `tests/` 同目录 |
 | `crates/kernel/<crate>/` | **机制**（`D6`）：README.md（门面）+ `docs/*.md`（规格细节）。不许出现业务名词 |
 | `docs/*.md`（根） | 跨 crate 的规格：架构、测试、目标 |
 | `docs/decisions/` | ADR，只增不改 |
 | `docs/plans/` | 尚无归属 crate 的长期计划 |
 | `docs/research/` | 跨领域调研（其余调研放在它影响的那个 crate 里） |
-| `docs/_template.md` | 新文档模板 |
+| [`docs/_template.md`](docs/_template.md) | 新文档模板 |
 
-**引用规则**：文档之间只写 ID（如 `A2`、`S1`），**不写路径**。路径只在 `AGENTS.md` §2 的地图里出现一次 —— 这样搬文件不用改别的文档。
+**引用规则**：文档之间只写 ID（如 `A2`、`S1`），**不写路径**。路径只在 [`AGENTS.md`](AGENTS.md) §2 的地图里出现一次 —— 这样搬文件不用改别的文档。
 
 ## 目录树
 

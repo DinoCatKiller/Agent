@@ -37,13 +37,13 @@
 写作规则（提交前删除本注释）：
 
 1. 放哪：只影响一个 crate → `crates/<crate>/docs/`；跨 crate → 根 `docs/`。
-   判定与完整规则见 `AGENTS.md` §1。
-2. 引用只用 ID，**不写路径**。路径只出现在 `AGENTS.md` §2 地图里一次。
+   判定与完整规则见 [`AGENTS.md`](../AGENTS.md) §1。
+2. 引用只用 ID，**不写路径**。路径只出现在 [`AGENTS.md`](../AGENTS.md) §2 地图里一次。
 3. 「一个结论只有一个家」：别处只许引用，不许复制内容。
-4. 未决问题不要写在本文件，写到 `S2`（根 `OPEN-QUESTIONS.md`）。
+4. 未决问题不要写在本文件，写到 `S2`（根 [`OPEN-QUESTIONS.md`](../OPEN-QUESTIONS.md)）。
 5. 头部表格 + TL;DR 是**新建文档**的必填项；存量文档在下次大改时补齐。
-6. 超过 ~300 行就拆分，并在 `AGENTS.md` §2 登记新条目。
-7. 写完回填 `AGENTS.md` §2 的状态列。
-8. 状态分层且不搬家：概览改 `S1`（根 `STATUS.md`），某 crate 的细节写 `crates/<crate>/status.md`；
+6. 超过 ~300 行就拆分，并在 [`AGENTS.md`](../AGENTS.md) §2 登记新条目。
+7. 写完回填 [`AGENTS.md`](../AGENTS.md) §2 的状态列。
+8. 状态分层且不搬家：概览改 `S1`（根 [`STATUS.md`](../STATUS.md)），某 crate 的细节写 `crates/<crate>/status.md`；
    两者都**只写当前任务**，完成任务即清空重写；长期排期写 `RM`，不进 status。
 -->
