@@ -81,7 +81,8 @@
 | X3 | 多模型抽象路线调研 | [`crates/kernel/providers/docs/abstraction-research.md`](crates/kernel/providers/docs/abstraction-research.md) | 质疑要不要自研抽象 | ~2.3k | ✅ |
 | PT | 供应商文档模板 | [`crates/kernel/providers/docs/providers/_template.md`](crates/kernel/providers/docs/providers/_template.md) | 新建某家供应商文档 | ~0.4k | ✅ |
 | P1 | OpenAI 兼容族差异 | [`crates/kernel/providers/docs/providers/openai.md`](crates/kernel/providers/docs/providers/openai.md) | 接 OpenAI / DeepSeek / vLLM 等兼容实现时 | ~1.5k | ✅ |
-| P2–P6 | 其余供应商差异 | `crates/kernel/providers/docs/providers/*.md` | 接对应一家模型时 | — | ⬜ |
+| P2 | Anthropic 差异 | [`crates/kernel/providers/docs/providers/anthropic.md`](crates/kernel/providers/docs/providers/anthropic.md) | 接 Claude / Anthropic 兼容端点时 | ~1.6k | ✅ |
+| P3–P6 | 其余供应商差异 | `crates/kernel/providers/docs/providers/*.md` | 接对应一家模型时 | — | ⬜ |
 
 ### `crates/kernel/transport`（M2 正在建）
 

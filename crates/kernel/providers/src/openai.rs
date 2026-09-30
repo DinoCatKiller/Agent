@@ -136,28 +136,7 @@ impl OpenAiCompatible {
 
     /// 能力协商 fast-fail（`A2` §1 / `Q1` 用例 12）：发请求**之前**拒绝不支持的组合。
     pub fn check_capabilities(&self, req: &ModelRequest) -> Result<(), ProviderError> {
-        if self.models.is_empty() {
-            return Ok(());
-        }
-        let required = crate::required_capabilities(req);
-        let Some(spec) = self.models.iter().find(|m| m.id == req.model) else {
-            return Err(
-                ProviderError::new(self.id, ErrorCategory::InvalidRequest).with_message(format!(
-                    "model '{}' is not listed in provider '{}'",
-                    req.model, self.id
-                )),
-            );
-        };
-        let missing = spec.missing(&required);
-        if !missing.is_empty() {
-            return Err(
-                ProviderError::new(self.id, ErrorCategory::InvalidRequest).with_message(format!(
-                    "model '{}' lacks required capabilities: {:?}",
-                    req.model, missing
-                )),
-            );
-        }
-        Ok(())
+        crate::check_model_capabilities(self.id, &self.models, req)
     }
 
     /// 归一化 `ModelRequest` → OpenAI `chat/completions` 请求体。`pub` 供契约测试断言（`Q1` 用例 4）。
@@ -328,19 +307,7 @@ impl OpenAiCompatible {
 
     /// `TransportError` → `ProviderError`（网络层没有供应商错误体，`status` 置空）。
     fn map_transport_error(&self, err: &TransportError) -> ProviderError {
-        match err {
-            TransportError::Timeout(_) | TransportError::IdleTimeout(_) => {
-                ProviderError::new(self.id, ErrorCategory::Timeout).with_message(err.to_string())
-            }
-            TransportError::Network(_) => ProviderError::new(self.id, ErrorCategory::Unknown)
-                .retryable_override(true)
-                .with_message(err.to_string()),
-            TransportError::Cancelled => ProviderError::new(self.id, ErrorCategory::Unknown)
-                .with_message("request cancelled"),
-            TransportError::Build(_) => {
-                ProviderError::new(self.id, ErrorCategory::Unknown).with_message(err.to_string())
-            }
-        }
+        crate::map_transport_error(self.id, err)
     }
 }
 

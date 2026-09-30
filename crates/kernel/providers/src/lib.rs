@@ -4,8 +4,12 @@
 //! - 适配器实现 [`Provider`]（每家一个，见 [`openai`]）；
 //! - 路由层通过 [`ProviderRegistry`] 拿到 `dyn ErasedProvider`，不依赖任何具体实现。
 
+pub mod anthropic;
 pub mod openai;
 
+pub use anthropic::{
+    AnthropicCompatible, AnthropicConfig, AnthropicFramePolicy, anthropic_default_models,
+};
 pub use openai::{
     OpenAiCompatible, OpenAiConfig, OpenAiFramePolicy, map_finish_reason, map_http_error,
     openai_default_models, parse_chat_response,
@@ -17,9 +21,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use agent_common::{
-    Capability, ContentPart, ModelRequest, ModelResponse, ModelSpec, ProviderError, ResponseFormat,
-    StreamEvent,
+    Capability, ContentPart, ErrorCategory, ModelRequest, ModelResponse, ModelSpec, ProviderError,
+    ResponseFormat, StreamEvent,
 };
+use agent_transport::TransportError;
 use futures::future::BoxFuture;
 use futures::stream::Stream;
 use tokio_util::sync::CancellationToken;
@@ -182,6 +187,57 @@ fn has_part(req: &ModelRequest, pred: impl Fn(&ContentPart) -> bool) -> bool {
         .iter()
         .flat_map(|message| message.content.iter())
         .any(pred)
+}
+
+/// 能力协商 fast-fail（`A2` §1 / `Q1` 用例 12）：发请求**之前**拒绝不支持的组合。
+///
+/// `models` 非空时做本地协商（模型不在清单或能力不足即 `InvalidRequest`）；
+/// 为空时不拦截，交给供应商报错（用于尚未登记清单的兼容实现）。各适配器共用。
+pub(crate) fn check_model_capabilities(
+    provider_id: &str,
+    models: &[ModelSpec],
+    req: &ModelRequest,
+) -> Result<(), ProviderError> {
+    if models.is_empty() {
+        return Ok(());
+    }
+    let required = required_capabilities(req);
+    let Some(spec) = models.iter().find(|m| m.id == req.model) else {
+        return Err(
+            ProviderError::new(provider_id, ErrorCategory::InvalidRequest).with_message(format!(
+                "model '{}' is not listed in provider '{}'",
+                req.model, provider_id
+            )),
+        );
+    };
+    let missing = spec.missing(&required);
+    if !missing.is_empty() {
+        return Err(
+            ProviderError::new(provider_id, ErrorCategory::InvalidRequest).with_message(format!(
+                "model '{}' lacks required capabilities: {:?}",
+                req.model, missing
+            )),
+        );
+    }
+    Ok(())
+}
+
+/// 传输错误 → `ProviderError`（网络层没有供应商错误体，`status` 置空）。各适配器共用。
+pub(crate) fn map_transport_error(provider: &str, err: &TransportError) -> ProviderError {
+    match err {
+        TransportError::Timeout(_) | TransportError::IdleTimeout(_) => {
+            ProviderError::new(provider, ErrorCategory::Timeout).with_message(err.to_string())
+        }
+        TransportError::Network(_) => ProviderError::new(provider, ErrorCategory::Unknown)
+            .retryable_override(true)
+            .with_message(err.to_string()),
+        TransportError::Cancelled => {
+            ProviderError::new(provider, ErrorCategory::Unknown).with_message("request cancelled")
+        }
+        TransportError::Build(_) => {
+            ProviderError::new(provider, ErrorCategory::Unknown).with_message(err.to_string())
+        }
+    }
 }
 
 #[cfg(test)]

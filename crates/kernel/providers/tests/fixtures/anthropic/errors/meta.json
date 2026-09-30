@@ -1,0 +1,1 @@
+{ "notes": "错误体 fixtures：429 / 401 / 500 / 400 上下文超限。喂给 map_http_error 断言 A2 §5 映射（Q1 用例 7-10）。Anthropic 的 request_id 在错误体顶层。", "recorded_at": "2026-09-30" }

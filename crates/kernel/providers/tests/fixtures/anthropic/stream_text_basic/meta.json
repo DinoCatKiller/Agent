@@ -1,0 +1,1 @@
+{ "model": "claude-sonnet-4-5-20250929", "notes": "基础流式文本：message_start（含 input usage）→ text_delta ×2 → message_delta（stop_reason + 累计 output usage）→ message_stop。手工按真实抓包格式整理，待真机重录。", "recorded_at": "2026-09-30" }

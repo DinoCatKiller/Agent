@@ -1,0 +1,1 @@
+{ "model": "claude-sonnet-4-5-20250929", "notes": "EOF 无 message_stop（连接中断）：必须补 End{Truncated}，不得静默当成功（Q1 用例 5）。文件在完整帧后截断。", "recorded_at": "2026-09-30" }

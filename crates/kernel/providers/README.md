@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| 状态 | ✅ 首个适配器已落地（M3，OpenAI 兼容族，见 [`openai`](src/openai.rs) 与 `P1`） |
+| 状态 | ✅ 两个适配器已落地（M3：OpenAI 兼容族 `P1`、Anthropic `P2`，同一套 12 条用例各自全绿） |
 | 边界 | 定义 `Provider` trait 与注册表；持有各家的协议实现。**不含** Agent 循环、路由策略、UI |
 | 上游 | `agent-common` |
 | 下游 | `features/*`（如 `chat`，编排核心）/ `kernel/routing`（通过 `ProviderRegistry`） |
@@ -23,6 +23,8 @@
 | `required_capabilities()` | 从 `ModelRequest` 推导所需能力，供路由阶段 fast-fail（4 个单测覆盖） |
 | `CallContext` | `request_id` + `cancel: CancellationToken` |
 | [`openai`](src/openai.rs) | OpenAI 兼容适配器：`OpenAiCompatible` + `OpenAiFramePolicy`（SSE→归一化、工具分片拼装、错误映射覆盖 `A2` §5），契约测试 12 用例全绿 |
+| [`anthropic`](src/anthropic.rs) | Anthropic Messages 适配器：`AnthropicCompatible` + `AnthropicFramePolicy`（命名事件 SSE→归一化、`tool_use` 拼装、role 交替合并、错误映射覆盖 `A2` §5），契约测试 12 用例全绿（`P2`） |
+| `check_model_capabilities()` / `map_transport_error()` | 各适配器共用的能力协商 fast-fail 与传输错误映射（`lib.rs`，crate 私有） |
 
 ## 两个必须知道的设计决定
 

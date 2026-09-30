@@ -1,0 +1,1 @@
+{ "model": "claude-sonnet-4-5-20250929", "notes": "工具结果回填（Q1 用例 4）：归一化 ModelRequest → build_request_body，断言 assistant 的 tool_use 块与 user 消息里的 tool_result 块形态。", "recorded_at": "2026-09-30" }
