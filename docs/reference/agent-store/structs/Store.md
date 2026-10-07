@@ -154,6 +154,32 @@ Defined in: [`crates/kernel/store/src/store.rs:69`](../../../../crates/kernel/st
 
 `Result<T, StoreError>`
 
+
+***
+
+### with_conn()
+
+```rust
+pub fn with_conn<T, impl FnOnce(&Connection) -> Result<T, StoreError>: FnOnce(&Connection) -> Result<T, StoreError>>(&self, f: impl ?) -> Result<T, StoreError>
+```
+
+Defined in: [`crates/kernel/store/src/store.rs:80`](../../../../crates/kernel/store/src/store.rs#L80)
+
+在锁内拿到连接，执行任意读写（含参数化 SQL）。
+
+这是给上层写业务查询的**逃生舱**（机制提供连接，语义自己写 SQL，`D6` §1）；
+`&Connection` 仅在本闭包内有效，闭包结束即释放锁。
+
+#### Parameters
+
+##### f
+
+`impl ?`
+
+#### Returns
+
+`Result<T, StoreError>`
+
 ## Trait Implementations
 
 - `impl Borrow for Store`

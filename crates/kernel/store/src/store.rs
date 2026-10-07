@@ -73,6 +73,18 @@ impl Store {
         Ok(self.lock()?.query_row(sql, [], |row| row.get(0))?)
     }
 
+    /// 在锁内拿到连接，执行任意读写（含参数化 SQL）。
+    ///
+    /// 这是给上层写业务查询的**逃生舱**（机制提供连接，语义自己写 SQL，`D6` §1）；
+    /// `&Connection` 仅在本闭包内有效，闭包结束即释放锁。
+    pub fn with_conn<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<T, StoreError>,
+    ) -> Result<T, StoreError> {
+        let conn = self.lock()?;
+        f(&conn)
+    }
+
     fn lock(&self) -> Result<MutexGuard<'_, Connection>, StoreError> {
         self.conn.lock().map_err(|_| StoreError::Poisoned)
     }

@@ -199,6 +199,9 @@ Defined in: [`crates/features/chat/src/chat.rs:81`](../../../../crates/features/
 - `impl Any for Chat`
 - `impl ToOwned for Chat`
 - `impl DeserializeOwned for Chat`
+- `impl CastableFrom for Chat`
+- `impl CastableFrom for Chat`
+- `impl Read for Chat`
 - `impl Instrument for Chat`
 - `impl WithSubscriber for Chat`
 - `impl PolicyExt for Chat`

@@ -125,6 +125,9 @@ Defined in: [`crates/features/chat/src/tools.rs:62`](../../../../crates/features
 - `impl TryFrom for ToolSet`
 - `impl Any for ToolSet`
 - `impl ToOwned for ToolSet`
+- `impl CastableFrom for ToolSet`
+- `impl CastableFrom for ToolSet`
+- `impl Read for ToolSet`
 - `impl Instrument for ToolSet`
 - `impl WithSubscriber for ToolSet`
 - `impl PolicyExt for ToolSet`

@@ -45,6 +45,9 @@ Defined in: [`crates/features/chat/src/service.rs:75`](../../../../crates/featur
 - `impl TryFrom for ServiceConfig`
 - `impl Any for ServiceConfig`
 - `impl ToOwned for ServiceConfig`
+- `impl CastableFrom for ServiceConfig`
+- `impl CastableFrom for ServiceConfig`
+- `impl Read for ServiceConfig`
 - `impl Instrument for ServiceConfig`
 - `impl WithSubscriber for ServiceConfig`
 - `impl PolicyExt for ServiceConfig`

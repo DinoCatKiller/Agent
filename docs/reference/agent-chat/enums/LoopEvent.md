@@ -104,6 +104,9 @@ Defined in: [`crates/features/chat/src/service.rs:64`](../../../../crates/featur
 - `impl TryFrom for LoopEvent`
 - `impl Any for LoopEvent`
 - `impl ToOwned for LoopEvent`
+- `impl CastableFrom for LoopEvent`
+- `impl CastableFrom for LoopEvent`
+- `impl Read for LoopEvent`
 - `impl Instrument for LoopEvent`
 - `impl WithSubscriber for LoopEvent`
 - `impl PolicyExt for LoopEvent`

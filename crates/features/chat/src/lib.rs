@@ -11,19 +11,28 @@
 //! - [`ToolSet`] / [`Tool`]：工具执行边界（`A5`），宿主提供实现；
 //! - [`context`]：超窗裁剪（`A7`），按交换块整块丢弃，保 tool 配对。
 //!
+//! # M5 已落地
+//!
+//! - [`repo`]：会话持久化——元数据进列（会话列表用），[`Chat`] 原样落盘；
+//!   连接 / 迁移 / 事务机制来自 `agent-store`。
+//!
 //! # 边界
 //!
-//! - 依赖：`agent-common`（契约）、`agent-providers`（`Provider` / `CallContext`）。
-//! - 禁止：依赖 `app`；被 `kernel/*` 依赖；**直接持有 HTTP 或 SQLite**（那是 kernel 的职责）。
+//! - 依赖：`agent-common`（契约）、`agent-providers`（`Provider` / `CallContext`）、
+//!   `agent-store`（连接与迁移机制）。
+//! - 禁止：依赖 `app`；被 `kernel/*` 依赖；**自己打开 / 管理连接**（HTTP 客户端与
+//!   SQLite 连接归 `kernel`）。业务表结构与 SQL 可以写在这里——那是语义（`D6` §1）。
 //! - 允许：依赖其它 feature（如 `sessions`），但不允许成环 —— crate 依赖图天生无环。
 
 pub mod chat;
 pub mod context;
+pub mod repo;
 pub mod service;
 pub mod tools;
 
 pub use chat::{Chat, ChatSettings, TurnDraft};
 pub use context::trim_to_fit;
+pub use repo::{RepoError, SessionMeta, SessionRepo};
 pub use service::{ChatService, LoopEvent, RoundStop, ServiceConfig};
 pub use tools::{Tool, ToolOutput, ToolSet};
 

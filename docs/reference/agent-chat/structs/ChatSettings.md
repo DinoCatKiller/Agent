@@ -53,6 +53,9 @@ Defined in: [`crates/features/chat/src/chat.rs:22`](../../../../crates/features/
 - `impl Any for ChatSettings`
 - `impl ToOwned for ChatSettings`
 - `impl DeserializeOwned for ChatSettings`
+- `impl CastableFrom for ChatSettings`
+- `impl CastableFrom for ChatSettings`
+- `impl Read for ChatSettings`
 - `impl Instrument for ChatSettings`
 - `impl WithSubscriber for ChatSettings`
 - `impl PolicyExt for ChatSettings`

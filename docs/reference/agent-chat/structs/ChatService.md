@@ -144,6 +144,9 @@ Defined in: [`crates/features/chat/src/service.rs:124`](../../../../crates/featu
 - `impl TryInto for ChatService`
 - `impl TryFrom for ChatService`
 - `impl Any for ChatService`
+- `impl CastableFrom for ChatService`
+- `impl CastableFrom for ChatService`
+- `impl Read for ChatService`
 - `impl Instrument for ChatService`
 - `impl WithSubscriber for ChatService`
 - `impl PolicyExt for ChatService`

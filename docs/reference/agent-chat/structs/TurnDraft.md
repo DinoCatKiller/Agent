@@ -105,6 +105,9 @@ Defined in: [`crates/features/chat/src/chat.rs:140`](../../../../crates/features
 - `impl TryFrom for TurnDraft`
 - `impl Any for TurnDraft`
 - `impl ToOwned for TurnDraft`
+- `impl CastableFrom for TurnDraft`
+- `impl CastableFrom for TurnDraft`
+- `impl Read for TurnDraft`
 - `impl Instrument for TurnDraft`
 - `impl WithSubscriber for TurnDraft`
 - `impl PolicyExt for TurnDraft`

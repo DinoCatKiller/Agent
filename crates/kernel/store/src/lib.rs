@@ -21,3 +21,8 @@ pub use error::StoreError;
 pub use migrate::Migrator;
 pub use store::Store;
 pub use tx::Tx;
+
+// rusqlite 版本只在此处声明一次。上层（如 `features/chat` 的 `repo.rs`）写业务 SQL 时
+// 用 `agent_store::rusqlite`，避免各自引一份引擎依赖——版本漂移会让 `Connection`
+// 变成两个不兼容的类型。
+pub use rusqlite;

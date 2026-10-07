@@ -18,12 +18,14 @@
 | 连接管理 ✅ | `open` / `open_in_memory`，初始化 `foreign_keys`、`WAL` PRAGMA；`Clone` 只增引用计数 |
 | 版本化迁移 ✅ | `Migrator`：版本号 + SQL 脚本列表，`PRAGMA user_version` 记录进度；每版本一个事务，失败回滚 |
 | 事务 ✅ | `Tx` guard：`commit` / `rollback`，Drop 未完成自动回滚（防悬挂事务） |
+| 业务 SQL 逃生舱 ✅ | `with_conn`：锁内交出 `&Connection`，上层写参数化查询；并 `pub use rusqlite` 集中版本 |
 
 ## 三个必须知道的约束
 
 1. **只做机制，不做语义**：表结构由 `repo.rs` 定义并通过 `Migrator` 传入，store 不知道任何业务表。
 2. **同步 API**：rusqlite 是同步的；async 调用方（`repo.rs`）自行决定 `spawn_blocking`。
 3. **迁移幂等**：重复 `apply` 是空操作；单版本失败整体回滚，`user_version` 不前进。
+4. **rusqlite 只在此声明版本**：上层用 `agent_store::rusqlite`，不要自己加依赖（版本漂移会让 `Connection` 类型不兼容）。
 
 ## 相关
 

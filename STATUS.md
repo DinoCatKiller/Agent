@@ -19,9 +19,9 @@
 
 | crate | 本任务产出 | 细节 |
 |-------|-----------|------|
-| `crates/kernel/store` | SQLite 连接管理、迁移、事务（rusqlite bundled） | crate [`README.md`](crates/kernel/store/README.md) |
-| `crates/features/chat` | `repo.rs`：会话 CRUD（依赖 `agent-store`） | — |
-| `crates/features/*` | 一期 TUI（Ratatui）`ui.rs`（`D3` 分期） | — |
+| `crates/kernel/store` | ✅ SQLite 连接管理、迁移、事务（rusqlite bundled）+ `with_conn` 逃生舱 | crate [`README.md`](crates/kernel/store/README.md) |
+| `crates/features/chat` | ✅ `repo.rs`：`SessionRepo` 会话表 + upsert/load/list/rename/delete（6 单测） | crate [`README.md`](crates/features/chat/README.md) |
+| `crates/features/*` | ⬜ 一期 TUI（Ratatui）`ui.rs`（`D3` 分期） | — |
 
 ## 阻塞
 

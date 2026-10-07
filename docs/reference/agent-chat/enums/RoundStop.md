@@ -45,6 +45,10 @@ Defined in: [`crates/features/chat/src/service.rs:30`](../../../../crates/featur
 - `impl TryFrom for RoundStop`
 - `impl Any for RoundStop`
 - `impl ToOwned for RoundStop`
+- `impl Equivalent for RoundStop`
+- `impl CastableFrom for RoundStop`
+- `impl CastableFrom for RoundStop`
+- `impl Read for RoundStop`
 - `impl Instrument for RoundStop`
 - `impl WithSubscriber for RoundStop`
 - `impl PolicyExt for RoundStop`
