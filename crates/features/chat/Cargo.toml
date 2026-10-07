@@ -1,6 +1,6 @@
 [package]
 name = "agent-chat"
-description = "功能切片 chat：一次对话的编排、状态与界面"
+description = "功能切片 chat：一次对话的编排、状态与（将来的）界面"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,3 +8,11 @@ rust-version.workspace = true
 
 [dependencies]
 agent-common = { workspace = true }
+agent-providers = { workspace = true }
+async-stream = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }

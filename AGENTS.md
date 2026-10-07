@@ -58,6 +58,7 @@
 | Q2 | 效果评测与回归 | `docs/eval.md` | 建评测集、prompt 回归 | — | ⬜ |
 | Q3 | 安全与合规 | `docs/security.md` | 密钥、审计、数据合规 | — | ⬜ |
 | T0 | 文档模板 | [`docs/_template.md`](docs/_template.md) | 新建任何文档 | ~0.3k | ✅ |
+| — | **API 参考**（脚本生成的代码字典，勿手工编辑） | [`docs/reference/`](docs/reference/) | 查某类型 / 方法签名的细节与 doc 注释；由 `scripts/generate-docs.py --all` 再生 | 79 篇 | ✅ |
 
 ### 元（文档规范）
 
@@ -82,14 +83,16 @@
 | PT | 供应商文档模板 | [`crates/kernel/providers/docs/providers/_template.md`](crates/kernel/providers/docs/providers/_template.md) | 新建某家供应商文档 | ~0.4k | ✅ |
 | P1 | OpenAI 兼容族差异 | [`crates/kernel/providers/docs/providers/openai.md`](crates/kernel/providers/docs/providers/openai.md) | 接 OpenAI / DeepSeek / vLLM 等兼容实现时 | ~1.5k | ✅ |
 | P2 | Anthropic 差异 | [`crates/kernel/providers/docs/providers/anthropic.md`](crates/kernel/providers/docs/providers/anthropic.md) | 接 Claude / Anthropic 兼容端点时 | ~1.6k | ✅ |
+| A2-V | 适配器边界图（`A2` 的可视化） | [`crates/kernel/providers/docs/adapter-map.html`](crates/kernel/providers/docs/adapter-map.html) | 想一眼看懂「插座」与两家差异 | 1 张图 | ✅ |
 | P3–P6 | 其余供应商差异 | `crates/kernel/providers/docs/providers/*.md` | 接对应一家模型时 | — | ⬜ |
 
-### `crates/kernel/transport`（M2 正在建）
+### `crates/kernel/transport`
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
 | — | crate 门面 | [`crates/kernel/transport/README.md`](crates/kernel/transport/README.md) | 动传输层 / SSE 前 | ~0.6k | ✅ |
 | A4 | 流式、取消与超时 | [`crates/kernel/transport/docs/streaming.md`](crates/kernel/transport/docs/streaming.md) | 动 SSE / 中断 / 超时 / 装配一次调用 | ~2k | ✅ |
+| A4-V | 传输管线图（`A4` 的可视化） | [`crates/kernel/transport/docs/pipeline-map.html`](crates/kernel/transport/docs/pipeline-map.html) | 想一眼看懂流式调用的装配与收尾 | 1 张图 | ✅ |
 | R4 | 缓存、限流与并发 | `crates/kernel/transport/docs/cache-and-ratelimit.md` | 重复请求、QPS 控制 | — | ⬜ |
 
 ### `crates/features/*`（功能切片：一个功能 = 一个文件夹，见 `D5`）
@@ -99,8 +102,9 @@
 | — | 对话功能门面 | [`crates/features/chat/README.md`](crates/features/chat/README.md) | 改对话逻辑 / 界面时 | ~0.6k | ✅ 骨架 |
 | — | 会话功能门面 | [`crates/features/sessions/README.md`](crates/features/sessions/README.md) | 改会话列表 / 切换时 | ~0.5k | ✅ 骨架 |
 | — | 设置功能门面 | [`crates/features/settings/README.md`](crates/features/settings/README.md) | 加设置项 / 改密钥录入时 | ~0.5k | ✅ 骨架 |
-| A5 | 工具调用 | `crates/features/chat/docs/tool-calling.md` | 工具定义、并行调用、结果回填 | — | ⬜ |
-| A7 | 上下文与 Token | `crates/features/chat/docs/context-and-tokens.md` | 裁剪、摘要、计费 | — | ⬜ |
+| A5 | 工具调用 | [`crates/features/chat/docs/tool-calling.md`](crates/features/chat/docs/tool-calling.md) | 工具定义、并行调用、结果回填 | ~1.3k | ✅ M4 |
+| A7 | 上下文与 Token | [`crates/features/chat/docs/context-and-tokens.md`](crates/features/chat/docs/context-and-tokens.md) | 裁剪、摘要、计费 | ~1.2k | ✅ M4 |
+| A5-V | 轮次循环图（`A5`/`A7` 的可视化） | [`crates/features/chat/docs/round-map.html`](crates/features/chat/docs/round-map.html) | 想一眼看懂 run_round 与工具循环 | 1 张图 | ✅ |
 
 ### `crates/kernel/*`（机制内核，按需创建）
 
@@ -110,6 +114,12 @@
 | R1 | 配置与密钥 | `crates/kernel/config/docs/config-and-secrets.md` | 加配置项、接密钥 | — | ⬜ |
 | R2 | 模型注册表与路由 | `crates/kernel/routing/docs/model-registry.md` | 模型清单、路由与兜底 | — | ⬜ |
 | R3 | 可观测性与成本 | `crates/kernel/telemetry/docs/observability.md` | 日志 / trace / 计费 | — | ⬜ |
+
+### `crates/kernel/store`
+
+| ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
+|----|------|------|--------|------|------|
+| — | 存储门面 | [`crates/kernel/store/README.md`](crates/kernel/store/README.md) | 动持久化 / 建表 / 事务前 | ~0.6k | ✅ M5 |
 
 ### `crates/app`
 

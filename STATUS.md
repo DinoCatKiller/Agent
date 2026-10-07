@@ -13,28 +13,27 @@
 
 ## 当前任务
 
-**M3 · 第二适配器（Anthropic）** ｜ 状态：✅ 完成（2026-09-30）
+**M5 · UI 层 + 会话持久化** ｜ 状态：🚧 进行中（2026-10-06 开工）
 
-一句话：Anthropic Messages 适配器用同一套 fixtures 结构跑通 `Q1` 的 12 条用例（14 测试含 2 个 wiremock 端到端），两个适配器契约测试各自全绿，验证契约「可替换」。
+一句话：会话可存可取——`kernel/store`（rusqlite 连接 / 迁移 / 事务）落地，`features/chat/repo.rs` 提供会话 CRUD；一期 TUI（Ratatui）验证 Core（`D3`）。
 
-| crate | 本任务中它要做什么 | 细节 |
-|-------|-----------------|------|
-| `crates/kernel/providers` | `anthropic.rs`：`AnthropicCompatible`（chat/stream/count_tokens）、`AnthropicFramePolicy`（命名事件 SSE→归一化、`tool_use` 拼装、role 交替合并）、错误映射覆盖 `A2` §5；`P2` 文档 + 12 用例 fixtures；能力协商与传输错误映射提取为 crate 级共享函数 | 已收口，crate `status.md` 已随任务删除 |
-| `crates/kernel/transport` | **不动**（M2 已收口） | — |
-| `crates/common` | 未动（契约无需补字段） | — |
+| crate | 本任务产出 | 细节 |
+|-------|-----------|------|
+| `crates/kernel/store` | SQLite 连接管理、迁移、事务（rusqlite bundled） | crate [`README.md`](crates/kernel/store/README.md) |
+| `crates/features/chat` | `repo.rs`：会话 CRUD（依赖 `agent-store`） | — |
+| `crates/features/*` | 一期 TUI（Ratatui）`ui.rs`（`D3` 分期） | — |
 
 ## 阻塞
 
-- 无。
+无 —— `S2` Q1（UI 形态）与 Q2（样式层）已拍板，`D3` / `D4` 已接受。
 
 ## 上一阶段
 
-- **M3 首个适配器完成**：OpenAI 兼容族跑通 `Q1` 12 条用例（`P1` 落地），端到端兑现「一次真实请求能流式收完」。
-- **M2 完成**：传输层 HTTP / SSE / 三分收尾 / 取消，规格见 `A4`；重试随 `A6` 落地。
+- **M4 完成**：CLI 单轮与多轮（含工具结果回填）对话——`agent-chat` 事件流编排 + `agent-app` REPL 与端到端，断网全绿。
 
 ## 下一阶段
 
-- **M4 · 编排核心（`features/chat`）**：多轮工具循环、会话持久化决策（`S2` Q8）、上下文裁剪（`A7`）。
+- **M6 · 工具调用 + 路由兜底**：多工具并行、失败降级链生效（`features/chat`、`kernel/routing`）。
 
 ## 相关
 

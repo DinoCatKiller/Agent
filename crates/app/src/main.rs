@@ -1,9 +1,67 @@
-//! M1 冒烟入口：验证契约类型可构造、可序列化、能力协商能 fast-fail。
+//! 二进制入口：组装依赖、承载 CLI 命令。**不含**业务逻辑（都在 `features/*` 里）。
 //!
-//! 用法：`cargo run -p agent-app -- self-check`
-//!
-//! 这不是最终 CLI，也**不是** UI 层。M4 起会在 `features/chat` 上长出真实会话命令；
-//! UI 形态未定（见 D3），所以这里刻意只依赖契约。
+//! - `self-check`：契约层冒烟（M1）。
+//! - `chat`：对话 REPL（M4）——`agent-chat` 的装配与事件消费参考实现。
+
+mod repl;
+
+use repl::ChatArgs;
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("self-check") => self_check(),
+        Some("chat") => match parse_chat_args(&args[1..]) {
+            Ok(chat_args) => {
+                let code = tokio::runtime::Runtime::new()
+                    .expect("tokio runtime")
+                    .block_on(repl::run(chat_args));
+                std::process::exit(code);
+            }
+            Err(message) => {
+                eprintln!("{message}");
+                eprintln!(
+                    "用法: agent-app chat --provider <openai-compatible|anthropic> --model <id> [--base-url URL] [--api-key KEY]"
+                );
+                std::process::exit(2);
+            }
+        },
+        Some(other) => {
+            eprintln!("未知命令: {other}");
+            eprintln!("可用命令: self-check | chat");
+            std::process::exit(2);
+        }
+        None => {
+            println!("agent-app {}", env!("CARGO_PKG_VERSION"));
+            println!("可用命令: self-check | chat");
+            println!("里程碑与下一步: S1");
+        }
+    }
+}
+
+fn parse_chat_args(rest: &[String]) -> Result<ChatArgs, String> {
+    let mut provider = None;
+    let mut model = None;
+    let mut base_url = None;
+    let mut api_key = None;
+    let mut iter = rest.iter();
+    while let Some(flag) = iter.next() {
+        let value = iter.next().ok_or_else(|| format!("缺少 {flag} 的值"))?;
+        match flag.as_str() {
+            "--provider" => provider = Some(value.clone()),
+            "--model" => model = Some(value.clone()),
+            "--base-url" => base_url = Some(value.clone()),
+            "--api-key" => api_key = Some(value.clone()),
+            other => return Err(format!("未知参数: {other}")),
+        }
+    }
+    Ok(ChatArgs {
+        provider: provider.ok_or("缺少 --provider")?,
+        model: model.ok_or("缺少 --model")?,
+        base_url,
+        api_key,
+    })
+}
 
 use agent_common::{
     Capability, DeltaKind, ErrorCategory, FinishReason, Message, ModelRequest, ModelSpec, Pricing,
@@ -11,22 +69,6 @@ use agent_common::{
 };
 use agent_providers::{ProviderRegistry, required_capabilities};
 use serde_json::json;
-
-fn main() {
-    match std::env::args().nth(1).as_deref() {
-        Some("self-check") => self_check(),
-        Some(other) => {
-            eprintln!("未知命令: {other}");
-            eprintln!("可用命令: self-check");
-            std::process::exit(2);
-        }
-        None => {
-            println!("agent-app {}", env!("CARGO_PKG_VERSION"));
-            println!("可用命令: self-check");
-            println!("里程碑与下一步: S1");
-        }
-    }
-}
 
 fn self_check() {
     println!("== 1. 消息模型 ==");

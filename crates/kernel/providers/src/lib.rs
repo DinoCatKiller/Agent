@@ -85,6 +85,10 @@ pub trait ErasedProvider: Send + Sync + 'static {
         ctx: CallContext,
     ) -> BoxFuture<'static, Result<ModelResponse, ProviderError>>;
     fn stream(&self, req: ModelRequest, ctx: CallContext) -> Result<EventStream, ProviderError>;
+    /// 可选：本地 token 估算。编排层（`features/chat`）做上下文裁剪用（`A7`）。
+    fn count_tokens(&self, _req: &ModelRequest) -> Option<u32> {
+        None
+    }
 }
 
 impl<P: Provider> ErasedProvider for P {
@@ -107,6 +111,10 @@ impl<P: Provider> ErasedProvider for P {
 
     fn stream(&self, req: ModelRequest, ctx: CallContext) -> Result<EventStream, ProviderError> {
         Provider::stream(self, req, ctx)
+    }
+
+    fn count_tokens(&self, req: &ModelRequest) -> Option<u32> {
+        Provider::count_tokens(self, req)
     }
 }
 

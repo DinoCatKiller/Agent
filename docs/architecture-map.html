@@ -387,9 +387,9 @@ footer b{font-weight:500;color:var(--text-2)}
         <span>更新 <b>2026-09-30</b></span>
       </div>
       <div class="stats">
-        <div class="stat is-now"><span class="pill ok"><i></i></span><b>M3</b><span>适配器 · 已完成（双适配器）</span></div>
-        <div class="stat"><span class="pill ok"><i></i></span><b>3</b><span>crate 已落地</span></div>
-        <div class="stat"><span class="pill wip"><i></i></span><b>4</b><span>进行中（含 3 个功能骨架）</span></div>
+        <div class="stat is-now"><span class="pill ok"><i></i></span><b>M4</b><span>Agent 循环 · 已完成（下一站 M5）</span></div>
+        <div class="stat"><span class="pill ok"><i></i></span><b>5</b><span>crate 已落地</span></div>
+        <div class="stat"><span class="pill wip"><i></i></span><b>2</b><span>功能骨架（sessions / settings）</span></div>
         <div class="stat"><span class="pill todo"><i></i></span><b>4</b><span>crate 未建</span></div>
       </div>
     </div>
@@ -490,19 +490,19 @@ footer b{font-weight:500;color:var(--text-2)}
           </g>
 
           <!-- 节点 -->
-          <g class="node wip" transform="translate(585,20)">
+          <g class="node done" transform="translate(585,20)">
             <rect width="230" height="56" rx="14"/>
             <text class="n" x="16" y="26">crates/app</text>
             <text class="d" x="16" y="45">二进制入口 · 组装依赖</text>
-            <circle class="dot wip" cx="214" cy="18" r="4"/>
+            <circle class="dot ok" cx="214" cy="18" r="4"/>
             <text class="m" x="216" y="45">M4</text>
           </g>
 
-          <g class="node todo" transform="translate(315,130)">
+          <g class="node done" transform="translate(315,130)">
             <rect width="230" height="56" rx="14"/>
             <text class="n" x="16" y="26">features/chat</text>
             <text class="d" x="16" y="45">对话编排 · 状态 · 界面</text>
-            <circle class="dot todo" cx="214" cy="18" r="4"/>
+            <circle class="dot ok" cx="214" cy="18" r="4"/>
             <text class="m" x="216" y="45">M4</text>
           </g>
 
@@ -707,19 +707,19 @@ footer b{font-weight:500;color:var(--text-2)}
           <div class="owns"><b>crates/kernel/providers</b></div>
           <div class="stat-cell"><span class="pill ok"><i></i>已完成</span></div>
         </div>
-        <div class="ms-row now">
+        <div class="ms-row">
           <div class="id">M4</div>
           <div class="ttl">Agent 循环</div>
           <div class="done-criteria">CLI 上完成单轮与多轮（含工具结果回填）对话</div>
           <div class="owns"><b>crates/features/chat</b> · <b>crates/app</b></div>
-          <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
+          <div class="stat-cell"><span class="pill ok"><i></i>已完成</span></div>
         </div>
-        <div class="ms-row">
+        <div class="ms-row now">
           <div class="id">M5</div>
           <div class="ttl">UI 层 + 会话持久化</div>
           <div class="done-criteria">形态由 D3 决定；会话可存可取（方案细节 → GUI）</div>
           <div class="owns"><b>crates/features/{chat,sessions,settings}</b> · <b>crates/kernel/store</b></div>
-          <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
+          <div class="stat-cell"><span class="pill todo"><i></i>未启动（待 Q1 / Q2 拍板）</span></div>
         </div>
         <div class="ms-row">
           <div class="id">M6</div>

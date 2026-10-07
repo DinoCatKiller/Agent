@@ -23,6 +23,8 @@ rust-version = "1.95"
 agent-common = { path = "crates/common" }
 agent-providers = { path = "crates/kernel/providers" }
 agent-transport = { path = "crates/kernel/transport" }
+agent-store = { path = "crates/kernel/store" }
+agent-chat = { path = "crates/features/chat" }
 
 # 外部依赖：只加「这一阶段真的用得上」的，见 `X1`
 serde = { version = "1", features = ["derive"] }
@@ -35,9 +37,12 @@ async-stream = "0.3"
 bytes = "1"
 # rustls：无 OpenSSL 依赖，交叉编译友好；stream 用于 bytes_stream，json 供上层复用
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+# rt-multi-thread + macros：异步入口；time：超时/退避；sync：通知原语；signal：Ctrl-C 取消（M4 REPL）
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "signal"] }
 tokio-util = "0.7"
 tracing = "0.1"
+# 本地存储（`X1` §1）：单机桌面无连接池；bundled 免装 SQLite（需 C 编译器）
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [profile.release]
 lto = "thin"

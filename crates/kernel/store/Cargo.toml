@@ -1,0 +1,12 @@
+[package]
+name = "agent-store"
+description = "本地存储：SQLite 连接 / 迁移 / 事务（对应 M5）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# 单机桌面无连接池；bundled 免装 SQLite（`X1` §1）
+rusqlite = { workspace = true }
+thiserror = { workspace = true }
