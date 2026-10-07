@@ -19,3 +19,5 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+# 一期 TUI（`D3`/`D5`）：ui.rs 的渲染端。状态机不依赖它（可离线单测，`Q1`）
+ratatui = { workspace = true }

@@ -51,6 +51,7 @@ Defined in: [`crates/features/chat/src/service.rs:75`](../../../../crates/featur
 - `impl Instrument for ServiceConfig`
 - `impl WithSubscriber for ServiceConfig`
 - `impl PolicyExt for ServiceConfig`
+- `impl IntoEither for ServiceConfig`
 - `impl Debug for ServiceConfig`
 - `impl Clone for ServiceConfig`
 - `impl Default for ServiceConfig`

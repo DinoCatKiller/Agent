@@ -86,6 +86,8 @@ Unix 毫秒；列表按它倒序。
 - `impl Instrument for SessionMeta`
 - `impl WithSubscriber for SessionMeta`
 - `impl PolicyExt for SessionMeta`
+- `impl IntoEither for SessionMeta`
+- `impl Equivalent for SessionMeta`
 - `impl Debug for SessionMeta`
 - `impl Clone for SessionMeta`
 - `impl StructuralPartialEq for SessionMeta`

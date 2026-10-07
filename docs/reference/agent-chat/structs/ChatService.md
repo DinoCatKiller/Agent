@@ -150,6 +150,7 @@ Defined in: [`crates/features/chat/src/service.rs:124`](../../../../crates/featu
 - `impl Instrument for ChatService`
 - `impl WithSubscriber for ChatService`
 - `impl PolicyExt for ChatService`
+- `impl IntoEither for ChatService`
 
 ## Auto Trait Implementations
 

@@ -14,8 +14,13 @@ path = "src/main.rs"
 agent-chat = { workspace = true }
 agent-common = { workspace = true }
 agent-providers = { workspace = true }
+agent-sessions = { workspace = true }
+agent-store = { workspace = true }
 agent-transport = { workspace = true }
+# 一期 TUI（`D3`）：crossterm 事件泵在 app（终端生命周期归二进制入口），渲染在 features/*
+crossterm = { workspace = true }
 futures = { workspace = true }
+ratatui = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

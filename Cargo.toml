@@ -25,6 +25,7 @@ agent-providers = { path = "crates/kernel/providers" }
 agent-transport = { path = "crates/kernel/transport" }
 agent-store = { path = "crates/kernel/store" }
 agent-chat = { path = "crates/features/chat" }
+agent-sessions = { path = "crates/features/sessions" }
 
 # 外部依赖：只加「这一阶段真的用得上」的，见 `X1`
 serde = { version = "1", features = ["derive"] }
@@ -43,6 +44,9 @@ tokio-util = "0.7"
 tracing = "0.1"
 # 本地存储（`X1` §1）：单机桌面无连接池；bundled 免装 SQLite（需 C 编译器）
 rusqlite = { version = "0.32", features = ["bundled"] }
+# 一期 TUI（`D3`）：终端界面；crossterm 的事件流（event-stream）适配 tokio::select! 事件泵
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
 
 [profile.release]
 lto = "thin"

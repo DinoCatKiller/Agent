@@ -111,6 +111,7 @@ Defined in: [`crates/features/chat/src/chat.rs:140`](../../../../crates/features
 - `impl Instrument for TurnDraft`
 - `impl WithSubscriber for TurnDraft`
 - `impl PolicyExt for TurnDraft`
+- `impl IntoEither for TurnDraft`
 - `impl Debug for TurnDraft`
 - `impl Clone for TurnDraft`
 - `impl Default for TurnDraft`

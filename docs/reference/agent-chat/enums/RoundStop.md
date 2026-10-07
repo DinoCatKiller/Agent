@@ -52,6 +52,8 @@ Defined in: [`crates/features/chat/src/service.rs:30`](../../../../crates/featur
 - `impl Instrument for RoundStop`
 - `impl WithSubscriber for RoundStop`
 - `impl PolicyExt for RoundStop`
+- `impl IntoEither for RoundStop`
+- `impl Equivalent for RoundStop`
 - `impl Debug for RoundStop`
 - `impl Clone for RoundStop`
 - `impl Copy for RoundStop`

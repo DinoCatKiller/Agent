@@ -8,3 +8,8 @@
 # 密钥与本地配置绝不入库（见 docs/20-spec/config-and-secrets.md，待创建）
 .env
 *.local.toml
+
+# 本地会话数据不入库（本地优先：历史归用户，R1 后落用户数据目录）
+agent-sessions.db
+agent-sessions.db-shm
+agent-sessions.db-wal

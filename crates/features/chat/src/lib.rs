@@ -14,7 +14,9 @@
 //! # M5 已落地
 //!
 //! - [`repo`]：会话持久化——元数据进列（会话列表用），[`Chat`] 原样落盘；
-//!   连接 / 迁移 / 事务机制来自 `agent-store`。
+//!   连接 / 迁移 / 事务机制来自 `agent-store`；
+//! - [`ui`]：对话界面——[`ChatUi`] 状态机（吃 [`LoopEvent`]，纯数据可离线测）+
+//!   ratatui 渲染端 + [`Theme`]（`design/tokens.json` 令牌，`D4` 一期）。
 //!
 //! # 边界
 //!
@@ -29,12 +31,14 @@ pub mod context;
 pub mod repo;
 pub mod service;
 pub mod tools;
+pub mod ui;
 
 pub use chat::{Chat, ChatSettings, TurnDraft};
 pub use context::trim_to_fit;
 pub use repo::{RepoError, SessionMeta, SessionRepo};
 pub use service::{ChatService, LoopEvent, RoundStop, ServiceConfig};
 pub use tools::{Tool, ToolOutput, ToolSet};
+pub use ui::{ChatUi, Entry, Theme, ToolStatus};
 
 /// 切片标识，用于日志与 `AGENTS.md` §2 地图对齐。
 pub const SLICE: &str = "chat";

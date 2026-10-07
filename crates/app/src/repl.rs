@@ -1,39 +1,22 @@
 //! `chat` 子命令：CLI 上的对话 REPL（M4）。
 //!
-//! 组装（本 crate 的全部职责）：按命令行参数构造适配器 → [`ChatService`] + demo 工具 →
-//! 消费 [`LoopEvent`] 流做流式打印。业务逻辑零实现——都在 `agent-chat`。
-//!
-//! 密钥来源（`R1` 落地前的过渡约定）：`--api-key` 参数或按 provider 推断的环境变量
-//! （`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`）。**密钥不入库、不打日志**（硬约束 5）。
+//! 组装在 [`crate::setup`]（与 `tui` 共用）；本文件只做两件事：消费 [`LoopEvent`] 流做
+//! 流式打印（未来 UI 消费事件流的参考实现）、处理 stdin 与 Ctrl-C。
+//! 业务逻辑零实现——都在 `agent-chat`。
 
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use agent_chat::{Chat, ChatService, LoopEvent, RoundStop, Tool, ToolOutput, ToolSet};
-use agent_common::{DeltaKind, ToolDefinition};
-use agent_providers::{AnthropicCompatible, AnthropicConfig, OpenAiCompatible, OpenAiConfig};
-use agent_transport::HttpConfig;
+use agent_chat::{Chat, ChatService, LoopEvent, RoundStop};
+use agent_common::DeltaKind;
 use futures::StreamExt;
-use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-/// `chat` 子命令参数。
-#[derive(Debug, Clone)]
-pub struct ChatArgs {
-    /// `openai-compatible` 或 `anthropic`。
-    pub provider: String,
-    pub model: String,
-    pub base_url: Option<String>,
-    pub api_key: Option<String>,
-}
+use crate::setup::{self, ChatArgs};
 
 pub async fn run(args: ChatArgs) -> i32 {
-    let Some(provider) = build_provider(&args) else {
+    let Some(provider) = setup::build_provider(&args) else {
         return 2;
     };
-    let tools = demo_tools();
-    let service = ChatService::new(provider, tools);
+    let service = ChatService::new(provider, setup::demo_tools());
     let mut chat = Chat::new(args.model.clone());
 
     println!(
@@ -91,7 +74,8 @@ pub async fn run(args: ChatArgs) -> i32 {
     0
 }
 
-/// 消费一轮事件流并打印。这是未来 UI 消费 [`LoopEvent`] 的参考实现。
+/// 消费一轮事件流并打印。这是未来 UI 消费 [`LoopEvent`] 的参考实现
+/// （TUI 版见 `agent_chat::ui::ChatUi`，同一套事件、另一种呈现）。
 async fn consume_round(
     service: &ChatService,
     chat: &mut Chat,
@@ -174,123 +158,5 @@ async fn consume_round(
             LoopEvent::Cancelled => println!("\n[已取消：本轮输出已丢弃，可继续输入]"),
             LoopEvent::Error { error } => println!("\n[错误] {error}"),
         }
-    }
-}
-
-fn build_provider(args: &ChatArgs) -> Option<Arc<dyn agent_providers::ErasedProvider>> {
-    let api_key = args
-        .api_key
-        .clone()
-        .or_else(|| api_key_from_env(&args.provider));
-    let http = HttpConfig::default();
-    let provider: Arc<dyn agent_providers::ErasedProvider> = match args.provider.as_str() {
-        "openai-compatible" => {
-            let base_url = args
-                .base_url
-                .clone()
-                .unwrap_or_else(|| "https://api.openai.com/v1".into());
-            Arc::new(
-                OpenAiCompatible::new(OpenAiConfig {
-                    id: "openai-compatible",
-                    base_url,
-                    api_key,
-                    http,
-                    // 未显式传清单时用官方默认；自定义 base_url（vLLM 等）应自行登记模型。
-                    models: if args.base_url.is_some() {
-                        Vec::new()
-                    } else {
-                        agent_providers::openai_default_models()
-                    },
-                })
-                .ok()?,
-            )
-        }
-        "anthropic" => {
-            let base_url = args
-                .base_url
-                .clone()
-                .unwrap_or_else(|| "https://api.anthropic.com".into());
-            Arc::new(
-                AnthropicCompatible::new(AnthropicConfig {
-                    id: "anthropic",
-                    base_url,
-                    api_key,
-                    http,
-                    models: if args.base_url.is_some() {
-                        Vec::new()
-                    } else {
-                        agent_providers::anthropic_default_models()
-                    },
-                })
-                .ok()?,
-            )
-        }
-        other => {
-            eprintln!("未知 provider：{other}（可用：openai-compatible / anthropic）");
-            return None;
-        }
-    };
-    if args.api_key.is_none() && std::env::var(api_key_env(&args.provider)).is_err() {
-        println!("提示：未提供密钥（--api-key 或对应环境变量）。无鉴权端点（如本地服务）可忽略。");
-    }
-    Some(provider)
-}
-
-/// 密钥环境变量约定（`R1` 落地前的过渡）：按 provider id 推断变量名。
-fn api_key_env(provider: &str) -> &'static str {
-    match provider {
-        "anthropic" => "ANTHROPIC_API_KEY",
-        _ => "OPENAI_API_KEY",
-    }
-}
-
-fn api_key_from_env(provider: &str) -> Option<String> {
-    std::env::var(api_key_env(provider))
-        .ok()
-        .filter(|k| !k.is_empty())
-}
-
-/// M4 的两个演示工具：证明工具循环端到端可用。真实工具集由配置层/宿主提供（M6）。
-fn demo_tools() -> ToolSet {
-    ToolSet::new()
-        .with(Arc::new(CurrentTime))
-        .with(Arc::new(Echo))
-}
-
-struct CurrentTime;
-
-impl Tool for CurrentTime {
-    fn def(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "current_time".into(),
-            description: "获取当前 Unix 时间戳（秒）".into(),
-            parameters: json!({"type": "object", "properties": {}}),
-        }
-    }
-
-    fn run(&self, _arguments: Value) -> futures::future::BoxFuture<'static, ToolOutput> {
-        Box::pin(async {
-            let secs = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            Ok(json!({ "unix_seconds": secs }))
-        })
-    }
-}
-
-struct Echo;
-
-impl Tool for Echo {
-    fn def(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "echo".into(),
-            description: "原样返回传入的参数，用于验证工具链路".into(),
-            parameters: json!({"type": "object"}),
-        }
-    }
-
-    fn run(&self, arguments: Value) -> futures::future::BoxFuture<'static, ToolOutput> {
-        Box::pin(async move { Ok(json!({ "echo": arguments })) })
     }
 }

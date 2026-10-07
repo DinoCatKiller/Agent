@@ -110,6 +110,7 @@ Defined in: [`crates/features/chat/src/service.rs:64`](../../../../crates/featur
 - `impl Instrument for LoopEvent`
 - `impl WithSubscriber for LoopEvent`
 - `impl PolicyExt for LoopEvent`
+- `impl IntoEither for LoopEvent`
 - `impl Debug for LoopEvent`
 - `impl Clone for LoopEvent`
 - `impl StructuralPartialEq for LoopEvent`

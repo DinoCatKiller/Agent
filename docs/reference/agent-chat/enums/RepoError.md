@@ -48,6 +48,11 @@ Defined in: [`crates/features/chat/src/repo.rs:40`](../../../../crates/features/
 - `impl Instrument for RepoError`
 - `impl WithSubscriber for RepoError`
 - `impl PolicyExt for RepoError`
+- `impl ToLine for RepoError`
+- `impl ToSpan for RepoError`
+- `impl ToText for RepoError`
+- `impl ToCompactString for RepoError`
+- `impl IntoEither for RepoError`
 - `impl Debug for RepoError`
 - `impl Error for RepoError`
 - `impl Display for RepoError`

@@ -194,6 +194,7 @@ Defined in: [`crates/features/chat/src/repo.rs:152`](../../../../crates/features
 - `impl Instrument for SessionRepo`
 - `impl WithSubscriber for SessionRepo`
 - `impl PolicyExt for SessionRepo`
+- `impl IntoEither for SessionRepo`
 - `impl Clone for SessionRepo`
 
 ## Auto Trait Implementations

@@ -205,6 +205,7 @@ Defined in: [`crates/features/chat/src/chat.rs:81`](../../../../crates/features/
 - `impl Instrument for Chat`
 - `impl WithSubscriber for Chat`
 - `impl PolicyExt for Chat`
+- `impl IntoEither for Chat`
 - `impl Debug for Chat`
 - `impl Clone for Chat`
 - `impl Default for Chat`

@@ -131,6 +131,7 @@ Defined in: [`crates/features/chat/src/tools.rs:62`](../../../../crates/features
 - `impl Instrument for ToolSet`
 - `impl WithSubscriber for ToolSet`
 - `impl PolicyExt for ToolSet`
+- `impl IntoEither for ToolSet`
 - `impl Default for ToolSet`
 - `impl Clone for ToolSet`
 

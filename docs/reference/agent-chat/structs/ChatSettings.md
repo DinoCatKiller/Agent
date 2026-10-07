@@ -59,6 +59,7 @@ Defined in: [`crates/features/chat/src/chat.rs:22`](../../../../crates/features/
 - `impl Instrument for ChatSettings`
 - `impl WithSubscriber for ChatSettings`
 - `impl PolicyExt for ChatSettings`
+- `impl IntoEither for ChatSettings`
 - `impl Debug for ChatSettings`
 - `impl Clone for ChatSettings`
 - `impl Default for ChatSettings`
