@@ -4,7 +4,7 @@
 |---|---|
 | ID | `S1` |
 | 类型 | 状态 · **概览** |
-| 更新 | 2026-09-30 |
+| 更新 | 2026-10-07 |
 | 何时读 | **每次开工第一眼**，5 秒确认「现在做什么」 |
 | 规模 | ~0.5k token |
 
@@ -13,27 +13,26 @@
 
 ## 当前任务
 
-**M5 · UI 层 + 会话持久化** ｜ 状态：🚧 进行中（2026-10-06 开工）
+**M6 · 工具调用 + 路由兜底** ｜ 状态：🚧 待开工
 
-一句话：会话可存可取——`kernel/store`（rusqlite 连接 / 迁移 / 事务）落地，`features/chat/repo.rs` 提供会话 CRUD；一期 TUI（Ratatui）验证 Core（`D3`）。
+一句话：工具执行从顺序改并行（`A5` 的 M6 部分）；新建 `kernel/routing`——模型注册表查询、能力协商、失败降级链（`R2`）。
 
 | crate | 本任务产出 | 细节 |
 |-------|-----------|------|
-| `crates/kernel/store` | ✅ SQLite 连接管理、迁移、事务（rusqlite bundled）+ `with_conn` 逃生舱 | crate [`README.md`](crates/kernel/store/README.md) |
-| `crates/features/chat` | ✅ `repo.rs`：`SessionRepo` 会话表 + upsert/load/list/rename/delete（6 单测） | crate [`README.md`](crates/features/chat/README.md) |
-| `crates/features/*` | ⬜ 一期 TUI（Ratatui）`ui.rs`（`D3` 分期） | — |
+| `crates/features/chat` | 多工具并行执行 + 编排层路由接入 | crate [`README.md`](crates/features/chat/README.md) |
+| `crates/kernel/routing` | ⬜ 新建 crate（记得同步建 `README.md` 并回填 `AGENTS.md` §2 地图，硬约束 7） | — |
 
 ## 阻塞
 
-无 —— `S2` Q1（UI 形态）与 Q2（样式层）已拍板，`D3` / `D4` 已接受。
+无。
 
 ## 上一阶段
 
-- **M4 完成**：CLI 单轮与多轮（含工具结果回填）对话——`agent-chat` 事件流编排 + `agent-app` REPL 与端到端，断网全绿。
+- **M5 完成（2026-10-07）**：UI 层 + 会话持久化——`kernel/store`（连接/迁移/事务）+ `features/chat/repo.rs`（`Chat` 原样 JSON 落盘）+ 一期 TUI（`agent-app tui`：会话侧栏 / 流式转录 / Ctrl-C 取消 / 轮末落盘，配色出自 `design/tokens.json`）。断网全绿（134 例，含 worker 协议端到端 3 例），`clippy -D warnings` 干净；**验收演示已通过（2026-10-07，真实 API 对话验证）**，落盘与重启恢复另经 winpty 假服务器冒烟确认。
 
 ## 下一阶段
 
-- **M6 · 工具调用 + 路由兜底**：多工具并行、失败降级链生效（`features/chat`、`kernel/routing`）。
+- 择期：`S2` 待确认项（Q4 MCP 客户端、Q6 签名、Q7 正式名称）。
 
 ## 相关
 

@@ -99,8 +99,8 @@
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| — | 对话功能门面 | [`crates/features/chat/README.md`](crates/features/chat/README.md) | 改对话逻辑 / 界面时 | ~0.6k | ✅ 骨架 |
-| — | 会话功能门面 | [`crates/features/sessions/README.md`](crates/features/sessions/README.md) | 改会话列表 / 切换时 | ~0.5k | ✅ 骨架 |
+| — | 对话功能门面 | [`crates/features/chat/README.md`](crates/features/chat/README.md) | 改对话逻辑 / 界面时 | ~0.7k | ✅ M4–M5 |
+| — | 会话功能门面 | [`crates/features/sessions/README.md`](crates/features/sessions/README.md) | 改会话列表 / 切换时 | ~0.6k | ✅ M5 |
 | — | 设置功能门面 | [`crates/features/settings/README.md`](crates/features/settings/README.md) | 加设置项 / 改密钥录入时 | ~0.5k | ✅ 骨架 |
 | A5 | 工具调用 | [`crates/features/chat/docs/tool-calling.md`](crates/features/chat/docs/tool-calling.md) | 工具定义、并行调用、结果回填 | ~1.3k | ✅ M4 |
 | A7 | 上下文与 Token | [`crates/features/chat/docs/context-and-tokens.md`](crates/features/chat/docs/context-and-tokens.md) | 裁剪、摘要、计费 | ~1.2k | ✅ M4 |
@@ -134,10 +134,11 @@
 | D0 | ADR 模板 | [`docs/decisions/_template.md`](docs/decisions/_template.md) | 写新 ADR | ~0.2k | ✅ |
 | D1 | 技术栈：Rust + GPUI | [`docs/decisions/0001-tech-stack.md`](docs/decisions/0001-tech-stack.md) | 质疑语言 / 框架选型 | ~0.9k | ✅ 已接受（UI 待复核） |
 | D2 | 多模型抽象：契约自研 | [`docs/decisions/0002-llm-abstraction.md`](docs/decisions/0002-llm-abstraction.md) | 是否引入 rig / genai | ~1k | ✅ 已接受 |
-| D3 | UI 交付形态 | [`docs/decisions/0003-ui-delivery-form.md`](docs/decisions/0003-ui-delivery-form.md) | 定 UI 技术、讨论分阶段 | ~0.9k | 🚧 待决 |
-| D4 | 样式层建设路线 | [`docs/decisions/0004-styling-layer.md`](docs/decisions/0004-styling-layer.md) | 样式怎么组织、能否复用 TS 生态 | ~0.6k | 🚧 待确认 |
+| D3 | UI 交付形态 | [`docs/decisions/0003-ui-delivery-form.md`](docs/decisions/0003-ui-delivery-form.md) | 定 UI 技术、讨论分阶段 | ~0.9k | ✅ 已接受（一期 TUI，二期 A/C 再选） |
+| D4 | 样式层建设路线 | [`docs/decisions/0004-styling-layer.md`](docs/decisions/0004-styling-layer.md) | 样式怎么组织、能否复用 TS 生态 | ~0.6k | ✅ 已接受（一期仅 tokens.json） |
 | D5 | 代码按功能组织（Django 式） | [`docs/decisions/0005-feature-oriented-layout.md`](docs/decisions/0005-feature-oriented-layout.md) | 新建 crate / 功能、移动目录时 | ~1.6k | ✅ 已接受（部分被 `D6` 修订） |
 | D6 | kernel（机制）与 features（语义）的判据 | [`docs/decisions/0006-kernel-vs-features.md`](docs/decisions/0006-kernel-vs-features.md) | 决定代码放哪、质疑"这算功能吗" | ~1.6k | ✅ 已接受 |
+| D7 | Ollama 与本地模型定位 | [`docs/decisions/0007-ollama-local-models.md`](docs/decisions/0007-ollama-local-models.md) | 接 Ollama / 本地模型、设计 `R2` 时 | ~0.8k | ✅ 已接受 |
 
 ### 计划与跨领域调研
 
