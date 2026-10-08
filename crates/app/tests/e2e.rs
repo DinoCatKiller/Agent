@@ -5,12 +5,13 @@
 
 use std::sync::Arc;
 
-use agent_chat::{Chat, ChatService, LoopEvent, Tool, ToolOutput, ToolSet};
-use agent_common::ToolDefinition;
-use agent_providers::{OpenAiCompatible, OpenAiConfig};
+use agent_chat::{Chat, ChatService, LoopEvent, RoundStop, Tool, ToolOutput, ToolSet};
+use agent_common::{FinishReason, ToolDefinition};
+use agent_providers::{ErasedProvider, OpenAiCompatible, OpenAiConfig};
+use agent_routing::Router;
 use futures::StreamExt;
 use serde_json::{Value, json};
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 struct Add;
@@ -144,4 +145,81 @@ async fn tool_loop_completes_over_real_http_stack() {
         "工具结果已回填"
     );
     assert_eq!(chat.total_usage.total(), 58, "两轮 usage 累计");
+}
+
+// —— M6：路由降级（`R2`）——
+
+#[tokio::test]
+async fn router_falls_back_to_next_model_on_rate_limit() {
+    let server = MockServer::start().await;
+    // m1 → 429；m2 → 正常流（按请求体里的 model 字段区分路由）
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(body_string_contains(r#""model":"m1""#))
+        .respond_with(ResponseTemplate::new(429).set_body_raw(
+            r#"{"error":{"message":"slow down","type":"rate_limit_error"}}"#,
+            "application/json",
+        ))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(body_string_contains(r#""model":"m2""#))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            format!(
+                "{}{}{}",
+                chunk("c9", raw(r#"{"role":"assistant","content":""}"#), None),
+                chunk("c9", raw(r#"{"content":"备用模型顶上"}"#), None),
+                chunk("c9", raw(r#"{}"#), Some("stop")),
+            ),
+            "text/event-stream",
+        ))
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiCompatible::new(OpenAiConfig {
+        id: "openai-compatible",
+        base_url: format!("{}/v1", server.uri()),
+        api_key: Some("test-key".into()),
+        http: Default::default(),
+        models: Vec::new(),
+    })
+    .expect("provider builds");
+    let router = Router::new()
+        .with_erased(Arc::new(provider) as Arc<dyn ErasedProvider>)
+        .with_route(
+            "m1",
+            [("openai-compatible", "m1"), ("openai-compatible", "m2")],
+        );
+    let service = ChatService::new(Arc::new(router), ToolSet::new());
+    let mut chat = Chat::new("m1");
+
+    let events = {
+        let round = service
+            .run_round(&mut chat, "问一句", Default::default())
+            .unwrap();
+        tokio::pin!(round);
+        let mut events = Vec::new();
+        while let Some(event) = round.next().await {
+            events.push(event);
+        }
+        events
+    };
+
+    assert!(
+        !events.iter().any(|e| matches!(e, LoopEvent::Error { .. })),
+        "429 被透明降级，消费者看不到失败候选的错误"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, LoopEvent::Delta { text, .. } if text == "备用模型顶上"))
+    );
+    assert!(matches!(
+        events.last(),
+        Some(LoopEvent::RoundEnded {
+            stop: RoundStop::Finished(FinishReason::Stop),
+            ..
+        })
+    ));
 }

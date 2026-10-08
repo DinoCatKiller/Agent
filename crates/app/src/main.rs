@@ -36,6 +36,7 @@ fn main() {
                     .block_on(tui::run(tui::TuiArgs {
                         provider: chat_args.provider,
                         model: chat_args.model,
+                        fallbacks: chat_args.fallbacks,
                         base_url: chat_args.base_url,
                         api_key: chat_args.api_key,
                         db,
@@ -56,7 +57,10 @@ fn main() {
             std::process::exit(2);
         }
         None => {
-            println!("agent-app {}", env!("CARGO_PKG_VERSION"));
+            println!(
+                "CodingRocket {}（二进制 agent-app，`S2` Q7）",
+                env!("CARGO_PKG_VERSION")
+            );
             println!("可用命令: self-check | chat | tui");
             println!("里程碑与下一步: S1");
         }
@@ -64,7 +68,11 @@ fn main() {
 }
 
 /// `chat` / `tui` 共用参数解析；`tui` 额外接受 `--db`。
-fn parse_session_args(rest: &[String], allow_db: bool) -> Result<(ChatArgs, Option<String>), String> {
+/// `--model a,b` 的逗号分隔写成主模型 + 降级链（`R2`）。
+fn parse_session_args(
+    rest: &[String],
+    allow_db: bool,
+) -> Result<(ChatArgs, Option<String>), String> {
     let mut provider = None;
     let mut model = None;
     let mut base_url = None;
@@ -83,10 +91,17 @@ fn parse_session_args(rest: &[String], allow_db: bool) -> Result<(ChatArgs, Opti
             other => return Err(format!("未知参数: {other}")),
         }
     }
+    let model_raw = model.ok_or("缺少 --model")?;
+    let mut models = model_raw
+        .split(',')
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty());
+    let model = models.next().ok_or("缺少 --model")?;
     Ok((
         ChatArgs {
             provider: provider.ok_or("缺少 --provider")?,
-            model: model.ok_or("缺少 --model")?,
+            model,
+            fallbacks: models.collect(),
             base_url,
             api_key,
         },

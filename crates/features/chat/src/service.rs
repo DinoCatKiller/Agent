@@ -8,18 +8,21 @@
 //! - **工具错误喂回模型**：作为 `tool_result` 文本回传，模型自救；反复失败由
 //!   `max_model_turns` 兜底，不做流中重试（重试属 `A6`）。
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use agent_common::{
     DeltaKind, ErrorCategory, FinishReason, ModelRequest, ProviderError, StreamEvent, Usage,
 };
 use agent_providers::{CallContext, ErasedProvider, EventStream};
+use futures::future::BoxFuture;
+use futures::stream::FuturesUnordered;
 use futures::{Stream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::chat::{Chat, TurnDraft};
 use crate::context::trim_to_fit;
-use crate::tools::ToolSet;
+use crate::tools::{ToolOutput, ToolSet};
 
 /// 一轮对话怎么收场。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -208,31 +211,54 @@ impl ChatService {
                     return;
                 }
 
-                // —— 顺序执行工具（M6 再并行化，A5）——
-                for call in calls {
-                    yield LoopEvent::ToolStarted { id: call.id.clone(), name: call.name.clone() };
-                    let output = match self.tools.get(&call.name) {
-                        Some(tool) => {
-                            let running = tool.run(call.arguments.clone());
-                            tokio::select! {
-                                biased;
-                                _ = cancel.cancelled() => {
-                                    yield LoopEvent::Cancelled;
-                                    return;
-                                }
-                                output = running => output,
-                            }
-                        }
-                        // 未知工具也喂回：模型看得到错误，可改道或道歉（A5 错误语义）。
-                        None => Err(format!("unknown tool: {}", call.name)),
+                // —— 并行执行工具（M6，A5 §2）——
+                // Started 全部先发（它们确实同时开跑）；每个完成即报 Finished（完成序）；
+                // 回填统一在全部完成后按**调用顺序**写入（结果序 = 调用序，兼容对
+                // tool_result 顺序敏感的供应商——Anthropic 会把结果合并进一条 user 消息）。
+                for call in &calls {
+                    yield LoopEvent::ToolStarted {
+                        id: call.id.clone(),
+                        name: call.name.clone(),
                     };
+                }
+                let mut pending: FuturesUnordered<BoxFuture<'static, (String, ToolOutput)>> =
+                    calls
+                        .iter()
+                        .map(|call| -> BoxFuture<'static, (String, ToolOutput)> {
+                            let id = call.id.clone();
+                            let name = call.name.clone();
+                            // 未知工具也喂回：模型看得到错误，可改道或道歉（A5 错误语义）。
+                            let run: BoxFuture<'static, ToolOutput> =
+                                match self.tools.get(&name) {
+                                    Some(tool) => tool.run(call.arguments.clone()),
+                                    None => Box::pin(async move {
+                                        Err(format!("unknown tool: {name}"))
+                                    }),
+                                };
+                            Box::pin(async move { (id, run.await) })
+                        })
+                        .collect();
+                let mut outputs: HashMap<String, ToolOutput> = HashMap::new();
+                while let Some((id, output)) = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => {
+                        // A5 取消语义：已执行完的结果不回填、不再次调用模型。
+                        yield LoopEvent::Cancelled;
+                        return;
+                    }
+                    done = pending.next() => done,
+                } {
                     let ok = output.is_ok();
+                    outputs.insert(id.clone(), output);
+                    yield LoopEvent::ToolFinished { id, ok };
+                }
+                for call in &calls {
+                    let output = outputs.remove(&call.id).expect("每个调用必有结果");
                     let content = match output {
                         Ok(value) => value.to_string(),
                         Err(message) => format!("error: {message}"),
                     };
                     chat.push_tool_result(&call.id, content);
-                    yield LoopEvent::ToolFinished { id: call.id.clone(), ok };
                 }
 
                 // —— 下一次模型调用 ——

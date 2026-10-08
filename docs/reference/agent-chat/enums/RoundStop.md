@@ -5,7 +5,7 @@ title: RoundStop
 
 # Enum: RoundStop
 
-Defined in: [`crates/features/chat/src/service.rs:26`](../../../../crates/features/chat/src/service.rs#L26)
+Defined in: [`crates/features/chat/src/service.rs:29`](../../../../crates/features/chat/src/service.rs#L29)
 
 一轮对话怎么收场。
 
@@ -17,7 +17,7 @@ Defined in: [`crates/features/chat/src/service.rs:26`](../../../../crates/featur
 (FinishReason)
 ```
 
-Defined in: [`crates/features/chat/src/service.rs:28`](../../../../crates/features/chat/src/service.rs#L28)
+Defined in: [`crates/features/chat/src/service.rs:31`](../../../../crates/features/chat/src/service.rs#L31)
 
 模型自然结束（`Stop` / `Length` / `Truncated`…，`A2` §4）。
 
@@ -30,7 +30,7 @@ Defined in: [`crates/features/chat/src/service.rs:28`](../../../../crates/featur
 (u32)
 ```
 
-Defined in: [`crates/features/chat/src/service.rs:30`](../../../../crates/features/chat/src/service.rs#L30)
+Defined in: [`crates/features/chat/src/service.rs:33`](../../../../crates/features/chat/src/service.rs#L33)
 
 达到最大模型轮次（防工具乒乓死循环）。
 

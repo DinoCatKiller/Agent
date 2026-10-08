@@ -20,7 +20,7 @@ pub async fn run(args: ChatArgs) -> i32 {
     let mut chat = Chat::new(args.model.clone());
 
     println!(
-        "agent-chat REPL ｜ provider={} model={} ｜ 输入 /quit 退出，Ctrl-C 取消当前生成",
+        "CodingRocket REPL ｜ provider={} model={} ｜ 输入 /quit 退出，Ctrl-C 取消当前生成",
         args.provider, args.model
     );
 

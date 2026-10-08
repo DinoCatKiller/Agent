@@ -38,6 +38,8 @@ use crate::setup::{self, ChatArgs};
 pub struct TuiArgs {
     pub provider: String,
     pub model: String,
+    /// 降级候选（`--model a,b` 的 b…，`R2`）。
+    pub fallbacks: Vec<String>,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
     /// SQLite 路径（缺省 `./agent-sessions.db`；`R1` 落地前先落 cwd）。
@@ -78,13 +80,17 @@ pub async fn run(args: TuiArgs) -> i32 {
     let chat_args = ChatArgs {
         provider: args.provider.clone(),
         model: args.model.clone(),
+        fallbacks: args.fallbacks.clone(),
         base_url: args.base_url,
         api_key: args.api_key,
     };
     let Some(provider) = setup::build_provider(&chat_args) else {
         return 2;
     };
-    let db_path = args.db.clone().unwrap_or_else(|| "agent-sessions.db".into());
+    let db_path = args
+        .db
+        .clone()
+        .unwrap_or_else(|| "agent-sessions.db".into());
     let repo = match open_repo(&db_path) {
         Ok(repo) => repo,
         Err(error) => {
@@ -147,7 +153,8 @@ pub async fn run(args: TuiArgs) -> i32 {
             model: &args.model,
             session: current_title.as_deref(),
         };
-        if let Err(error) = terminal.draw(|f| draw(f, &chat_ui, &mut pane, focus, &theme, &status)) {
+        if let Err(error) = terminal.draw(|f| draw(f, &chat_ui, &mut pane, focus, &theme, &status))
+        {
             eprintln!("绘制失败：{error}");
             break;
         }
@@ -339,8 +346,7 @@ fn draw(
 ) {
     pane.set_focused(focus == Focus::Sidebar);
     let outer = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(f.area());
-    let body =
-        Layout::horizontal([Constraint::Length(26), Constraint::Min(20)]).split(outer[0]);
+    let body = Layout::horizontal([Constraint::Length(26), Constraint::Min(20)]).split(outer[0]);
     let chat = Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).split(body[1]);
     pane.render(f, body[0], theme);
     render_transcript(f, chat_ui, chat[0], theme);
@@ -400,7 +406,10 @@ async fn worker(
                 };
                 chat = loaded;
                 session = Some((id, title.clone()));
-                let _ = ui_tx.send(UiEvent::SessionLoaded { title, chat: chat.clone() });
+                let _ = ui_tx.send(UiEvent::SessionLoaded {
+                    title,
+                    chat: chat.clone(),
+                });
             }
             Cmd::Submit(text) => {
                 if busy() {
@@ -512,8 +521,8 @@ mod tests {
     use std::sync::Mutex;
     use std::time::Duration;
 
-    use agent_common::{DeltaKind, FinishReason, Role};
     use agent_chat::{RoundStop, ToolSet};
+    use agent_common::{DeltaKind, FinishReason, Role};
     use agent_providers::{OpenAiCompatible, OpenAiConfig};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -639,7 +648,10 @@ mod tests {
         let texts: String = events
             .iter()
             .filter_map(|e| match e {
-                UiEvent::Loop(LoopEvent::Delta { kind: DeltaKind::Text, text }) => Some(text.clone()),
+                UiEvent::Loop(LoopEvent::Delta {
+                    kind: DeltaKind::Text,
+                    text,
+                }) => Some(text.clone()),
                 _ => None,
             })
             .collect();
@@ -674,8 +686,7 @@ mod tests {
 
         let (cmd_tx, mut ui_rx, _slot) = spawn_worker(&repo, format!("{}/v1", server.uri()));
         // 启动时的会话列表已含 s-old
-        let events =
-            collect_until(&mut ui_rx, |e| matches!(e, UiEvent::Sessions(_))).await;
+        let events = collect_until(&mut ui_rx, |e| matches!(e, UiEvent::Sessions(_))).await;
         let UiEvent::Sessions(metas) = events.last().unwrap() else {
             panic!("启动应刷新列表");
         };
@@ -712,10 +723,7 @@ mod tests {
             if slot.lock().unwrap().is_some() {
                 break;
             }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "等令牌超时"
-            );
+            assert!(tokio::time::Instant::now() < deadline, "等令牌超时");
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         slot.lock().unwrap().as_ref().unwrap().cancel();

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | ID | —（功能切片，非索引文档） |
-| 状态 | ✅ M4 落地：状态机 + 轮次编排（事件流）+ 工具边界 + 上下文裁剪；✅ M5 落地 `repo.rs` 会话持久化 + `ui.rs` 界面（一期 TUI 的对话侧） |
+| 状态 | ✅ M4 落地：状态机 + 轮次编排（事件流）+ 工具边界 + 上下文裁剪；✅ M5 落地 `repo.rs` 会话持久化 + `ui.rs` 界面（一期 TUI 的对话侧）；✅ M6 落地工具并行执行（保序回填） |
 | 边界 | **语义**：一次对话怎么进行、状态怎么变、界面长什么样。含工具调用编排、上下文管理、业务表结构与界面状态机 |
 | 依赖 | `agent-common`（契约）｜ `agent-providers`（`Provider` / `CallContext`）｜ `agent-store`（连接 / 迁移机制）｜ `ratatui`（仅 `ui.rs` 渲染端） |
 | 不允许 | 依赖 `app`；被 `kernel/*` 依赖；**自己打开 / 管理连接**（HTTP 客户端与 SQLite 连接是机制，属 `kernel`） |
@@ -15,7 +15,8 @@
 src/
   lib.rs        模块声明 + 对外导出
   chat.rs       状态机：Chat（历史 + 累计用量）+ TurnDraft（流式累积，只在 End 后入史）
-  service.rs    轮次编排：run_round 事件流（Delta/Tool/ModelTurnEnded/RoundEnded/Cancelled/Error）
+  service.rs    轮次编排：run_round 事件流（Delta/Tool/ModelTurnEnded/RoundEnded/Cancelled/Error）；
+                M6 工具并行——Started 全发 → 完成即报 Finished → 全部完成后按调用序回填（A5 §2）
   tools.rs      工具执行边界：Tool trait + ToolSet 注册表（实现由宿主提供）
   context.rs    上下文裁剪：交换块整块丢弃，保 tool 配对与当前轮（A7）
   repo.rs       本功能的持久化 —— SessionRepo：会话表 + save/load/list/rename/delete（Chat 原样 JSON 落盘）

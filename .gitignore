@@ -13,3 +13,6 @@
 agent-sessions.db
 agent-sessions.db-shm
 agent-sessions.db-wal
+
+# IDE 本地数据不入库
+.trae/

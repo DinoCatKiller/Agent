@@ -21,7 +21,10 @@ use serde_json::{Value, json};
 pub struct ChatArgs {
     /// `openai-compatible` 或 `anthropic`。
     pub provider: String,
+    /// 主模型；`--model a,b` 时 `a` 在前、`b` 起为降级链（`R2`）。
     pub model: String,
+    /// 降级候选（不含主模型本身）。
+    pub fallbacks: Vec<String>,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
 }
@@ -82,7 +85,20 @@ pub fn build_provider(args: &ChatArgs) -> Option<Arc<dyn ErasedProvider>> {
     if args.api_key.is_none() && std::env::var(api_key_env(&args.provider)).is_err() {
         println!("提示：未提供密钥（--api-key 或对应环境变量）。无鉴权端点（如本地服务）可忽略。");
     }
-    Some(provider)
+    // M6（`R2`）：请求统一经 Router 出——单候选时无感；`--model a,b` 时
+    // a 遇可降级失败（429/5xx/超时/断网/Auth）自动落到 b。
+    let provider_id = provider.id();
+    let mut router = agent_routing::Router::new().with_erased(provider);
+    if !args.fallbacks.is_empty() {
+        let mut chain = vec![(provider_id.to_string(), args.model.clone())];
+        chain.extend(
+            args.fallbacks
+                .iter()
+                .map(|model| (provider_id.to_string(), model.clone())),
+        );
+        router = router.with_route(args.model.clone(), chain);
+    }
+    Some(Arc::new(router) as Arc<dyn ErasedProvider>)
 }
 
 /// 密钥环境变量约定（`R1` 落地前的过渡）：按 provider id 推断变量名。

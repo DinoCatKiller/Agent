@@ -24,6 +24,7 @@
 | M4 | Agent 循环 | CLI 上完成单轮与多轮（含工具结果回填）对话 | `features/chat`、`app` |
 | M5 | UI 层 + 会话持久化 | 形态由 `D3` 决定；会话可存可取 | `features/*`（ui.rs）、`kernel/store`（方案细节 → `GUI`） |
 | M6 | 工具调用 + 路由兜底 | 多工具并行、失败降级链生效 | `features/chat`、`kernel/routing` |
+| M7 | MCP 客户端（`D8`） | REPL/TUI 能列出并调用一个 stdio MCP server 的工具，端到端 | `kernel/mcp`（新建）、`app` 装配 |
 
 ## 排序原则
 

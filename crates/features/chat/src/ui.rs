@@ -465,7 +465,11 @@ pub fn render_transcript(f: &mut Frame, ui: &ChatUi, area: Rect, theme: &Theme) 
 }
 
 pub fn render_input(f: &mut Frame, ui: &ChatUi, area: Rect, focused: bool, theme: &Theme) {
-    let color = if focused { theme.border_focus } else { theme.border };
+    let color = if focused {
+        theme.border_focus
+    } else {
+        theme.border
+    };
     let title = if focused {
         " 输入（Enter 发送） "
     } else {
@@ -625,17 +629,13 @@ fn char_width(c: char) -> usize {
         0x1100..=0x115F | 0x2E80..=0xA4CF | 0xAC00..=0xD7A3
         | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFF60
         | 0xFFE0..=0xFFE6 | 0x1F300..=0x1FAFF | 0x20000..=0x3FFFD);
-    if wide {
-        2
-    } else {
-        1
-    }
+    if wide { 2 } else { 1 }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_common::{FinishReason, ProviderError, ErrorCategory};
+    use agent_common::{ErrorCategory, FinishReason, ProviderError};
 
     fn error_event() -> LoopEvent {
         LoopEvent::Error {
@@ -647,12 +647,24 @@ mod tests {
     fn deltas_build_entries_and_usage() {
         let mut ui = ChatUi::new();
         ui.push_user("你好");
-        ui.on_event(LoopEvent::Delta { kind: DeltaKind::Thinking, text: "想一下".into() });
-        ui.on_event(LoopEvent::Delta { kind: DeltaKind::Text, text: "回复".into() });
-        ui.on_event(LoopEvent::Delta { kind: DeltaKind::Text, text: "A".into() });
+        ui.on_event(LoopEvent::Delta {
+            kind: DeltaKind::Thinking,
+            text: "想一下".into(),
+        });
+        ui.on_event(LoopEvent::Delta {
+            kind: DeltaKind::Text,
+            text: "回复".into(),
+        });
+        ui.on_event(LoopEvent::Delta {
+            kind: DeltaKind::Text,
+            text: "A".into(),
+        });
         ui.on_event(LoopEvent::ModelTurnEnded {
             finish_reason: FinishReason::Stop,
-            usage: Usage { input_tokens: 3, output_tokens: 7 },
+            usage: Usage {
+                input_tokens: 3,
+                output_tokens: 7,
+            },
         });
 
         assert_eq!(ui.entries[0], Entry::User("你好".into()));
@@ -666,11 +678,18 @@ mod tests {
     fn cancel_rolls_back_uncommitted_keeps_user_input() {
         let mut ui = ChatUi::new();
         ui.push_user("写首诗");
-        ui.on_event(LoopEvent::Delta { kind: DeltaKind::Text, text: "春眠不".into() });
+        ui.on_event(LoopEvent::Delta {
+            kind: DeltaKind::Text,
+            text: "春眠不".into(),
+        });
         ui.on_event(LoopEvent::Cancelled);
 
         assert!(!ui.generating());
-        assert_eq!(ui.entries[0], Entry::User("写首诗".into()), "用户输入不入回滚");
+        assert_eq!(
+            ui.entries[0],
+            Entry::User("写首诗".into()),
+            "用户输入不入回滚"
+        );
         assert_eq!(ui.entries.len(), 2, "未提交增量被丢弃，只余注记");
         assert!(matches!(ui.entries[1], Entry::Note(_)));
     }
@@ -679,14 +698,26 @@ mod tests {
     fn error_keeps_committed_turns_rolls_back_current() {
         let mut ui = ChatUi::new();
         ui.push_user("先算一次");
-        ui.on_event(LoopEvent::Delta { kind: DeltaKind::Text, text: "第一轮回答".into() });
+        ui.on_event(LoopEvent::Delta {
+            kind: DeltaKind::Text,
+            text: "第一轮回答".into(),
+        });
         ui.on_event(LoopEvent::ModelTurnEnded {
             finish_reason: FinishReason::ToolCalls,
             usage: Usage::default(),
         });
-        ui.on_event(LoopEvent::ToolStarted { id: "c1".into(), name: "echo".into() });
-        ui.on_event(LoopEvent::ToolFinished { id: "c1".into(), ok: true });
-        ui.on_event(LoopEvent::Delta { kind: DeltaKind::Text, text: "第二轮断".into() });
+        ui.on_event(LoopEvent::ToolStarted {
+            id: "c1".into(),
+            name: "echo".into(),
+        });
+        ui.on_event(LoopEvent::ToolFinished {
+            id: "c1".into(),
+            ok: true,
+        });
+        ui.on_event(LoopEvent::Delta {
+            kind: DeltaKind::Text,
+            text: "第二轮断".into(),
+        });
         ui.on_event(error_event());
 
         assert_eq!(
@@ -704,18 +735,36 @@ mod tests {
     #[test]
     fn tool_status_transitions() {
         let mut ui = ChatUi::new();
-        ui.on_event(LoopEvent::ToolStarted { id: "c1".into(), name: "echo".into() });
-        ui.on_event(LoopEvent::ToolStarted { id: "c2".into(), name: "time".into() });
-        ui.on_event(LoopEvent::ToolFinished { id: "c1".into(), ok: true });
-        ui.on_event(LoopEvent::ToolFinished { id: "c2".into(), ok: false });
+        ui.on_event(LoopEvent::ToolStarted {
+            id: "c1".into(),
+            name: "echo".into(),
+        });
+        ui.on_event(LoopEvent::ToolStarted {
+            id: "c2".into(),
+            name: "time".into(),
+        });
+        ui.on_event(LoopEvent::ToolFinished {
+            id: "c1".into(),
+            ok: true,
+        });
+        ui.on_event(LoopEvent::ToolFinished {
+            id: "c2".into(),
+            ok: false,
+        });
 
         assert_eq!(
             ui.entries[0],
-            Entry::Tool { name: "echo".into(), status: Some(ToolStatus::Ok) }
+            Entry::Tool {
+                name: "echo".into(),
+                status: Some(ToolStatus::Ok)
+            }
         );
         assert_eq!(
             ui.entries[1],
-            Entry::Tool { name: "time".into(), status: Some(ToolStatus::Failed) }
+            Entry::Tool {
+                name: "time".into(),
+                status: Some(ToolStatus::Failed)
+            }
         );
     }
 
@@ -723,11 +772,17 @@ mod tests {
     fn round_ends_with_note_and_stops_generating() {
         let mut ui = ChatUi::new();
         ui.push_user("hi");
-        ui.on_event(LoopEvent::Delta { kind: DeltaKind::Text, text: "答".into() });
+        ui.on_event(LoopEvent::Delta {
+            kind: DeltaKind::Text,
+            text: "答".into(),
+        });
         ui.on_event(LoopEvent::RoundEnded {
             stop: RoundStop::Finished(FinishReason::Stop),
             turns: 1,
-            round_usage: Usage { input_tokens: 1, output_tokens: 2 },
+            round_usage: Usage {
+                input_tokens: 1,
+                output_tokens: 2,
+            },
         });
 
         assert!(!ui.generating());
@@ -775,7 +830,10 @@ mod tests {
             vec![
                 Entry::User("问".into()),
                 Entry::Assistant("我来查".into()),
-                Entry::Tool { name: "echo".into(), status: None },
+                Entry::Tool {
+                    name: "echo".into(),
+                    status: None
+                },
                 Entry::ToolResult(r#"{"echo":{}}"#.into()),
                 Entry::Assistant("结果是空对象".into()),
             ]

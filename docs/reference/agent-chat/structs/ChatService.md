@@ -5,7 +5,7 @@ title: ChatService
 
 # Struct: ChatService
 
-Defined in: [`crates/features/chat/src/service.rs:88`](../../../../crates/features/chat/src/service.rs#L88)
+Defined in: [`crates/features/chat/src/service.rs:91`](../../../../crates/features/chat/src/service.rs#L91)
 
 会话编排服务。持有一个供应商与一组工具；状态由 [`Chat`](Chat.md) 外置携带。
 
@@ -19,7 +19,7 @@ _（存在非公开字段）_
 pub fn new(provider: Arc<dyn ErasedProvider>, tools: ToolSet) -> Self
 ```
 
-Defined in: [`crates/features/chat/src/service.rs:95`](../../../../crates/features/chat/src/service.rs#L95)
+Defined in: [`crates/features/chat/src/service.rs:98`](../../../../crates/features/chat/src/service.rs#L98)
 
 #### Parameters
 
@@ -44,7 +44,7 @@ Defined in: [`crates/features/chat/src/service.rs:95`](../../../../crates/featur
 pub fn with_config(self, config: ServiceConfig) -> Self
 ```
 
-Defined in: [`crates/features/chat/src/service.rs:103`](../../../../crates/features/chat/src/service.rs#L103)
+Defined in: [`crates/features/chat/src/service.rs:106`](../../../../crates/features/chat/src/service.rs#L106)
 
 #### Parameters
 
@@ -65,7 +65,7 @@ Defined in: [`crates/features/chat/src/service.rs:103`](../../../../crates/featu
 pub fn provider(&self) -> &Arc<dyn ErasedProvider>
 ```
 
-Defined in: [`crates/features/chat/src/service.rs:108`](../../../../crates/features/chat/src/service.rs#L108)
+Defined in: [`crates/features/chat/src/service.rs:111`](../../../../crates/features/chat/src/service.rs#L111)
 
 #### Returns
 
@@ -80,7 +80,7 @@ Defined in: [`crates/features/chat/src/service.rs:108`](../../../../crates/featu
 pub fn tools(&self) -> &ToolSet
 ```
 
-Defined in: [`crates/features/chat/src/service.rs:112`](../../../../crates/features/chat/src/service.rs#L112)
+Defined in: [`crates/features/chat/src/service.rs:115`](../../../../crates/features/chat/src/service.rs#L115)
 
 #### Returns
 
@@ -95,7 +95,7 @@ Defined in: [`crates/features/chat/src/service.rs:112`](../../../../crates/featu
 pub fn config(&self) -> &ServiceConfig
 ```
 
-Defined in: [`crates/features/chat/src/service.rs:116`](../../../../crates/features/chat/src/service.rs#L116)
+Defined in: [`crates/features/chat/src/service.rs:119`](../../../../crates/features/chat/src/service.rs#L119)
 
 #### Returns
 
@@ -110,7 +110,7 @@ Defined in: [`crates/features/chat/src/service.rs:116`](../../../../crates/featu
 pub fn run_round<'a, impl Into<String>: Into>(&self, chat: &'a Chat, input: impl ?, cancel: CancellationToken) -> Result<impl ? + ?, ProviderError>
 ```
 
-Defined in: [`crates/features/chat/src/service.rs:124`](../../../../crates/features/chat/src/service.rs#L124)
+Defined in: [`crates/features/chat/src/service.rs:127`](../../../../crates/features/chat/src/service.rs#L127)
 
 发起一轮对话。用户输入先入史，然后循环「模型 →（工具 → 回填 →）模型」直到自然结束。
 

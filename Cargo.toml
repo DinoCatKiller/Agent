@@ -24,6 +24,7 @@ agent-common = { path = "crates/common" }
 agent-providers = { path = "crates/kernel/providers" }
 agent-transport = { path = "crates/kernel/transport" }
 agent-store = { path = "crates/kernel/store" }
+agent-routing = { path = "crates/kernel/routing" }
 agent-chat = { path = "crates/features/chat" }
 agent-sessions = { path = "crates/features/sessions" }
 

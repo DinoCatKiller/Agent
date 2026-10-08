@@ -112,8 +112,14 @@
 |----|------|------|--------|------|------|
 | A6 | 错误、重试与降级 | `crates/kernel/transport/docs/errors-and-fallback.md` | 限流 / 超时 / 审核 / 不可用 | — | ⬜ |
 | R1 | 配置与密钥 | `crates/kernel/config/docs/config-and-secrets.md` | 加配置项、接密钥 | — | ⬜ |
-| R2 | 模型注册表与路由 | `crates/kernel/routing/docs/model-registry.md` | 模型清单、路由与兜底 | — | ⬜ |
 | R3 | 可观测性与成本 | `crates/kernel/telemetry/docs/observability.md` | 日志 / trace / 计费 | — | ⬜ |
+
+### `crates/kernel/routing`
+
+| ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
+|----|------|------|--------|------|------|
+| — | 路由门面 | [`crates/kernel/routing/README.md`](crates/kernel/routing/README.md) | 加降级链 / 动注册表查询前 | ~0.7k | ✅ M6 |
+| R2 | 模型注册表与路由 | [`crates/kernel/routing/docs/model-registry.md`](crates/kernel/routing/docs/model-registry.md) | 模型清单、路由与兜底 | ~1.2k | ✅ M6 |
 
 ### `crates/kernel/store`
 
@@ -139,6 +145,7 @@
 | D5 | 代码按功能组织（Django 式） | [`docs/decisions/0005-feature-oriented-layout.md`](docs/decisions/0005-feature-oriented-layout.md) | 新建 crate / 功能、移动目录时 | ~1.6k | ✅ 已接受（部分被 `D6` 修订） |
 | D6 | kernel（机制）与 features（语义）的判据 | [`docs/decisions/0006-kernel-vs-features.md`](docs/decisions/0006-kernel-vs-features.md) | 决定代码放哪、质疑"这算功能吗" | ~1.6k | ✅ 已接受 |
 | D7 | Ollama 与本地模型定位 | [`docs/decisions/0007-ollama-local-models.md`](docs/decisions/0007-ollama-local-models.md) | 接 Ollama / 本地模型、设计 `R2` 时 | ~0.8k | ✅ 已接受 |
+| D8 | MCP 客户端：自研最小接入 | [`docs/decisions/0008-mcp-client.md`](docs/decisions/0008-mcp-client.md) | 接 MCP / 扩工具生态时 | ~1k | ✅ 已接受 |
 
 ### 计划与跨领域调研
 

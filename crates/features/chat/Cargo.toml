@@ -21,3 +21,7 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 # 一期 TUI（`D3`/`D5`）：ui.rs 的渲染端。状态机不依赖它（可离线单测，`Q1`）
 ratatui = { workspace = true }
+
+[dev-dependencies]
+# start_paused：并行工具的确定性时序断言（暂停时钟自动推进）
+tokio = { workspace = true, features = ["test-util"] }

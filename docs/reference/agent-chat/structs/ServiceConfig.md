@@ -5,7 +5,7 @@ title: ServiceConfig
 
 # Struct: ServiceConfig
 
-Defined in: [`crates/features/chat/src/service.rs:71`](../../../../crates/features/chat/src/service.rs#L71)
+Defined in: [`crates/features/chat/src/service.rs:74`](../../../../crates/features/chat/src/service.rs#L74)
 
 循环与裁剪的运行参数。
 
@@ -17,7 +17,7 @@ Defined in: [`crates/features/chat/src/service.rs:71`](../../../../crates/featur
 max_model_turns: u32
 ```
 
-Defined in: [`crates/features/chat/src/service.rs:73`](../../../../crates/features/chat/src/service.rs#L73)
+Defined in: [`crates/features/chat/src/service.rs:76`](../../../../crates/features/chat/src/service.rs#L76)
 
 一轮用户输入内的最大模型调用次数（默认 8）。
 
@@ -30,7 +30,7 @@ Defined in: [`crates/features/chat/src/service.rs:73`](../../../../crates/featur
 context_keep_ratio: f64
 ```
 
-Defined in: [`crates/features/chat/src/service.rs:75`](../../../../crates/features/chat/src/service.rs#L75)
+Defined in: [`crates/features/chat/src/service.rs:78`](../../../../crates/features/chat/src/service.rs#L78)
 
 裁剪目标：历史估算 ≤ `context_window × keep_ratio`（默认 0.8，给输出留余量）。
 

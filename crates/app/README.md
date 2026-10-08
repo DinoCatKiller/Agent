@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| 状态 | ✅ M4：契约冒烟 + 对话 REPL；✅ M5：`tui` 一期终端界面（侧栏会话 + 流式转录 + 轮末落盘） |
+| 状态 | ✅ M4：契约冒烟 + 对话 REPL；✅ M5：`tui` 一期终端界面（侧栏会话 + 流式转录 + 轮末落盘）；✅ M6：请求统一经 `Router` 出（`--model a,b` 失败降级链） |
 | 边界 | 组装依赖、承载 CLI 命令、终端生命周期。**不含**业务逻辑（都在 `features/*` 里） |
 | 上游 | `agent-common` / `agent-providers` / `agent-transport` / `agent-chat` / `agent-sessions` / `agent-store` |
 | 下游 | 无（最终产物） |
@@ -19,10 +19,11 @@ cargo run -p agent-app -- chat --provider openai-compatible --model gpt-4o
 cargo run -p agent-app -- chat --provider anthropic --model claude-sonnet-4-5-20250929
 # 可选：--base-url（vLLM / 本地服务，传入后不做模型清单拦截）
 #       --api-key（缺省读 OPENAI_API_KEY / ANTHROPIC_API_KEY 环境变量）
+#       --model a,b（逗号分隔 = 失败降级链：a 遇 429/5xx/超时/断网/Auth 自动落到 b，R2）
 
 # 一期 TUI（M5，`D3`）
 cargo run -p agent-app -- tui --provider openai-compatible --model gpt-4o
-# 可选：--db PATH（会话库路径，缺省 ./agent-sessions.db）
+# 可选：--db PATH（会话库路径，缺省 ./agent-sessions.db）；--model 同样支持 a,b 降级链
 ```
 
 > **终端要求（Windows）**：crossterm 的 raw mode 走 Win32 控制台 API，请在 **Windows Terminal / PowerShell / cmd** 里运行。
@@ -38,7 +39,7 @@ REPL 内：直接输入对话；`/quit` 退出；**Ctrl-C 取消当前生成**�
 
 ## 它不能做什么
 
-- ❌ 路由兜底（M6）、多工具并行（M6）、重试退避（`A6`）
+- ❌ 重试退避（`A6` 待建）、密钥管理（`R1` 待建）
 - ❌ 密钥经 `R1` 管理前，只走参数 / 环境变量，且不入库、不打日志
 
 ## 布局
