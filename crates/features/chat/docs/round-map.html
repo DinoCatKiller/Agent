@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>A5-V · 对话轮次循环（features/chat 在做什么）</title>
+<style>
+:root{
+  --ground:#08090A; --hairline:rgba(255,255,255,.09); --text:#F7F8F8; --text-2:#9BA0A8;
+  --accent:#5E6AD2; --accent-soft:rgba(94,106,210,.16); --ok:#4FB477; --ok-soft:rgba(79,180,119,.12);
+  --warn:#D9A05B; --warn-soft:rgba(217,160,91,.12); --bad:#D06A5E; --bad-soft:rgba(208,106,94,.12);
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"PingFang SC","Microsoft YaHei UI",monospace;
+  --sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei UI",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--ground);color:var(--text);font-family:var(--sans);padding:36px 44px;max-width:1060px;margin:0 auto}
+.eyebrow{color:var(--accent);font-family:var(--mono);font-size:12px;letter-spacing:.18em}
+h1{font-size:26px;margin:6px 0 4px}
+h1 em{color:var(--accent);font-style:normal}
+.lead{color:var(--text-2);font-size:13.5px;line-height:1.7;margin-bottom:22px}
+.lead b{color:var(--text)}
+.card{border:1px solid var(--hairline);border-radius:14px;background:rgba(255,255,255,.02);padding:18px 20px;margin-bottom:18px}
+.card h2{font-size:14px;margin-bottom:12px;font-weight:600}
+.card h2 small{color:var(--text-2);font-weight:400;margin-left:8px}
+svg{display:block;width:100%;height:auto}
+svg text{font-family:var(--sans)}
+svg .bx{fill:rgba(255,255,255,.03);stroke:var(--hairline)}
+svg .bx.acc{stroke:var(--accent);fill:var(--accent-soft)}
+svg .bx.ok{stroke:var(--ok);fill:var(--ok-soft)}
+svg .bx.warn{stroke:var(--warn);fill:var(--warn-soft)}
+svg .bx.bad{stroke:var(--bad);fill:var(--bad-soft)}
+svg .t{fill:var(--text);font-size:12.5px;font-weight:600}
+svg .d{fill:var(--text-2);font-size:10.5px}
+svg .ar{stroke:rgba(255,255,255,.28);stroke-width:1.2;fill:none}
+svg .lab{fill:var(--text-2);font-size:10px;font-family:var(--mono)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{color:var(--text-2);text-align:left;font-weight:500;padding:6px 10px;border-bottom:1px solid var(--hairline)}
+td{padding:7px 10px;border-bottom:1px solid var(--hairline);vertical-align:top;line-height:1.55}
+td code,.card code{font-family:var(--mono);font-size:11.5px;color:var(--accent);background:var(--accent-soft);padding:1px 5px;border-radius:4px}
+.tag{display:inline-block;font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:99px;margin-right:6px}
+.tag.ok{color:var(--ok);border:1px solid var(--ok);background:var(--ok-soft)}
+.tag.warn{color:var(--warn);border:1px solid var(--warn);background:var(--warn-soft)}
+.tag.bad{color:var(--bad);border:1px solid var(--bad);background:var(--bad-soft)}
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.rule{border:1px solid var(--hairline);border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.65;color:var(--text-2)}
+.rule b{display:block;color:var(--text);margin-bottom:4px;font-size:12.5px}
+.foot{color:var(--text-2);font-size:11px;margin-top:16px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="eyebrow">AGENT-CHAT · M4 · A5-V</div>
+<h1>对话轮次循环 —— <em>run_round()</em> 在做什么</h1>
+<p class="lead">用户说一句话到「本轮结束」之间发生的事：可能一次模型调用就完，也可能经过<b>多轮「模型 ↔ 工具」往返</b>。
+消费者（CLI / 未来 UI / 测试）只看一条 <b>LoopEvent 事件流</b>；内部两条铁律保证状态永远一致。</p>
+
+<div class="card">
+<h2>一次 run_round 的完整路径<small>sync 准备段（可 fast-fail）→ 主循环 → 收尾</small></h2>
+<svg viewBox="0 0 960 700">
+  <!-- 输入 -->
+  <rect class="bx acc" x="20" y="14" width="280" height="52" rx="10"/>
+  <text class="t" x="36" y="36">用户输入 input</text>
+  <text class="d" x="36" y="53">repl.rs 读到一行 / 未来 UI 提交</text>
+  <rect class="bx acc" x="340" y="14" width="280" height="52" rx="10"/>
+  <text class="t" x="356" y="36">Chat 会话状态</text>
+  <text class="d" x="356" y="53">历史消息 + 累计 usage（纯数据）</text>
+  <rect class="bx acc" x="660" y="14" width="280" height="52" rx="10"/>
+  <text class="t" x="676" y="36">CancellationToken</text>
+  <text class="d" x="676" y="53">UI 的「停止」按钮 / Ctrl-C</text>
+
+  <!-- 同步准备段 -->
+  <text class="lab" x="24" y="100">① 同步准备段 —— 返回 Err 就是 fast-fail（不发请求就暴露）</text>
+  <rect class="bx" x="20" y="112" width="920" height="118" rx="10" stroke-dasharray="5 4"/>
+  <rect class="bx" x="40" y="132" width="200" height="44" rx="8"/>
+  <text class="t" x="56" y="150">push_user(input)</text>
+  <text class="d" x="56" y="166">用户输入先入史（取消也保留）</text>
+  <path class="ar" d="M240 154 H282" marker-end="url(#ar)"/>
+  <rect class="bx" x="288" y="132" width="200" height="44" rx="8"/>
+  <text class="t" x="304" y="150">Chat::request()</text>
+  <text class="d" x="304" y="166">role=Tool 必须带 tool_call_id</text>
+  <path class="ar" d="M488 154 H530" marker-end="url(#ar)"/>
+  <rect class="bx" x="536" y="132" width="180" height="44" rx="8"/>
+  <text class="t" x="552" y="150">trim_to_fit()</text>
+  <text class="d" x="552" y="166">超窗按交换块裁请求</text>
+  <path class="ar" d="M716 154 H758" marker-end="url(#ar)"/>
+  <rect class="bx" x="764" y="132" width="156" height="44" rx="8"/>
+  <text class="t" x="780" y="150">provider.stream()</text>
+  <text class="d" x="780" y="166">能力协商 fast-fail</text>
+
+  <!-- 主循环框 -->
+  <text class="lab" x="24" y="262">② 主循环 —— 每圈 = 一次模型调用（async_stream 生成 LoopEvent 流）</text>
+  <rect class="bx ok" x="20" y="274" width="920" height="248" rx="12"/>
+  <rect class="bx" x="44" y="294" width="252" height="70" rx="8"/>
+  <text class="t" x="60" y="315">select! 事件泵（biased）</text>
+  <text class="d" x="60" y="332">cancelled? → ③ 取消出口</text>
+  <text class="d" x="60" y="348">否则取下一个 StreamEvent</text>
+  <path class="ar" d="M296 329 H338" marker-end="url(#ar)"/>
+  <rect class="bx ok" x="344" y="294" width="252" height="70" rx="8"/>
+  <text class="t" x="360" y="315">Delta → TurnDraft 累积</text>
+  <text class="d" x="360" y="332">同时透传 LoopEvent::Delta 给 UI</text>
+  <text class="d" x="360" y="348">（thinking 只显示不进历史）</text>
+  <path class="ar" d="M596 329 H638" marker-end="url(#ar)"/>
+  <rect class="bx bad" x="644" y="294" width="272" height="70" rx="8"/>
+  <text class="t" x="660" y="315">StreamEvent::Error</text>
+  <text class="d" x="660" y="332">透传 Error 并终止：</text>
+  <text class="d" x="660" y="348">草稿丢弃 = 本轮增量全部回滚</text>
+
+  <path class="ar" d="M470 364 V392" marker-end="url(#ar)"/>
+  <rect class="bx ok" x="344" y="398" width="252" height="60" rx="8"/>
+  <text class="t" x="360" y="419">End → commit_turn()</text>
+  <text class="d" x="360" y="436">assistant 消息这才入史 + 计 usage</text>
+  <path class="ar" d="M596 428 H648" marker-end="url(#ar)"/>
+  <rect class="bx" x="654" y="398" width="262" height="60" rx="8"/>
+  <text class="t" x="670" y="419">finish_reason 是什么？</text>
+  <text class="d" x="670" y="436">决定走工具分支还是收尾</text>
+
+  <!-- 工具分支 -->
+  <path class="ar" d="M654 443 Q560 470 520 470 T480 500" marker-end="url(#ar)"/>
+  <text class="lab" x="672" y="462">ToolCalls ↓</text>
+  <rect class="bx warn" x="150" y="506" width="330" height="86" rx="8"/>
+  <text class="t" x="166" y="527">工具循环（顺序执行，M6 再并行）</text>
+  <text class="d" x="166" y="544">ToolStarted → tool.run() → ToolFinished</text>
+  <text class="d" x="166" y="560">错误也是结果：内容 = "error: …" 喂回模型</text>
+  <text class="d" x="166" y="576">回填 role=Tool 消息 → 回到 ② 下一圈</text>
+  <path class="ar" d="M315 506 V560 Q315 600 380 610" marker-end="url(#ar)" stroke-dasharray="4 3"/>
+  <text class="lab" x="322" y="596">下一圈</text>
+  <rect class="bx bad" x="150" y="418" width="160" height="52" rx="8"/>
+  <text class="t" x="166" y="439">turns ≥ max(8)</text>
+  <text class="d" x="166" y="456">不再执行工具</text>
+
+  <!-- 收尾 -->
+  <rect class="bx ok" x="560" y="580" width="380" height="86" rx="8"/>
+  <text class="t" x="576" y="601">RoundEnded（事件流最后一件正常的事）</text>
+  <text class="d" x="576" y="618">Finished(reason) ｜ MaxTurns(turns)</text>
+  <text class="d" x="576" y="634">带 turns 次数 + 本轮合计 usage</text>
+  <text class="d" x="576" y="650">Chat.total_usage 已累计 → 会话继续</text>
+  <path class="ar" d="M480 458 L560 590" marker-end="url(#ar)"/>
+  <text class="lab" x="488" y="540">Stop/Length/Truncated…</text>
+
+  <!-- 取消出口 -->
+  <rect class="bx warn" x="20" y="580" width="380" height="86" rx="8"/>
+  <text class="t" x="36" y="601">③ 取消出口（任何阶段）</text>
+  <text class="d" x="36" y="618">发 Cancelled 后事件流结束</text>
+  <text class="d" x="36" y="634">模型输出未入史 → 丢弃即回滚</text>
+  <text class="d" x="36" y="650">用户输入保留，会话可继续</text>
+  <path class="ar" d="M170 364 V580" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+  <text class="lab" x="178" y="480">cancelled</text>
+  <defs>
+    <marker id="ar" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0 0 L7 3.5 L0 7 Z" fill="rgba(255,255,255,.4)"/>
+    </marker>
+  </defs>
+</svg>
+</div>
+
+<div class="card">
+<h2>消费者看到的 7 种 LoopEvent<small>service.rs → repl.rs / 测试 / 未来 UI</small></h2>
+<table>
+<tr><th>事件</th><th>时机</th><th>UI 该做什么</th></tr>
+<tr><td><code>Delta{kind,text}</code></td><td>模型增量到达（Text / Thinking）</td><td><span class="tag ok">流式</span>追加渲染；thinking 可折叠显示</td></tr>
+<tr><td><code>ModelTurnEnded{finish_reason,usage}</code></td><td>一次模型调用收尾并入史</td><td>可显示「第 n 轮结束」与 token 数</td></tr>
+<tr><td><code>ToolStarted{id,name}</code></td><td>工具即将执行</td><td>显示工具面板「执行中」</td></tr>
+<tr><td><code>ToolFinished{id,ok}</code></td><td>工具执行完成（失败也照常回填模型）</td><td><span class="tag warn">注意</span>ok=false 不是错误，模型会看到错误文案</td></tr>
+<tr><td><code>RoundEnded{stop,turns,round_usage}</code></td><td>本轮自然结束（Finished / MaxTurns）</td><td>收起输入框禁用态</td></tr>
+<tr><td><code>Cancelled</code></td><td>用户取消；之后无任何事件</td><td>提示已撤销本轮输出</td></tr>
+<tr><td><code>Error{error}</code></td><td>终止性错误；之后无任何事件</td><td><span class="tag bad">红</span>展示错误；未提交输出已回滚</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2>三条铁律<small>改 service.rs / chat.rs 之前必读</small></h2>
+<div class="rules">
+<div class="rule"><b>① 只在 End 后入史</b>增量先攒在 TurnDraft，取消 / 出错丢弃草稿即回滚。截断（End{Truncated}）也入史——那是用户真实看到的输出。</div>
+<div class="rule"><b>② 工具错误喂回模型</b>执行失败、未知工具名都作为 tool_result 文本回传，模型可自救；不做流中重试（重试属 A6），死循环由 max_model_turns 兜底。</div>
+<div class="rule"><b>③ 历史是事实，请求是视图</b>裁剪只作用于发出去的请求；Chat.messages 永不删改，M5 存档拿到的是完整历史（A7）。</div>
+</div>
+</div>
+<div class="foot">agent-chat: src/service.rs（编排）· src/chat.rs（状态机）· src/tools.rs（工具边界）· src/context.rs（裁剪）｜ 规格：A5 / A7 ｜ 消费者参考：crates/app/src/repl.rs</div>
+</body>
+</html>

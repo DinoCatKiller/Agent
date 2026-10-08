@@ -61,8 +61,8 @@
 - [x] `Role` / `ContentPart` / `Message` 类型（`agent-common`）
 - [x] `Message::system/user/assistant/tool_result` 构造器
 - [x] `tool_call_id` 必填约束（构造器形态）
-- [ ] 运行期校验：`role = Tool` 而缺 `tool_call_id` 时返回 `InvalidRequest`（M4 在 Core 加）
-- [ ] 多模态 fixtures（M3 随首个适配器一起建）
+- [x] 运行期校验：`role = Tool` 而缺 `tool_call_id` 时返回 `InvalidRequest`（M4 已落：`Chat::request`，见 `crates/features/chat/src/chat.rs`）
+- [ ] 多模态 fixtures（图片 / 文件输入的解析用例，随首个多模态任务建）
 
 ## 相关
 

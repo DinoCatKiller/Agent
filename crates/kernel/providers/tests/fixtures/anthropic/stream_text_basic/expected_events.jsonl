@@ -1,0 +1,5 @@
+{"event":"start","response_id":"msg_123","model":"claude-sonnet-4-5-20250929"}
+{"event":"delta","kind":"text","text":"Hello"}
+{"event":"delta","kind":"text","text":", world"}
+{"event":"usage","usage":{"input_tokens":11,"output_tokens":5}}
+{"event":"end","finish_reason":"stop"}

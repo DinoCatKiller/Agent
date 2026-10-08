@@ -1,0 +1,1 @@
+{ "model": "claude-sonnet-4-5-20250929", "notes": "message_start / message_delta 均无 usage（兼容实现差异）：契约要求 End 前仍发一次 Usage::default()（Q1 用例 11）。", "recorded_at": "2026-09-30" }

@@ -8,3 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 agent-common = { workspace = true }
+# 会话元类型与主题来自 chat 切片；feature 之间允许互相依赖（`D5`），不成环
+agent-chat = { workspace = true }
+# 侧栏渲染（ui.rs）
+ratatui = { workspace = true }

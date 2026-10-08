@@ -1,0 +1,1 @@
+{ "model": "claude-sonnet-4-5-20250929", "notes": "tool_use 块参数经 input_json_delta 分两片下发，content_block_stop 收口时必须拼成可解析 JSON。与 openai-compatible/tool_call_split 同构。", "recorded_at": "2026-09-30" }

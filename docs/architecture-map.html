@@ -384,12 +384,12 @@ footer b{font-weight:500;color:var(--text-2)}
         <span><b>A2</b> Provider 契约</span>
         <span><b>RM</b> 里程碑</span>
         <span><b>S1</b> 当前阶段</span>
-        <span>更新 <b>2026-09-28</b></span>
+        <span>更新 <b>2026-09-30</b></span>
       </div>
       <div class="stats">
-        <div class="stat is-now"><span class="pill wip"><i></i></span><b>M2</b><span>传输层 · 进行中</span></div>
-        <div class="stat"><span class="pill ok"><i></i></span><b>1</b><span>crate 已落地</span></div>
-        <div class="stat"><span class="pill wip"><i></i></span><b>6</b><span>进行中（含 3 个功能骨架）</span></div>
+        <div class="stat is-now"><span class="pill ok"><i></i></span><b>M4</b><span>Agent 循环 · 已完成（下一站 M5）</span></div>
+        <div class="stat"><span class="pill ok"><i></i></span><b>5</b><span>crate 已落地</span></div>
+        <div class="stat"><span class="pill wip"><i></i></span><b>2</b><span>功能骨架（sessions / settings）</span></div>
         <div class="stat"><span class="pill todo"><i></i></span><b>4</b><span>crate 未建</span></div>
       </div>
     </div>
@@ -490,19 +490,19 @@ footer b{font-weight:500;color:var(--text-2)}
           </g>
 
           <!-- 节点 -->
-          <g class="node wip" transform="translate(585,20)">
+          <g class="node done" transform="translate(585,20)">
             <rect width="230" height="56" rx="14"/>
             <text class="n" x="16" y="26">crates/app</text>
             <text class="d" x="16" y="45">二进制入口 · 组装依赖</text>
-            <circle class="dot wip" cx="214" cy="18" r="4"/>
+            <circle class="dot ok" cx="214" cy="18" r="4"/>
             <text class="m" x="216" y="45">M4</text>
           </g>
 
-          <g class="node todo" transform="translate(315,130)">
+          <g class="node done" transform="translate(315,130)">
             <rect width="230" height="56" rx="14"/>
             <text class="n" x="16" y="26">features/chat</text>
             <text class="d" x="16" y="45">对话编排 · 状态 · 界面</text>
-            <circle class="dot todo" cx="214" cy="18" r="4"/>
+            <circle class="dot ok" cx="214" cy="18" r="4"/>
             <text class="m" x="216" y="45">M4</text>
           </g>
 
@@ -522,19 +522,19 @@ footer b{font-weight:500;color:var(--text-2)}
             <text class="m" x="216" y="45">R1</text>
           </g>
 
-          <g class="node wip" transform="translate(5,260)">
+          <g class="node done" transform="translate(5,260)">
             <rect width="215" height="56" rx="14"/>
             <text class="n" x="14" y="26">kernel/transport</text>
             <text class="d" x="14" y="45">HTTP · SSE · 超时重试</text>
-            <circle class="dot wip" cx="199" cy="18" r="4"/>
+            <circle class="dot ok" cx="199" cy="18" r="4"/>
             <text class="m" x="176" y="45">M2</text>
           </g>
 
-          <g class="node wip" transform="translate(240,260)">
+          <g class="node done" transform="translate(240,260)">
             <rect width="215" height="56" rx="14"/>
             <text class="n" x="14" y="26">kernel/providers</text>
             <text class="d" x="14" y="45">Provider 契约 + 适配器</text>
-            <circle class="dot wip" cx="199" cy="18" r="4"/>
+            <circle class="dot ok" cx="199" cy="18" r="4"/>
             <text class="m" x="176" y="45">M3</text>
           </g>
 
@@ -693,33 +693,33 @@ footer b{font-weight:500;color:var(--text-2)}
           <div class="owns"><b>crates/common</b> · <b>crates/kernel/providers</b></div>
           <div class="stat-cell"><span class="pill ok"><i></i>已完成</span></div>
         </div>
-        <div class="ms-row now">
+        <div class="ms-row">
           <div class="id">M2</div>
           <div class="ttl">传输层</div>
           <div class="done-criteria">一次真实请求能流式收完；坏帧 / 截断 / 超时均有用例覆盖</div>
           <div class="owns"><b>crates/kernel/transport</b></div>
-          <div class="stat-cell"><span class="pill wip"><i></i>进行中</span></div>
+          <div class="stat-cell"><span class="pill ok"><i></i>已完成</span></div>
         </div>
         <div class="ms-row">
           <div class="id">M3</div>
           <div class="ttl">首个适配器</div>
-          <div class="done-criteria">OpenAI 兼容族跑通 Q1 的 12 条用例</div>
+          <div class="done-criteria">OpenAI 兼容族跑通 Q1 的 12 条用例（追加 Anthropic 同套用例全绿）</div>
           <div class="owns"><b>crates/kernel/providers</b></div>
-          <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
+          <div class="stat-cell"><span class="pill ok"><i></i>已完成</span></div>
         </div>
         <div class="ms-row">
           <div class="id">M4</div>
           <div class="ttl">Agent 循环</div>
           <div class="done-criteria">CLI 上完成单轮与多轮（含工具结果回填）对话</div>
           <div class="owns"><b>crates/features/chat</b> · <b>crates/app</b></div>
-          <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
+          <div class="stat-cell"><span class="pill ok"><i></i>已完成</span></div>
         </div>
-        <div class="ms-row">
+        <div class="ms-row now">
           <div class="id">M5</div>
           <div class="ttl">UI 层 + 会话持久化</div>
           <div class="done-criteria">形态由 D3 决定；会话可存可取（方案细节 → GUI）</div>
           <div class="owns"><b>crates/features/{chat,sessions,settings}</b> · <b>crates/kernel/store</b></div>
-          <div class="stat-cell"><span class="pill todo"><i></i>未启动</span></div>
+          <div class="stat-cell"><span class="pill todo"><i></i>未启动（待 Q1 / Q2 拍板）</span></div>
         </div>
         <div class="ms-row">
           <div class="id">M6</div>
@@ -731,10 +731,9 @@ footer b{font-weight:500;color:var(--text-2)}
       </div>
 
       <div class="note">
-        <h4>等你拍板 · 会卡住里程碑的三件事（S2）</h4>
+        <h4>等你拍板 · 会卡住里程碑的两件事（S2）</h4>
         <div class="chips">
           <b class="hot">Q1 · UI 交付形态 → 阻塞 M5</b>
-          <b class="hot">Q3 · 首批适配器优先级 → 阻塞 M3</b>
           <b class="hot">Q2 · 样式层是否按 D4 执行 → 阻塞 M5</b>
           <b>Q4 · 是否支持 MCP</b>
           <b>Q5 · 本地模型是否一等公民</b>

@@ -1,0 +1,4 @@
+data: {"id":"chatcmpl-11","object":"chat.completion.chunk","created":1727700000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}
+
+data: [DONE]
+

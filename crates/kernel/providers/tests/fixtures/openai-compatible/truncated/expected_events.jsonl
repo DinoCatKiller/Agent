@@ -1,0 +1,4 @@
+{"event":"start","response_id":"chatcmpl-5","model":"gpt-4o"}
+{"event":"delta","kind":"text","text":"partial"}
+{"event":"usage","usage":{"input_tokens":0,"output_tokens":0}}
+{"event":"end","finish_reason":"truncated"}

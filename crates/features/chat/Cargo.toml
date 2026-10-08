@@ -1,6 +1,6 @@
 [package]
 name = "agent-chat"
-description = "功能切片 chat：一次对话的编排、状态与界面"
+description = "功能切片 chat：一次对话的编排、状态与（将来的）界面"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,3 +8,20 @@ rust-version.workspace = true
 
 [dependencies]
 agent-common = { workspace = true }
+agent-providers = { workspace = true }
+# 会话持久化（repo.rs）：只用它提供的连接与 Migrator，引擎版本由它集中声明
+agent-store = { workspace = true }
+async-stream = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+# 一期 TUI（`D3`/`D5`）：ui.rs 的渲染端。状态机不依赖它（可离线单测，`Q1`）
+ratatui = { workspace = true }
+
+[dev-dependencies]
+# start_paused：并行工具的确定性时序断言（暂停时钟自动推进）
+tokio = { workspace = true, features = ["test-util"] }

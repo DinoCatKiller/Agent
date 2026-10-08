@@ -1,0 +1,5 @@
+{"event":"start","response_id":"chatcmpl-123","model":"gpt-4o"}
+{"event":"delta","kind":"text","text":"Hello"}
+{"event":"delta","kind":"text","text":", world"}
+{"event":"usage","usage":{"input_tokens":11,"output_tokens":5}}
+{"event":"end","finish_reason":"stop"}

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>A4-V · 传输管线（kernel/transport 在做什么）</title>
+<style>
+:root{
+  --ground:#08090A; --hairline:rgba(255,255,255,.09); --text:#F7F8F8; --text-2:#9BA0A8;
+  --accent:#5E6AD2; --accent-soft:rgba(94,106,210,.16); --ok:#4FB477; --ok-soft:rgba(79,180,119,.12);
+  --warn:#D9A05B; --warn-soft:rgba(217,160,91,.12); --bad:#D06A5E; --bad-soft:rgba(208,106,94,.12);
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"PingFang SC","Microsoft YaHei UI",monospace;
+  --sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei UI",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--ground);color:var(--text);font-family:var(--sans);padding:36px 44px;max-width:1060px;margin:0 auto}
+.eyebrow{color:var(--accent);font-family:var(--mono);font-size:12px;letter-spacing:.18em}
+h1{font-size:26px;margin:6px 0 4px}
+h1 em{color:var(--accent);font-style:normal}
+.lead{color:var(--text-2);font-size:13.5px;line-height:1.7;margin-bottom:22px}
+.lead b{color:var(--text)}
+.card{border:1px solid var(--hairline);border-radius:14px;background:rgba(255,255,255,.02);padding:18px 20px;margin-bottom:18px}
+.card h2{font-size:14px;margin-bottom:12px;font-weight:600}
+.card h2 small{color:var(--text-2);font-weight:400;margin-left:8px}
+svg{display:block;width:100%;height:auto}
+svg text{font-family:var(--sans)}
+svg .bx{fill:rgba(255,255,255,.03);stroke:var(--hairline)}
+svg .bx.acc{stroke:var(--accent);fill:var(--accent-soft)}
+svg .bx.ok{stroke:var(--ok);fill:var(--ok-soft)}
+svg .bx.warn{stroke:var(--warn);fill:var(--warn-soft)}
+svg .ar{stroke:rgba(255,255,255,.28);stroke-width:1.2;fill:none}
+svg .t{fill:var(--text);font-size:12.5px;font-weight:600}
+svg .d{fill:var(--text-2);font-size:10.5px}
+svg .lab{fill:var(--text-2);font-size:10px;font-family:var(--mono)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{color:var(--text-2);text-align:left;font-weight:500;padding:6px 10px;border-bottom:1px solid var(--hairline)}
+td{padding:7px 10px;border-bottom:1px solid var(--hairline);vertical-align:top;line-height:1.55}
+td code{font-family:var(--mono);font-size:11.5px;color:var(--accent);background:var(--accent-soft);padding:1px 5px;border-radius:4px}
+.tag{display:inline-block;font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:99px;margin-right:6px}
+.tag.ok{color:var(--ok);border:1px solid var(--ok);background:var(--ok-soft)}
+.tag.warn{color:var(--warn);border:1px solid var(--warn);background:var(--warn-soft)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.note{border:1px solid var(--hairline);border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.65;color:var(--text-2)}
+.note b{display:block;color:var(--text);margin-bottom:4px;font-size:12.5px}
+.foot{color:var(--text-2);font-size:11px;margin-top:16px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="eyebrow">AGENT-TRANSPORT · M2 · A4-V</div>
+<h1>传输管线 —— <em>一次流式调用怎么被装起来</em></h1>
+<p class="lead">传输层只做<b>机制</b>：怎么发请求、怎么切 SSE 帧、怎么收尾、怎么取消、怎么超时。
+它<b>不认识任何厂商</b>——「哪一帧算结束」这类供应商语义全部由适配器通过 <b>FramePolicy</b> 注入（D6：机制 vs 语义）。</p>
+
+<div class="card">
+<h2>五段管线<small>每段只做一件事，可单独替换与测试</small></h2>
+<svg viewBox="0 0 960 236">
+  <rect class="bx acc" x="16" y="40" width="164" height="72" rx="10"/>
+  <text class="t" x="30" y="62">reqwest 字节流</text>
+  <text class="d" x="30" y="79">bytes_stream()</text>
+  <text class="d" x="30" y="95">reqwest::Error 就地归一化</text>
+  <path class="ar" d="M180 76 H214" marker-end="url(#ar)"/>
+  <rect class="bx" x="220" y="40" width="164" height="72" rx="10"/>
+  <text class="t" x="234" y="62">① guard_idle</text>
+  <text class="d" x="234" y="79">空闲超时（相邻两帧间隔）</text>
+  <text class="d" x="234" y="95">断流的连接不会永久挂起</text>
+  <path class="ar" d="M384 76 H418" marker-end="url(#ar)"/>
+  <rect class="bx" x="424" y="40" width="164" height="72" rx="10"/>
+  <text class="t" x="438" y="62">② parse_sse</text>
+  <text class="d" x="438" y="79">字节 → 通用 SseEvent</text>
+  <text class="d" x="438" y="95">切行/BOM/CRLF/跨chunk重组</text>
+  <path class="ar" d="M588 76 H622" marker-end="url(#ar)"/>
+  <rect class="bx ok" x="628" y="40" width="164" height="72" rx="10"/>
+  <text class="t" x="642" y="62">③ finalize(policy)</text>
+  <text class="d" x="642" y="79">三分收尾（机制）</text>
+  <text class="d" x="642" y="95">判决权在适配器 ↓</text>
+  <path class="ar" d="M792 76 H826" marker-end="url(#ar)"/>
+  <rect class="bx warn" x="832" y="40" width="112" height="72" rx="10"/>
+  <text class="t" x="846" y="62">④ guard</text>
+  <text class="d" x="846" y="79">取消守卫</text>
+  <text class="d" x="846" y="95">最外层</text>
+  <text class="lab" x="16" y="150">适配器唯一要写的部分：FramePolicy —— 把「一帧」翻译成「归一化事件 + 终局判定」，纯函数、不碰网络</text>
+  <rect class="bx ok" x="16" y="162" width="928" height="56" rx="10"/>
+  <text class="t" x="32" y="184">classify(SseEvent) → Frame::Emit(0..n 事件) ｜ Skip（坏帧跳过流继续）｜ Terminal(0..n 末帧后结束)</text>
+  <text class="d" x="32" y="202">on_truncated()：EOF 没等到终止记录时补截断信号 —— 绝不允许静默当成功（A2 §4-3）</text>
+  <defs><marker id="ar" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+    <path d="M0 0 L7 3.5 L0 7 Z" fill="rgba(255,255,255,.4)"/></marker></defs>
+</svg>
+</div>
+
+<div class="card">
+<h2>三分收尾<small>为什么「一帧可以产多个事件」</small></h2>
+<table>
+<tr><th>情形</th><th>机制行为</th><th>谁决定</th></tr>
+<tr><td><span class="tag ok">正常帧</span></td><td>产出 0..n 个事件，流继续</td><td>适配器 classify</td></tr>
+<tr><td><span class="tag warn">可恢复坏帧</span></td><td>Skip：跳过该帧、流继续、记一条 debug 日志</td><td>适配器 classify</td></tr>
+<tr><td><span class="tag ok">终止记录</span></td><td>产出 0..n 末帧后流正常结束，不再读上游</td><td>适配器（OpenAI 的 <code>[DONE]</code> / Anthropic 的 <code>message_stop</code>，机制从不解析 data 语义）</td></tr>
+<tr><td><span class="tag warn">EOF 无终止记录</span></td><td>调 on_truncated() 把返回值发给下游</td><td>适配器必须表达「截断」</td></tr>
+<tr><td><span class="tag ok">传输错误</span></td><td>上抛 TransportError 后停止，不补任何收尾事件</td><td>机制固定</td></tr>
+</table>
+<p style="font-size:12px;color:var(--text-2);margin-top:10px;line-height:1.7">
+<b style="color:var(--text)">一帧多事件不是花哨：</b>契约要求 End 之前必须有一次 Usage（A2 §4），而供应商可能把 usage 与终止原因放在同一条记录里；
+供应商干脆不给 usage 时，适配器也要在收尾处补 <code>Usage::default()</code>（Q1 用例 11）。一帧只许产一个事件的话，这两件事无法同时做到。</p>
+</div>
+
+<div class="card">
+<div class="grid2">
+<div class="note"><b>取消分两阶段（A4 §3）</b>
+请求阶段：<code>cancellable(&token, fut)</code> / <code>HttpClient::send</code> —— biased 先看取消，已取消时<b>绝不发起</b>，挂起时立刻放弃。<br>
+流阶段：<code>guard(stream, token)</code> —— 取消后产出一次 Cancelled 并结束，<b>取消优先于</b>尚未吐出的帧；这正是让底层连接真正被关掉的那一层。</div>
+<div class="note"><b>三种超时（A4 §4）</b>
+连接（含 TLS）10s ｜ 整体请求 <b>None —— 流式不设</b>，长回答会被整体超时误杀 ｜ 流式空闲 60s，判据是<b>相邻两帧的间隔</b>而非总耗时。<br>
+为什么必须有空闲超时：部分供应商不发结束记录，没有它，一条断掉的连接会让调用方永久挂起。</div>
+</div>
+</div>
+<div class="foot">agent-transport: src/http.rs · src/sse.rs · src/finish.rs · src/cancel.rs ｜ 契约：A2 §4 ｜ 选型依据：X1 §2 ｜ fixtures：tests/fixtures/*.sse + tests/pipeline.rs（断网全绿）</div>
+</body>
+</html>

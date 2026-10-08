@@ -80,10 +80,10 @@ app  →  features/*  →  kernel/*  →  common        （只能向下，不能
 
 | 规格 | 新位置 |
 |------|--------|
-| `A1` 架构与分层 | 根 `docs/architecture.md`（跨 crate） |
-| `A2` Provider 契约 | `crates/kernel/providers/docs/contract.md` |
-| `A3` 消息协议 | `crates/common/docs/message-protocol.md` |
-| `A4` 流式 / 取消 / 超时 | `crates/kernel/transport/docs/streaming.md` |
+| `A1` 架构与分层 | 根 [`docs/architecture.md`](../architecture.md)（跨 crate） |
+| `A2` Provider 契约 | [`crates/kernel/providers/docs/contract.md`](../../crates/kernel/providers/docs/contract.md) |
+| `A3` 消息协议 | [`crates/common/docs/message-protocol.md`](../../crates/common/docs/message-protocol.md) |
+| `A4` 流式 / 取消 / 超时 | [`crates/kernel/transport/docs/streaming.md`](../../crates/kernel/transport/docs/streaming.md) |
 | `A5` 工具调用 | `crates/features/chat/docs/tool-calling.md` |
 | `A6` 错误 / 重试 / 降级 | `crates/kernel/transport/docs/errors-and-fallback.md` |
 | `A7` 上下文与 Token | `crates/features/chat/docs/context-and-tokens.md` |

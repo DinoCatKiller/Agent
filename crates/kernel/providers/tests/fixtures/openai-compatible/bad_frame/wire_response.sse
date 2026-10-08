@@ -1,0 +1,8 @@
+data: {"id":"chatcmpl-6","object":"chat.completion.chunk","created":1727700000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"before"},"finish_reason":null}]}
+
+data: this is not json
+
+data: {"id":"chatcmpl-6","object":"chat.completion.chunk","created":1727700000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"after"},"finish_reason":"stop"}]}
+
+data: [DONE]
+

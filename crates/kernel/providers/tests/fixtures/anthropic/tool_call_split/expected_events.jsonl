@@ -1,0 +1,4 @@
+{"event":"start","response_id":"msg_9","model":"claude-sonnet-4-5-20250929"}
+{"event":"tool_call","call":{"id":"toolu_1","name":"weather","arguments":{"city":"Shanghai"}}}
+{"event":"usage","usage":{"input_tokens":11,"output_tokens":40}}
+{"event":"end","finish_reason":"tool_calls"}

@@ -75,7 +75,7 @@ crates/features/<功能>/
 
 - **已执行**：目录改名（`git mv`，历史保留），全仓库引用同步（残留 `infra` = 0），`cargo test` 全绿。
 - 新建 crate 的落点从此**只能**用 §1 判据决定。
-- `A1` §5、`AGENTS.md` §1、`RM` 的承接 crate 列、架构图均已按本 ADR 更新。
+- `A1` §5、[`AGENTS.md`](../../AGENTS.md) §1、`RM` 的承接 crate 列、架构图均已按本 ADR 更新。
 
 ## 已知风险
 

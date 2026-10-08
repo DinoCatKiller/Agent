@@ -1,32 +1,120 @@
-//! M1 冒烟入口：验证契约类型可构造、可序列化、能力协商能 fast-fail。
+//! 二进制入口：组装依赖、承载 CLI 命令。**不含**业务逻辑（都在 `features/*` 里）。
 //!
-//! 用法：`cargo run -p agent-app -- self-check`
-//!
-//! 这不是最终 CLI，也**不是** UI 层。M4 起会在 `features/chat` 上长出真实会话命令；
-//! UI 形态未定（见 D3），所以这里刻意只依赖契约。
+//! - `self-check`：契约层冒烟（M1）。
+//! - `chat`：对话 REPL（M4）——`agent-chat` 的事件消费参考实现。
+//! - `tui`：一期终端界面（M5，`D3`）——侧栏会话 + 流式转录 + 轮末落盘。
 
-use agent_providers::{required_capabilities, ProviderRegistry};
-use agent_common::{
-    Capability, DeltaKind, ErrorCategory, FinishReason, Message, ModelRequest, ModelSpec, Pricing,
-    ProviderError, ResponseFormat, StreamEvent, ToolCall, ToolDefinition, ToolChoice, Usage,
-};
-use serde_json::json;
+mod repl;
+mod setup;
+mod tui;
+
+use setup::ChatArgs;
 
 fn main() {
-    match std::env::args().nth(1).as_deref() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
         Some("self-check") => self_check(),
+        Some("chat") => match parse_session_args(&args[1..], false) {
+            Ok((chat_args, _)) => {
+                let code = tokio::runtime::Runtime::new()
+                    .expect("tokio runtime")
+                    .block_on(repl::run(chat_args));
+                std::process::exit(code);
+            }
+            Err(message) => {
+                eprintln!("{message}");
+                eprintln!(
+                    "用法: agent-app chat --provider <openai-compatible|anthropic> --model <id> [--base-url URL] [--api-key KEY]"
+                );
+                std::process::exit(2);
+            }
+        },
+        Some("tui") => match parse_session_args(&args[1..], true) {
+            Ok((chat_args, db)) => {
+                let code = tokio::runtime::Runtime::new()
+                    .expect("tokio runtime")
+                    .block_on(tui::run(tui::TuiArgs {
+                        provider: chat_args.provider,
+                        model: chat_args.model,
+                        fallbacks: chat_args.fallbacks,
+                        base_url: chat_args.base_url,
+                        api_key: chat_args.api_key,
+                        db,
+                    }));
+                std::process::exit(code);
+            }
+            Err(message) => {
+                eprintln!("{message}");
+                eprintln!(
+                    "用法: agent-app tui --provider <openai-compatible|anthropic> --model <id> [--base-url URL] [--api-key KEY] [--db PATH]"
+                );
+                std::process::exit(2);
+            }
+        },
         Some(other) => {
             eprintln!("未知命令: {other}");
-            eprintln!("可用命令: self-check");
+            eprintln!("可用命令: self-check | chat | tui");
             std::process::exit(2);
         }
         None => {
-            println!("agent-app {}", env!("CARGO_PKG_VERSION"));
-            println!("可用命令: self-check");
+            println!(
+                "CodingRocket {}（二进制 agent-app，`S2` Q7）",
+                env!("CARGO_PKG_VERSION")
+            );
+            println!("可用命令: self-check | chat | tui");
             println!("里程碑与下一步: S1");
         }
     }
 }
+
+/// `chat` / `tui` 共用参数解析；`tui` 额外接受 `--db`。
+/// `--model a,b` 的逗号分隔写成主模型 + 降级链（`R2`）。
+fn parse_session_args(
+    rest: &[String],
+    allow_db: bool,
+) -> Result<(ChatArgs, Option<String>), String> {
+    let mut provider = None;
+    let mut model = None;
+    let mut base_url = None;
+    let mut api_key = None;
+    let mut db = None;
+    let mut iter = rest.iter();
+    while let Some(flag) = iter.next() {
+        let value = iter.next().ok_or_else(|| format!("缺少 {flag} 的值"))?;
+        match flag.as_str() {
+            "--provider" => provider = Some(value.clone()),
+            "--model" => model = Some(value.clone()),
+            "--base-url" => base_url = Some(value.clone()),
+            "--api-key" => api_key = Some(value.clone()),
+            "--db" if allow_db => db = Some(value.clone()),
+            "--db" => return Err("chat 子命令不接受 --db（会话库随 tui 使用）".into()),
+            other => return Err(format!("未知参数: {other}")),
+        }
+    }
+    let model_raw = model.ok_or("缺少 --model")?;
+    let mut models = model_raw
+        .split(',')
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty());
+    let model = models.next().ok_or("缺少 --model")?;
+    Ok((
+        ChatArgs {
+            provider: provider.ok_or("缺少 --provider")?,
+            model,
+            fallbacks: models.collect(),
+            base_url,
+            api_key,
+        },
+        db,
+    ))
+}
+
+use agent_common::{
+    Capability, DeltaKind, ErrorCategory, FinishReason, Message, ModelRequest, ModelSpec, Pricing,
+    ProviderError, ResponseFormat, StreamEvent, ToolCall, ToolChoice, ToolDefinition, Usage,
+};
+use agent_providers::{ProviderRegistry, required_capabilities};
+use serde_json::json;
 
 fn self_check() {
     println!("== 1. 消息模型 ==");
@@ -74,7 +162,11 @@ fn self_check() {
     println!("模型支持: {:?}", spec.capabilities);
     println!(
         "缺失能力: {missing:?} -> {}",
-        if missing.is_empty() { "通过" } else { "拒绝" }
+        if missing.is_empty() {
+            "通过"
+        } else {
+            "拒绝"
+        }
     );
 
     // 该模型只有 JsonMode（合法 JSON），不支持严格 schema 输出 → 必须被拒绝

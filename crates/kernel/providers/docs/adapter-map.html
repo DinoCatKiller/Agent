@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>A2-V · 适配器边界（kernel/providers 在做什么）</title>
+<style>
+:root{
+  --ground:#08090A; --hairline:rgba(255,255,255,.09); --text:#F7F8F8; --text-2:#9BA0A8;
+  --accent:#5E6AD2; --accent-soft:rgba(94,106,210,.16); --ok:#4FB477; --ok-soft:rgba(79,180,119,.12);
+  --warn:#D9A05B; --warn-soft:rgba(217,160,91,.12);
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"PingFang SC","Microsoft YaHei UI",monospace;
+  --sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei UI",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--ground);color:var(--text);font-family:var(--sans);padding:36px 44px;max-width:1060px;margin:0 auto}
+.eyebrow{color:var(--accent);font-family:var(--mono);font-size:12px;letter-spacing:.18em}
+h1{font-size:26px;margin:6px 0 4px}
+h1 em{color:var(--accent);font-style:normal}
+.lead{color:var(--text-2);font-size:13.5px;line-height:1.7;margin-bottom:22px}
+.lead b{color:var(--text)}
+.card{border:1px solid var(--hairline);border-radius:14px;background:rgba(255,255,255,.02);padding:18px 20px;margin-bottom:18px}
+.card h2{font-size:14px;margin-bottom:12px;font-weight:600}
+.card h2 small{color:var(--text-2);font-weight:400;margin-left:8px}
+svg{display:block;width:100%;height:auto}
+svg text{font-family:var(--sans)}
+svg .bx{fill:rgba(255,255,255,.03);stroke:var(--hairline)}
+svg .bx.acc{stroke:var(--accent);fill:var(--accent-soft)}
+svg .bx.ok{stroke:var(--ok);fill:var(--ok-soft)}
+svg .ar{stroke:rgba(255,255,255,.28);stroke-width:1.2;fill:none}
+svg .t{fill:var(--text);font-size:12.5px;font-weight:600}
+svg .d{fill:var(--text-2);font-size:10.5px}
+svg .lab{fill:var(--text-2);font-size:10px;font-family:var(--mono)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{color:var(--text-2);text-align:left;font-weight:500;padding:6px 10px;border-bottom:1px solid var(--hairline)}
+td{padding:7px 10px;border-bottom:1px solid var(--hairline);vertical-align:top;line-height:1.55}
+td code{font-family:var(--mono);font-size:11.5px;color:var(--accent);background:var(--accent-soft);padding:1px 5px;border-radius:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.note{border:1px solid var(--hairline);border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.65;color:var(--text-2)}
+.note b{display:block;color:var(--text);margin-bottom:4px;font-size:12.5px}
+.foot{color:var(--text-2);font-size:11px;margin-top:16px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="eyebrow">AGENT-PROVIDERS · M3 · A2-V</div>
+<h1>适配器边界 —— <em>「插座」怎么把厂商差异关在门外</em></h1>
+<p class="lead">编排核心（<b>features/chat</b>）只认识 <b>ProviderRegistry</b>，不认识任何具体供应商。
+每接一家模型 = 新增一个实现 <b>Provider</b> trait 的适配器 + 注册表登记一行，核心代码零改动（D2：契约自研、实现可换）。
+厂商差异被关在边界内的三个「归一化」里：</p>
+
+<div class="card">
+<h2>一次调用的完整旅程<small>同一套契约类型，两家不同的 wire 协议</small></h2>
+<svg viewBox="0 0 960 330">
+  <!-- 左：编排层 -->
+  <rect class="bx acc" x="16" y="16" width="220" height="118" rx="10"/>
+  <text class="t" x="32" y="40">features/chat（语义）</text>
+  <text class="d" x="32" y="60">只构造归一化类型：</text>
+  <text class="d" x="32" y="76">ModelRequest（消息/工具/参数）</text>
+  <text class="d" x="32" y="92">消费 StreamEvent / ProviderError</text>
+  <text class="d" x="32" y="112">拿模型走 ProviderRegistry</text>
+  <path class="ar" d="M236 75 H278" marker-end="url(#ar)"/>
+  <text class="lab" x="244" y="66">归一化域</text>
+  <!-- 中：适配器 -->
+  <rect class="bx ok" x="284" y="16" width="392" height="118" rx="10"/>
+  <text class="t" x="300" y="40">适配器（OpenAiCompatible / AnthropicCompatible）</text>
+  <text class="d" x="300" y="60">归一化① 请求翻译：ModelRequest → wire JSON</text>
+  <text class="d" x="300" y="76">归一化② 流翻译：SSE 帧 → StreamEvent（FramePolicy）</text>
+  <text class="d" x="300" y="92">归一化③ 错误映射：HTTP 状态/错误体 → ErrorCategory</text>
+  <text class="d" x="300" y="112">能力协商 fast-fail（模型不在清单/能力不足 → 拒发）</text>
+  <!-- 右：网络 -->
+  <path class="ar" d="M676 75 H718" marker-end="url(#ar)"/>
+  <text class="lab" x="684" y="66">wire 域</text>
+  <rect class="bx" x="724" y="16" width="220" height="118" rx="10"/>
+  <text class="t" x="740" y="40">HTTP + SSE（机制层）</text>
+  <text class="d" x="740" y="60">agent-transport 五段管线</text>
+  <text class="d" x="740" y="76">空闲超时 / 取消 / 三分收尾</text>
+  <text class="d" x="740" y="92">错误先归一化 TransportError</text>
+
+  <!-- 下行：流回来 -->
+  <rect class="bx" x="16" y="176" width="928" height="130" rx="10" stroke-dasharray="5 4"/>
+  <text class="lab" x="32" y="200">流式回程：wire 帧 →（FramePolicy 判决）→ 归一化事件，顺序恒定</text>
+  <rect class="bx acc" x="32" y="214" width="150" height="52" rx="8"/>
+  <text class="t" x="44" y="236">Start</text><text class="d" x="44" y="252">首个事件</text>
+  <path class="ar" d="M182 240 H222" marker-end="url(#ar)"/>
+  <rect class="bx acc" x="228" y="214" width="180" height="52" rx="8"/>
+  <text class="t" x="240" y="236">Delta (Text/Thinking)</text><text class="d" x="240" y="252">必须可无状态拼接</text>
+  <path class="ar" d="M408 240 H448" marker-end="url(#ar)"/>
+  <rect class="bx acc" x="454" y="214" width="160" height="52" rx="8"/>
+  <text class="t" x="466" y="236">ToolCall</text><text class="d" x="466" y="252">分片拼装完成后的完整调用</text>
+  <path class="ar" d="M614 240 H654" marker-end="url(#ar)"/>
+  <rect class="bx acc" x="660" y="214" width="120" height="52" rx="8"/>
+  <text class="t" x="672" y="236">Usage</text><text class="d" x="672" y="252">End 前必给一次</text>
+  <path class="ar" d="M780 240 H820" marker-end="url(#ar)"/>
+  <rect class="bx acc" x="826" y="214" width="100" height="52" rx="8"/>
+  <text class="t" x="838" y="236">End</text><text class="d" x="838" y="252">末个事件</text>
+  <defs><marker id="ar" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+    <path d="M0 0 L7 3.5 L0 7 Z" fill="rgba(255,255,255,.4)"/></marker></defs>
+</svg>
+</div>
+
+<div class="card">
+<h2>两家差异一览<small>同一契约，两种 wire —— 差异只活在适配器 + P1/P2 文档里</small></h2>
+<table>
+<tr><th></th><th>OpenAI 兼容族（P1）</th><th>Anthropic（P2）</th></tr>
+<tr><td>鉴权</td><td><code>Authorization: Bearer</code>（无 key 不带头）</td><td><code>x-api-key</code> + <code>anthropic-version</code> 头</td></tr>
+<tr><td>流式形态</td><td>data-only，<code>[DONE]</code> 收尾</td><td>命名事件（<code>event: message_start…</code>），<code>message_stop</code> 收尾</td></tr>
+<tr><td>工具参数</td><td>JSON <b>字符串</b>，跨 delta 分片 → 拼装解析</td><td>结构化 <code>input</code>，input_json_delta 分片 → 拼装</td></tr>
+<tr><td>消息规则</td><td>system 是 messages[0]；role=tool 回填</td><td><b>system 提为顶层参数</b>；role 必须交替，tool 结果是 user 消息里的 tool_result 块</td></tr>
+<tr><td>usage 位置</td><td>末尾一帧（须显式 include_usage）</td><td>两处：message_start 给 input，message_delta 给累计 output</td></tr>
+<tr><td>特有坑</td><td>role-only 首帧、o* 不收 temperature</td><td>max_tokens 必填、529 overloaded、流中可能来 error 事件</td></tr>
+</table>
+</div>
+
+<div class="card">
+<div class="grid2">
+<div class="note"><b>Clone 是硬要求（A2 §2）</b>Provider 因 RPITIT（impl Future 返回值）不是 object-safe；路由层要 dyn 就得把 future 变 owned（<code>let this = self.clone(); async move {…}</code>）。适配器内部用 Arc&lt;HttpClient&gt; 持有连接，clone 只是引用计数，代价为零。</div>
+<div class="note"><b>能力协商 fast-fail（A2 §1）</b>请求所需能力必须是模型能力的子集，在<b>路由阶段</b>拒绝——model 不在清单或能力不足（如 vision 打到纯文本模型、JSON schema 打到无 JsonMode 的模型）根本不产生 HTTP 请求（Q1 用例 12）。</div>
+</div>
+</div>
+<div class="foot">agent-providers: src/lib.rs（trait/注册表/共享检查）· src/openai.rs（P1）· src/anthropic.rs（P2）｜ 契约：A2 ｜ 验收：Q1 十二用例 ×2 全绿 ｜ 新增供应商步骤见 crate README</div>
+</body>
+</html>

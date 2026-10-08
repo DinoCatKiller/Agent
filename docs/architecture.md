@@ -104,11 +104,11 @@ crates/
 - feature 内部文件布局见 `D6` §3；**按需创建，不预建空文件**（`ui.rs` 等 `D3`，`repo.rs` 等真需要持久化）。
 - 规格文档归属映射见 `D5`。
 
-**文档归属**：crate 相关的规格放在该 crate 的 `README.md` / `docs/` 下，跨 crate 的放在根 `docs/`；判定规则见 `AGENTS.md` §1。阶段状态不靠搬文件表达（见 `S1`）。
+**文档归属**：crate 相关的规格放在该 crate 的 `README.md` / `docs/` 下，跨 crate 的放在根 `docs/`；判定规则见 [`AGENTS.md`](../AGENTS.md) §1。阶段状态不靠搬文件表达（见 `S1`）。
 
 ## 6. 约束
 
-- 供应商差异不得泄漏到 Core（见 `AGENTS.md` §3）。
+- 供应商差异不得泄漏到 Core（见 [`AGENTS.md`](../AGENTS.md) §4）。
 - 每个 adapter 必须可脱离网络单测（用 fixtures + mock transport）。
 - 所有对外调用必须支持取消（`tokio_util::sync::CancellationToken`）。
 - 上下文超限属于可恢复错误，应先裁剪/摘要再重试一次。
