@@ -13,17 +13,17 @@
 
 ## 当前任务
 
-**四项按序推进**：`A6` ✅ → `R1` ✅ → **定名落地（🚧 进行中）** → 补规格文档（`R3` / `Q2` / `Q3`）
+**补规格文档**（四项中的最后一项）｜ 状态：🚧 进行中
 
-### 定名落地
+一句话：把地图上仍为 ⬜ 的三份规格补齐 —— **先补文档**，代码落地随各自触发条件。
 
-一句话：`S2` Q7 已把产品名定为 **CodingRocket**，但 crate 包名仍留技术名 `agent-*`。本任务拍板「是否全量改名」并执行（或明确不改）。
+| ID | 路径 | 要写什么 |
+|----|------|---------|
+| `R3` | `crates/kernel/telemetry/docs/observability.md` | 日志 / trace / 计费；**是否同期新建 `kernel/telemetry` crate** 一并拍板 |
+| `Q2` | `docs/eval.md` | 评测集与 prompt 回归：怎么建、跑什么、判据 |
+| `Q3` | `docs/security.md` | 密钥、审计、数据合规边界（含 MCP server 可信度，`D8` 遗留） |
 
-| 事项 | 产出 |
-|------|------|
-| 拍板 | 改 / 不改；若改，范围（workspace 包名、目录名、`use` 路径、门面与地图同步） |
-| 执行 | 全 workspace 包名与目录、所有 `use agent_*` 引用、`AGENTS.md` §2 路径、README 里的包名 |
-| 不动 | 文档 **ID 引用**（`A2` / `R1`…）与功能语义 —— 改名不该牵动它们 |
+四项进度：`A6` ✅ → `R1` ✅ → `定名落地` ✅ → **本项 🚧**
 
 ## 阻塞
 
@@ -31,10 +31,9 @@
 
 ## 上一阶段
 
-- **`R1` 完成（2026-10-11）**：新建 `kernel/config`（TOML 配置文件 + 系统钥匙串）；`app` 接入 `--config`、密钥三级优先级、端点两级查找。踩到一个真坑：`keyring` 3.x 的 default features 为空，不显式开 backend 会**静默退化为 mock**（set 成功但 get 读不到、系统凭据管理器里查无此项）。
-- **`A6` 完成（2026-10-11）**：候选内退避重试接进降级链（`Router::with_retry`），流式窗口仍是「首事件之前」；默认 `RetryPolicy::none()` 保持既有行为。
-- **`X6` A1–A3 + TUI 鼠标（2026-10-11）**：`clap` / `rustyline` / `backoff` 落地；TUI 支持鼠标点击与滚轮。
-- **M6 完成（2026-10-07）**：工具调用 + 路由兜底——`features/chat` 工具并行执行（`A5` §2）；`kernel/routing`（`R2`）能力协商 fast-fail + 失败降级链。
+- **定名落地（2026-10-11）**：只改用户可见那一层 —— 可执行文件名 `agent-app` → **`codingrocket`**（`[[bin]] name` + clap 显示名）；crate 包名维持 `agent-*`（内部技术名），`cargo run -p agent-app -- …` 不受影响。
+- **`R1` 完成（2026-10-11）**：新建 `kernel/config`（TOML 配置文件 + 系统钥匙串）；`app` 接入 `--config` 与密钥三级优先级。踩到坑：`keyring` 3.x 的 default features 为空，须按平台显式开 backend，否则静默退化为 mock。
+- **`A6` 完成（2026-10-11）**：候选内退避重试接进降级链（`Router::with_retry`），流式窗口仍是「首事件之前」；默认 `RetryPolicy::none()`。
 
 ## 相关
 

@@ -1,5 +1,9 @@
 # agent-app · 二进制入口
 
+> **包名 vs 可执行文件**：crate 包名是 `agent-app`（内部技术名，`S2` Q7），编译出的可执行文件是
+> **`codingrocket`**（`cargo build -p agent-app` → `codingrocket.exe`）。下面命令里的 `-p agent-app`
+> 接的是**包名**，不受影响。
+
 | | |
 |---|---|
 | 状态 | ✅ M4 契约冒烟 + 对话 REPL ｜ ✅ M5 `tui` 一期终端界面（会话 + 流式 + 键鼠）｜ ✅ M6 请求经 `Router` 出（降级链）｜ ✅ `X6` A1/A2 CLI `clap` + REPL `rustyline` ｜ ✅ `A6` 候选内重试 ｜ ✅ `R1` 配置文件 + 系统钥匙串 |

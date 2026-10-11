@@ -7,7 +7,9 @@ license.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "agent-app"
+# 可执行文件名（面向用户）：`codingrocket`。crate **包名**仍是 `agent-app`（内部技术名，S2 Q7），
+# 因此 `cargo run -p agent-app -- …` 不受影响。
+name = "codingrocket"
 path = "src/main.rs"
 
 [dependencies]
