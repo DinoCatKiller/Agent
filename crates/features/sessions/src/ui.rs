@@ -3,6 +3,10 @@
 //! 与 `chat` 的 [`agent_chat::ui`] 同一分工：状态纯数据（可离线测），渲染端无业务判断。
 //! 元类型 [`SessionMeta`] 与 [`Theme`] 来自 `agent-chat`（feature 间依赖，`D5`）——
 //! 本切片不碰数据库，数据由宿主（app）从 `SessionRepo` 取来喂给 [`SessionPane::set_sessions`]。
+//!
+//! 鼠标命中（一期 TUI）：[`SessionPane::render`] 回传 ratatui 实际使用的首项偏移，
+//! 宿主据此把鼠标行换算成会话索引并调 [`SessionPane::select`]——本切片只提供换算所需的
+//! 两个钩子，不解析鼠标事件（事件在 `app` 的事件泵里）。
 
 use ratatui::{
     Frame,
@@ -48,6 +52,14 @@ impl SessionPane {
         self.selected = self.selected.saturating_sub(1);
     }
 
+    /// 按索引选中（鼠标命中用）；越界收敛到最后一条，空列表保持 0。
+    pub fn select(&mut self, index: usize) {
+        self.selected = match self.items.len() {
+            0 => 0,
+            len => index.min(len - 1),
+        };
+    }
+
     pub fn selected(&self) -> Option<&SessionMeta> {
         self.items.get(self.selected)
     }
@@ -60,7 +72,10 @@ impl SessionPane {
         self.items.is_empty()
     }
 
-    pub fn render(&self, f: &mut Frame, area: Rect, theme: &Theme) {
+    /// 渲染列表，返回 ratatui 实际使用的**首项偏移**（`0` = 从第一条画起）。
+    ///
+    /// 列表长于可视区时偏移非零，宿主做鼠标命中测试需要它（见模块头注释）。
+    pub fn render(&self, f: &mut Frame, area: Rect, theme: &Theme) -> usize {
         let border = if self.focused {
             theme.border_focus
         } else {
@@ -99,6 +114,7 @@ impl SessionPane {
             state.select(Some(self.selected));
         }
         f.render_stateful_widget(list, area, &mut state);
+        state.offset()
     }
 }
 
@@ -149,5 +165,18 @@ mod tests {
         assert!(pane.selected().is_none());
         pane.set_sessions(vec![meta("a", "A")]);
         assert_eq!(pane.selected().unwrap().id, "a");
+    }
+
+    #[test]
+    fn select_by_index_clamps() {
+        let mut pane = SessionPane::new();
+        pane.select(3);
+        assert!(pane.selected().is_none(), "空列表选中仍为空");
+
+        pane.set_sessions(vec![meta("a", "A"), meta("b", "B"), meta("c", "C")]);
+        pane.select(1);
+        assert_eq!(pane.selected().unwrap().id, "b");
+        pane.select(99);
+        assert_eq!(pane.selected().unwrap().id, "c", "越界收敛到最后一条");
     }
 }

@@ -8,6 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 agent-common = { workspace = true }
+# 退避重试（`X6` A3 / `A6`）：指数退避 + 抖动
+backoff = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }

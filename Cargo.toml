@@ -48,6 +48,12 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # 一期 TUI（`D3`）：终端界面；crossterm 的事件流（event-stream）适配 tokio::select! 事件泵
 ratatui = "0.29"
 crossterm = { version = "0.28", features = ["event-stream"] }
+# CLI 参数解析（`X6` A1）：声明式子命令 / 帮助 / 错误提示，替代 app 的手写解析
+clap = { version = "4", features = ["derive"] }
+# `chat` REPL 行编辑（`X6` A2）：历史 / 行内编辑 / Ctrl-R 搜索
+rustyline = "15"
+# 退避重试（`X6` A3 / `A6`）：只取指数退避 + 抖动策略，控制流自持（可接取消）
+backoff = "0.4"
 
 [profile.release]
 lto = "thin"

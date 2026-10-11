@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| 状态 | ✅ M4：契约冒烟 + 对话 REPL；✅ M5：`tui` 一期终端界面（侧栏会话 + 流式转录 + 轮末落盘）；✅ M6：请求统一经 `Router` 出（`--model a,b` 失败降级链） |
+| 状态 | ✅ M4：契约冒烟 + 对话 REPL；✅ M5：`tui` 一期终端界面（侧栏会话 + 流式转录 + 轮末落盘）；✅ M6：请求统一经 `Router` 出（`--model a,b` 失败降级链）；✅ `X6` A1/A2：CLI 用 `clap`、REPL 输入用 `rustyline` |
 | 边界 | 组装依赖、承载 CLI 命令、终端生命周期。**不含**业务逻辑（都在 `features/*` 里） |
 | 上游 | `agent-common` / `agent-providers` / `agent-transport` / `agent-chat` / `agent-sessions` / `agent-store` |
 | 下游 | 无（最终产物） |
@@ -11,6 +11,9 @@
 ## 现在能做什么
 
 ```powershell
+# 帮助（clap 生成，含每个子命令的选项说明）
+cargo run -p agent-app -- --help
+
 # 契约层自检（7 段，断网）
 cargo run -p agent-app -- self-check
 
@@ -34,20 +37,26 @@ TUI 内：左栏会话列表（Tab 切焦点，↑↓ 选择，Enter 载入，`n
 状态栏显示 provider / model / 会话标题 / 累计 tokens。**每轮结束自动落盘**——重启后
 会话列表与完整历史都在。配色来自 [`design/tokens.json`](../../design/tokens.json)（`D4`）。
 
-REPL 内：直接输入对话；`/quit` 退出；**Ctrl-C 取消当前生成**（第一次中断本轮、丢弃未提交输出，不退出程序）。
+鼠标：左键点侧栏条目 = 选中并载入该会话，点转录 / 输入区 = 焦点回到输入；滚轮在侧栏
+上下移动选择、在其余区域滚动转录。鼠标捕获会**接管**终端原生文本选择，要复制文本请按住
+Shift 框选（Windows Terminal / ConPTY 下可用）。
+
+REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、←→ 行内编辑、Ctrl-R 搜索；
+`/quit` 退出；**Ctrl-C 取消当前生成**（第一次中断本轮、丢弃未提交输出，不退出程序）。
+非交互场景（如 `echo "hi" | …`）自动回退到裸 `read_line`，管道输入照常可用。
 内置两个 demo 工具（`current_time` / `echo`）证明工具循环端到端可用。
 
 ## 它不能做什么
 
-- ❌ 重试退避（`A6` 待建）、密钥管理（`R1` 待建）
+- ❌ 自动重试（退避机制已在 `agent-transport::retry`，接线随 `A6`）、密钥管理（`R1` 待建）
 - ❌ 密钥经 `R1` 管理前，只走参数 / 环境变量，且不入库、不打日志
 
 ## 布局
 
 ```
-src/main.rs     命令分发 + 参数解析（self-check 保留在 main 内）
+src/main.rs     clap 命令定义 + 分发（self-check 保留在 main 内）
 src/setup.rs    装配共用：供应商构造 / 密钥来源 / demo 工具（chat 与 tui 共用）
-src/repl.rs     chat 命令：消费 LoopEvent 打印（事件消费的参考实现）
+src/repl.rs     chat 命令：rustyline 输入 + 消费 LoopEvent 打印（事件消费的参考实现）
 src/tui.rs      tui 命令：终端生命周期 + 事件泵 + worker（唯一拥有 Chat 与 SessionRepo）
 tests/e2e.rs    端到端：真实适配器 + reqwest 栈 → wiremock，工具循环两轮收口（Q1 §1）
 ```
@@ -55,3 +64,4 @@ tests/e2e.rs    端到端：真实适配器 + reqwest 栈 → wiremock，工具�
 ## 相关
 
 - `S1` 当前阶段 ｜ `A1` 架构 ｜ `A5` 工具调用 ｜ `Q1` 测试策略 ｜ UI 形态：`D3`、样式：`D4`
+- CLI / REPL 选型 → `X6` A1 / A2

@@ -11,7 +11,7 @@
 //! - [`finish`] 三分收尾语义的**机制**（传输错误 / 可恢复坏帧 / EOF 截断；
 //!   帧类型泛型，不绑 SSE）✅
 //! - [`cancel`] 把 `CancellationToken`（即 `CallContext.cancel`）接进**请求**与**流** ✅
-//! - `retry`  指数退避 + 抖动，只包 `ProviderError::retryable == true`（⬜ 随 `A6` 落地）
+//! - [`retry`] 指数退避 + 抖动（算法取自 `backoff`），只包 `ProviderError::retryable == true` ✅
 //!
 //! 收尾三分语义（`A2` §4，硬约束，绝不允许静默降级）：
 //! 1. **传输错误** → 发 `Error` 后停止；
@@ -26,9 +26,11 @@
 pub mod cancel;
 pub mod finish;
 pub mod http;
+pub mod retry;
 pub mod sse;
 
 pub use cancel::{CancelGuard, cancellable, guard};
 pub use finish::{FinalizedStream, Frame, FramePolicy, finalize, finalize_bytes};
 pub use http::{HttpClient, HttpConfig, IdleTimeout, TransportError};
+pub use retry::{RetryPolicy, retry};
 pub use sse::{SseDecoder, SseEvent, SseStream, parse_sse};
