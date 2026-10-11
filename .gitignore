@@ -16,3 +16,6 @@ agent-sessions.db-wal
 
 # IDE 本地数据不入库
 .trae/
+
+# 临时工作目录不入库（一次性 spike / 脚手架，见 X6）
+/tmp/
