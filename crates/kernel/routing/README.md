@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| 状态 | ✅ M6 落地：注册表查询、能力协商、失败降级链 |
+| 状态 | ✅ M6 落地：注册表查询、能力协商、失败降级链；✅ `A6` 候选内重试（`with_retry`，2026-10-11） |
 | 边界 | **机制**：模型 → 候选链 → 能力协商 → 失败换下一家。**不含**对话语义、工具编排；Router 本身实现 `Provider` 契约 |
 | 上游 | `agent-common`（契约）、`agent-providers`（`Provider` / `ErasedProvider` / `required_capabilities`） |
 | 下游 | `app`（构造 Router 注入 `ChatService`）；`features/chat` **不依赖**本 crate——Router 以 `Arc<dyn ErasedProvider>` 形态被注入 |
@@ -23,12 +23,14 @@
 | `list_models()` | 各家清单并集 + 别名合成（裁剪查询窗口用，`A7`） |
 | 降级策略 | `R2` §3：`retryable \|\| Auth` 换下一家；InvalidRequest / ContextOverflow / ContentFilter 立即失败 |
 | 流式窗口 | `R2` §4：只偷看首事件；`Start` 之后不换流；对消费者透明 |
+| 候选内重试 | `A6`：`with_retry(policy)` 先在同一候选退避重试至额度用尽，才换下一家；**默认 `RetryPolicy::none()`** |
 
-## 三个必须知道的设计决定
+## 四个必须知道的设计决定
 
 1. **透明降级**：被换掉的候选不产生任何事件，耗尽才浮出最后一个错误——UI 不会看到「先报错再成功」的鬼影。
 2. **Auth 也降级**：密钥/权限是单家供应商的配置问题，换一家可能就好；但 InvalidRequest 不降——请求本身有错换谁都没用。
 3. **`features/chat` 不依赖本 crate**：Router 在 `app` 构造后以 `Arc<dyn ErasedProvider>` 注入 `ChatService`，契约边界（`G-1`）不被打破。
+4. **默认不重试**：库保持「一次失败即换家」的朴素行为，重试必须由宿主用 `with_retry` **显式开启**（`app` 已开 `RetryPolicy::default()`）—— 避免库在无人知情时放大请求量（`A6`）。
 
 ## 相关
 

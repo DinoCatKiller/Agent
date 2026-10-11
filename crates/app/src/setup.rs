@@ -13,7 +13,7 @@ use agent_common::ToolDefinition;
 use agent_providers::{
     AnthropicCompatible, AnthropicConfig, ErasedProvider, OpenAiCompatible, OpenAiConfig,
 };
-use agent_transport::HttpConfig;
+use agent_transport::{HttpConfig, RetryPolicy};
 use serde_json::{Value, json};
 
 /// `chat` / `tui` 共用的供应商参数。
@@ -87,8 +87,11 @@ pub fn build_provider(args: &ChatArgs) -> Option<Arc<dyn ErasedProvider>> {
     }
     // M6（`R2`）：请求统一经 Router 出——单候选时无感；`--model a,b` 时
     // a 遇可降级失败（429/5xx/超时/断网/Auth）自动落到 b。
+    // A6：先在同一候选内退避重试（429/5xx/超时/断网），额度用尽才换下一家。
     let provider_id = provider.id();
-    let mut router = agent_routing::Router::new().with_erased(provider);
+    let mut router = agent_routing::Router::new()
+        .with_erased(provider)
+        .with_retry(RetryPolicy::default());
     if !args.fallbacks.is_empty() {
         let mut chain = vec![(provider_id.to_string(), args.model.clone())];
         chain.extend(

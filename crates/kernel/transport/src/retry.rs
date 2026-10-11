@@ -1,18 +1,22 @@
 //! 退避重试（对应 `A6`，选型见 `X6` A3）。
 //!
-//! **机制层**：退避算法取自 `backoff`（指数退避 + 抖动），本模块只提供
-//! 「按 `ProviderError::retryable` 判定 + 接取消」的控制流。
+//! **机制层**：退避算法取自 `backoff`（指数退避 + 抖动），本模块提供两样东西：
+//! - [`RetryPolicy`]：策略参数（尝试次数、初始间隔、上限、倍数、抖动）；
+//! - [`retry`]：一问一答调用的重试包装（按 `ProviderError::retryable` 判定 + 接取消）。
+//!
+//! 需要**自行编排**重试的调用方（例如路由层对**流式调用**做「首事件前重试」——那没法用
+//! [`retry`] 的 Future 包装）用 [`RetryPolicy::backoff`] 取退避序列器，
+//! 这样退避算法始终只有一份实现（`D6` §1）。
 //!
 //! 边界（`D6` §1）：
-//! - **不做换模型兜底**——那是 `R2` 的 `Router` 的职责；本模块只管「同一目标重试几次」。
-//! - **不含流式重试**：流只在「首个事件之前」失败才可重试，这需要首事件语义，
-//!   随 `A6` 与适配器一起落地；本模块先覆盖一问一答（`chat` 类）调用。
+//! - **不做换模型兜底**——那是 `R2` 的 `Router` 的职责；本模块只管「同一目标重试几次」；
+//! - 是否值得重试由 `ProviderError::retryable` 决定（`A2` §5 的默认表 + 策略层覆盖）。
 
 use std::future::Future;
 use std::time::Duration;
 
 use backoff::ExponentialBackoff;
-use backoff::backoff::Backoff;
+use backoff::backoff::Backoff as _;
 use tokio_util::sync::CancellationToken;
 
 use agent_common::{ErrorCategory, ProviderError};
@@ -55,17 +59,51 @@ impl RetryPolicy {
         }
     }
 
-    /// 构造一份退避序列器。每次 [`retry`] 调用独立实例，避免跨调用串状态。
-    fn backoff(&self) -> ExponentialBackoff {
+    /// 不重试（只尝试一次）。用于「默认保持既有行为」的调用方（如路由层未显式配置时）。
+    pub fn none() -> Self {
+        Self::new(1)
+    }
+
+    /// 取退避序列器。每次调用独立实例，避免跨调用串状态。
+    pub fn backoff(&self) -> Backoff {
+        Backoff {
+            inner: self.exponential(),
+            // `max_attempts` 次尝试 ⇒ 最多 `max_attempts - 1` 次退避。
+            remaining: self.max_attempts.saturating_sub(1),
+        }
+    }
+
+    /// 构造 `backoff` 的指数退避参数。
+    fn exponential(&self) -> ExponentialBackoff {
         ExponentialBackoff {
             initial_interval: self.initial_interval,
             max_interval: self.max_interval,
             multiplier: self.multiplier,
             randomization_factor: self.jitter.clamp(0.0, 1.0),
-            // 终止由 `max_attempts` 控制，不设时间窗口。
+            // 终止由尝试次数控制，不设时间窗口。
             max_elapsed_time: None,
             ..ExponentialBackoff::default()
         }
+    }
+}
+
+/// 退避序列器：按 [`RetryPolicy`] 依次产出「下一次重试前该等多久」。
+///
+/// 自行编排重试的调用方（如路由层的流式首事件前重试）用它，可与 [`retry`] 共用同一套
+/// 退避算法与等待语义。
+pub struct Backoff {
+    inner: ExponentialBackoff,
+    remaining: u32,
+}
+
+impl Backoff {
+    /// 下一次重试前该等多久；`None` = 策略已不允许再重试（尝试次数用尽）。
+    pub fn next_delay(&mut self) -> Option<Duration> {
+        if self.remaining == 0 {
+            return None;
+        }
+        self.remaining -= 1;
+        self.inner.next_backoff()
     }
 }
 
@@ -89,11 +127,11 @@ where
         match op(attempt).await {
             Ok(value) => return Ok(value),
             Err(error) => {
-                if !error.retryable || attempt >= policy.max_attempts {
+                if !error.retryable {
                     return Err(error);
                 }
-                let Some(delay) = backoff.next_backoff() else {
-                    return Err(error);
+                let Some(delay) = backoff.next_delay() else {
+                    return Err(error); // 尝试次数用尽
                 };
                 tokio::select! {
                     biased;
@@ -213,5 +251,16 @@ mod tests {
         assert!(!error.retryable, "取消错误不可再重试");
         assert_eq!(error.source_message.as_deref(), Some("retry cancelled"));
         assert_eq!(calls.load(Ordering::SeqCst), 1, "首次尝试后即因取消停止");
+    }
+
+    #[test]
+    fn backoff_yields_max_attempts_minus_one_delays() {
+        let mut backoff = policy(3).backoff();
+        assert!(backoff.next_delay().is_some(), "第 1 次退避");
+        assert!(backoff.next_delay().is_some(), "第 2 次退避");
+        assert!(backoff.next_delay().is_none(), "3 次尝试只允许 2 次退避");
+
+        let mut single = RetryPolicy::none().backoff();
+        assert!(single.next_delay().is_none(), "不重试策略没有退避");
     }
 }
