@@ -14,9 +14,10 @@ use setup::ChatArgs;
 /// 命令行入口（`X6` A1：clap 声明式解析，取代原来的手写循环）。
 #[derive(Parser)]
 #[command(
-    name = "agent-app",
+    // 显示名（Usage / help 里出现）：面向用户用产品名；crate 包名仍为 `agent-app`（`S2` Q7）。
+    name = "codingrocket",
     version,
-    about = "CodingRocket（二进制 agent-app，`S2` Q7）",
+    about = "CodingRocket —— 统一接入多家模型的桌面客户端（命名见 `S2` Q7）",
     arg_required_else_help = true
 )]
 struct Cli {
