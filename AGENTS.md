@@ -156,6 +156,7 @@
 | X2 | GPUI 前端技术路线 | [`docs/research/gpui-frontend-stack.md`](docs/research/gpui-frontend-stack.md) | 动 UI、升 GPUI、平台 / IME / 渲染问题 | ~2k | ✅ |
 | X4 | UI 交付形态对比 | [`docs/research/ui-delivery-options.md`](docs/research/ui-delivery-options.md) | 讨论 TUI / GUI / WebView 怎么选 | ~2.5k | ✅ |
 | X5 | TS 样式资产移植可行性 | [`docs/research/styling-portability.md`](docs/research/styling-portability.md) | 想复用 Web 样式 / 设计系统 | ~2.5k | ✅ |
+| X6 | 可复用框架评估（哪些自研可换现成库） | [`docs/research/reusable-frameworks.md`](docs/research/reusable-frameworks.md) | 想减少自研、评估引入新依赖 | ~2k | ✅ |
 
 > **迁移预告**：`X2` / `X4` / `X5` 与 `D3` / `D4` / `GUI` 都属于 UI 领域；按 `D5`，界面代码**跟功能走**——`features/*` 各自持有 `ui.rs`（`gpui` 仅出现在 `features/*` 与 `app`），不再有独立 `agent-ui` crate。因为引用只写 ID，迁移不需要改其它文档。
 
