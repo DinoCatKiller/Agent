@@ -18,6 +18,7 @@ agent-common = { workspace = true }
 agent-config = { workspace = true }
 agent-providers = { workspace = true }
 agent-routing = { workspace = true }
+agent-telemetry = { workspace = true }
 agent-sessions = { workspace = true }
 agent-store = { workspace = true }
 agent-transport = { workspace = true }

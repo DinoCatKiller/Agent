@@ -55,8 +55,8 @@
 | A1 | 架构与分层 | [`docs/architecture.md`](docs/architecture.md) | 新建模块、改目录结构 | ~1.6k | ✅ |
 | A1-V | 架构图（`A1`/`RM`/`S1` 的**可视化**，离线 HTML） | [`docs/architecture-map.html`](docs/architecture-map.html) | 想一眼看懂分层 / 依赖 / 进度 | 1 张图 | ✅ |
 | Q1 | 测试策略 | [`docs/testing.md`](docs/testing.md) | 写单测、契约测试、加适配器前 | ~1.4k | ✅ |
-| Q2 | 效果评测与回归 | `docs/eval.md` | 建评测集、prompt 回归 | — | ⬜ |
-| Q3 | 安全与合规 | `docs/security.md` | 密钥、审计、数据合规 | — | ⬜ |
+| Q2 | 效果评测与回归 | [`docs/eval.md`](docs/eval.md) | 建评测集、prompt 回归 | ~1.2k | ✅ |
+| Q3 | 安全与合规 | [`docs/security.md`](docs/security.md) | 密钥、审计、数据合规 | ~1.5k | ✅ |
 | T0 | 文档模板 | [`docs/_template.md`](docs/_template.md) | 新建任何文档 | ~0.3k | ✅ |
 | — | **API 参考**（脚本生成的代码字典，勿手工编辑） | [`docs/reference/`](docs/reference/) | 查某类型 / 方法签名的细节与 doc 注释；由 `scripts/generate-docs.py --all` 再生 | 79 篇 | ✅ |
 
@@ -114,11 +114,12 @@
 | — | crate 门面 | [`crates/kernel/config/README.md`](crates/kernel/config/README.md) | 加配置项、动密钥存储前 | ~0.8k | ✅ |
 | R1 | 配置与密钥 | [`crates/kernel/config/docs/config-and-secrets.md`](crates/kernel/config/docs/config-and-secrets.md) | 加配置项、接密钥 | ~1.5k | ✅ |
 
-### `crates/kernel/*`（机制内核，按需创建）
+### `crates/kernel/telemetry`
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| R3 | 可观测性与成本 | `crates/kernel/telemetry/docs/observability.md` | 日志 / trace / 计费 | — | ⬜ |
+| — | crate 门面 | [`crates/kernel/telemetry/README.md`](crates/kernel/telemetry/README.md) | 加日志、排查「这轮花了多少」前 | ~0.6k | ✅ |
+| R3 | 可观测性与成本 | [`crates/kernel/telemetry/docs/observability.md`](crates/kernel/telemetry/docs/observability.md) | 日志 / trace / 计费 | ~1.5k | ✅ |
 
 ### `crates/kernel/routing`
 
