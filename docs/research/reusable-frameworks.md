@@ -4,7 +4,7 @@
 |---|---|
 | ID | `X6` |
 | 类型 | 调研（一次性消费，会过时） |
-| 状态 | ✅ 完成（A1–A3 已于 2026-10-11 落地） |
+| 状态 | ✅ 完成（A1–A3 已落地；B1 `rmcp` spike 已完成，2026-10-11） |
 | 更新 | 2026-10-11 |
 | 何时读 | 想减少自研、评估引入新依赖；`A6` 落地 / `M7` 开工前 |
 | 规模 | ~2k token |
@@ -13,7 +13,7 @@
 
 - 前提纠正：**不是「全都自研」**。`reqwest` / `tokio` / `serde` / `rusqlite` / `ratatui` / `tracing` 等基础设施都已在用；真正自研的只有 **SSE 解析、Provider 契约、业务语义**三类 —— 这是 `G1` §3「自研边界」的刻意选择，不是没找到轮子。
 - **已落地**（2026-10-11）：`clap` 替换手写 CLI 解析；`rustyline` 替换裸 stdin REPL（非 TTY 回退保留）；`backoff` 落地 `kernel/transport` 的 `retry` 模块（可取消的指数退避 + 抖动）。三项都在**装配层 / 机制层**，未触动任何契约。
-- **待评估**：`M7`（MCP）开工前 spike `rmcp`，复查 `D8` —— 此时改主意成本为零。
+- **已评估（2026-10-11）**：`rmcp` spike 已完成（档 1，见 §3）—— 它已是 **3.5.1**、最小配置净新增约 20 个包，`D8` 的两条主要论据（pre-1.0 / 依赖重）已不成立。**`M7` 暂缓**（MCP 使用频率不高，排到后面）；是否改判 `D8` 留到开工时决定。
 - **不建议更换**：SSE 解析、Provider 契约、上下文裁剪、路由兜底 —— 自研各有明确理由（§4）。
 - 落地清单见文末。
 
@@ -53,14 +53,25 @@
 - A2：TTY 用 `rustyline`，**非 TTY 回退裸 `read_line`**，脚本 / 管道输入不受影响；Ctrl-C 经共享取消槽取消当前轮（与 `tui` 同一套思路）。
 - A3：`RetryPolicy` + `retry(policy, cancel, op)`；只重试 `retryable == true`，退避期间可取消。
 
-## 3. 待评估：`rmcp`（`M7` 开工前）
+## 3. `rmcp` 实测结论（spike 已完成，2026-10-11）
 
-`D8` 决策「自研最小 MCP 客户端（stdio + tools only）」，理由与 `D2` 一脉相承：**需求面（三个方法一问一答）与依赖面（整棵 SDK 依赖树）严重不对称**。此结论无需推翻，但有两点使其值得**复查**：
+本节原为「`M7` 开工前待评估」；**档 1 spike 已做完**（临时工程 `tmp/rmcp-spike`，量完即删，主项目零改动）。实测：
 
-1. `D8` 落于 **2026-10-07**，并把 `rmcp` 明确列为「逃生通道」； `M7` 至今**未开工**（见 `S1`），此刻改主意成本为零。
-2. 建议动作：`M7` 动手前做一次半天 spike，把 `rmcp`（client + stdio + tools）的**实测依赖树大小 / 编译时间**与「自研 300–500 行」并列对比后拍板。
+| 指标 | baseline（自研依赖面 = `tokio` + `serde_json`） | `rmcp` 最小配置（`--no-default-features --features client,transport-child-process`） |
+|------|--------------------------------------------|---------------------------------------------------------------------------------|
+| 包总数 | 17（16 外部 + 根） | 56 |
+| 相对基线 | — | 独有 38 个外部包 |
+| 编译 | 18.8s（含首次下载） | **+25.9s 增量** |
 
-判定口径（与 `G1` §3 一致）：若 `rmcp` 已足够稳定，则自研的唯一收益退化为「零重依赖」；若否则维持 `D8`。**结论若与 `D8` 相悖，须另写一条新 ADR（旧的不改）并在 `S2` 登记。**
+三个发现：
+
+1. **`rmcp` 已是 v3.5.1** —— `D8` 的「pre-1.0」论据**失效**（已跨过 1.0 到 3.x）。
+2. **`tower` 在默认关闭的 feature 里**，最小配置不含它 —— `D8` 的「依赖树重（tower 等）」**不成立**。但默认 features 会白带 `server`，必须用 `--no-default-features` 收窄。
+3. **净新增约 20 个包**（不是 38）—— 独有包里 19 个本项目已在用（`futures` 全家、`tracing`、`thiserror`、`serde`、`syn v2`、`tokio-util`）；真正新增的是 `chrono` / `process-wrap` / `indexmap` / `hashbrown` / `tokio-stream` / `slab` / `once_cell` / `equivalent` / `num-traits` + **`windows` 系列 10 个**（Win32 绑定，仅 Windows 真编译）。
+
+API 表面（读 `rmcp-3.5.1` 源码）：`serve_client` + `TokioChildProcess` + `list_tools` + `call_tool`，正好覆盖 `D8` 要的三个方法与一种 transport；`rmcp::Tool` / `CallToolResult` 可映射到 `A5` 的 `ToolDefinition` / `ToolOutput`。
+
+**处置**：`M7` 按决定**暂缓**（MCP 使用频率不高，排到后面）；`D8` **未改判** —— 真要开工时，以上数据即是否写新 ADR 推翻 `D8` 的依据（旧 ADR 不改）。
 
 ## 4. 不建议更换（自研有理）
 
@@ -77,7 +88,7 @@
 - [x] A1：`crates/app` 引入 `clap`（子命令 + `SessionArgs` / `TuiCliArgs`），取代 `parse_session_args` 与硬编码 usage。
 - [x] A2：`crates/app/src/repl.rs` 用 `rustyline` 读入（历史 / 行内编辑 / Ctrl-R）；保留阻塞线程 + channel；**非 TTY 回退裸 `read_line`**。
 - [x] A3：`kernel/transport` 落 `retry` 模块（`RetryPolicy` + `retry`，退避取自 `backoff`，可取消）；**流式重试与降级策略随 `A6`**。
-- [ ] B1：`M7` 开工前 spike `rmcp`，与自研方案对比后决定是否复查 `D8`。
+- [x] B1（2026-10-11）：`rmcp` spike 已完成（档 1），结论见 §3 —— `D8` 的两条主要论据已不成立；`M7` 暂缓，是否改判留到开工时决定。
 - [ ] B2（可选）：工具数量增多后，用 `schemars` 从 Rust 类型派生工具 JSON Schema。
 - [ ] B3（可选）：如需 down 迁移 / 迁移文件组织，评估 `rusqlite_migration`。
 
