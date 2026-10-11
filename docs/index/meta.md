@@ -45,6 +45,7 @@
 | 新增 / 修改供应商 | `A2` → `PT` → 对应 `P*` → `X3` |
 | 写传输 / SSE / 重试 | `A4` → `A6` → `Q1` → `A2` |
 | 改契约类型 | 对应 crate 的 README → `A2` / `A3` |
+| 加配置项 / 接密钥 | `R1` → `crates/kernel/config` 的 README |
 | 新增功能 / 新建 feature | `D5` + `D6` §1 判据 → 该功能的 `crates/features/<功能>/README.md` |
 | 「这段代码该放哪」 | `D6` §1 判据（机制 → kernel / 语义 → features） |
 | 新建模块 / 改目录结构 | `A1` §5 → `D5` / `D6` → `G1` |

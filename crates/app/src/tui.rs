@@ -45,7 +45,9 @@ pub struct TuiArgs {
     pub fallbacks: Vec<String>,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
-    /// SQLite 路径（缺省 `./agent-sessions.db`；`R1` 落地前先落 cwd）。
+    /// 配置文件路径（`R1`）。
+    pub config: Option<String>,
+    /// SQLite 路径（缺省 `./agent-sessions.db`；会话库路径不在 `R1` 范围内）。
     pub db: Option<String>,
 }
 
@@ -86,6 +88,7 @@ pub async fn run(args: TuiArgs) -> i32 {
         fallbacks: args.fallbacks.clone(),
         base_url: args.base_url,
         api_key: args.api_key,
+        config: args.config.clone(),
     };
     let Some(provider) = setup::build_provider(&chat_args) else {
         return 2;

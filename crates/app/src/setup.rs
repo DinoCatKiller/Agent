@@ -6,10 +6,11 @@
 //! （`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`）。**密钥不入库、不打日志**（硬约束 5）。
 
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use agent_chat::{Tool, ToolOutput, ToolSet};
 use agent_common::ToolDefinition;
+use agent_config::{AppConfig, ConfigPaths, ExposeSecret, SecretString};
 use agent_providers::{
     AnthropicCompatible, AnthropicConfig, ErasedProvider, OpenAiCompatible, OpenAiConfig,
 };
@@ -27,63 +28,71 @@ pub struct ChatArgs {
     pub fallbacks: Vec<String>,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
+    /// 配置文件路径（`--config`）；缺省走平台标准目录（`R1`）。
+    pub config: Option<String>,
 }
 
 pub fn build_provider(args: &ChatArgs) -> Option<Arc<dyn ErasedProvider>> {
-    let api_key = args
-        .api_key
-        .clone()
-        .or_else(|| api_key_from_env(&args.provider));
-    let http = HttpConfig::default();
+    let config = load_config(args.config.as_deref());
+    // 密钥优先级（`X1` §4）：CLI 参数 > 环境变量 > 系统钥匙串。
+    let api_key = resolve_key(args);
+
+    let mut http = HttpConfig::default();
+    if let Some(proxy) = &config.proxy {
+        http.proxy = Some(proxy.clone());
+    }
+    if let Some(secs) = config.stream_idle_timeout_secs {
+        http.stream_idle_timeout = Duration::from_secs(secs);
+    }
+    // 自定义端点（CLI 或配置）时不拦模型清单，交服务端报错（vLLM 等）。
+    let custom_base = args.base_url.is_some() || config.base_url_for(&args.provider).is_some();
+    // 端点优先级：CLI > 配置（供应商级 → 顶层） > 内置默认。
+    let base_url = |default: &str| -> String {
+        args.base_url
+            .clone()
+            .or_else(|| config.base_url_for(&args.provider).map(str::to_string))
+            .unwrap_or_else(|| default.to_string())
+    };
+
     let provider: Arc<dyn ErasedProvider> = match args.provider.as_str() {
-        "openai-compatible" => {
-            let base_url = args
-                .base_url
-                .clone()
-                .unwrap_or_else(|| "https://api.openai.com/v1".into());
-            Arc::new(
-                OpenAiCompatible::new(OpenAiConfig {
-                    id: "openai-compatible",
-                    base_url,
-                    api_key,
-                    http,
-                    // 未显式传清单时用官方默认；自定义 base_url（vLLM 等）应自行登记模型。
-                    models: if args.base_url.is_some() {
-                        Vec::new()
-                    } else {
-                        agent_providers::openai_default_models()
-                    },
-                })
-                .ok()?,
-            )
-        }
-        "anthropic" => {
-            let base_url = args
-                .base_url
-                .clone()
-                .unwrap_or_else(|| "https://api.anthropic.com".into());
-            Arc::new(
-                AnthropicCompatible::new(AnthropicConfig {
-                    id: "anthropic",
-                    base_url,
-                    api_key,
-                    http,
-                    models: if args.base_url.is_some() {
-                        Vec::new()
-                    } else {
-                        agent_providers::anthropic_default_models()
-                    },
-                })
-                .ok()?,
-            )
-        }
+        "openai-compatible" => Arc::new(
+            OpenAiCompatible::new(OpenAiConfig {
+                id: "openai-compatible",
+                base_url: base_url("https://api.openai.com/v1"),
+                api_key: expose(&api_key),
+                http: http.clone(),
+                models: if custom_base {
+                    Vec::new()
+                } else {
+                    agent_providers::openai_default_models()
+                },
+            })
+            .ok()?,
+        ),
+        "anthropic" => Arc::new(
+            AnthropicCompatible::new(AnthropicConfig {
+                id: "anthropic",
+                base_url: base_url("https://api.anthropic.com"),
+                api_key: expose(&api_key),
+                http,
+                models: if custom_base {
+                    Vec::new()
+                } else {
+                    agent_providers::anthropic_default_models()
+                },
+            })
+            .ok()?,
+        ),
         other => {
             eprintln!("未知 provider：{other}（可用：openai-compatible / anthropic）");
             return None;
         }
     };
-    if args.api_key.is_none() && std::env::var(api_key_env(&args.provider)).is_err() {
-        println!("提示：未提供密钥（--api-key 或对应环境变量）。无鉴权端点（如本地服务）可忽略。");
+    if api_key.is_none() {
+        println!(
+            "提示：未提供密钥（--api-key / 环境变量 {} / 系统钥匙串）。无鉴权端点（如本地服务）可忽略。",
+            agent_config::api_key_env(&args.provider)
+        );
     }
     // M6（`R2`）：请求统一经 Router 出——单候选时无感；`--model a,b` 时
     // a 遇可降级失败（429/5xx/超时/断网/Auth）自动落到 b。
@@ -104,18 +113,48 @@ pub fn build_provider(args: &ChatArgs) -> Option<Arc<dyn ErasedProvider>> {
     Some(Arc::new(router) as Arc<dyn ErasedProvider>)
 }
 
-/// 密钥环境变量约定（`R1` 落地前的过渡）：按 provider id 推断变量名。
-fn api_key_env(provider: &str) -> &'static str {
-    match provider {
-        "anthropic" => "ANTHROPIC_API_KEY",
-        _ => "OPENAI_API_KEY",
+/// 加载配置文件。`--config` 显式指定则用它，否则走平台标准目录（`R1`）。
+///
+/// 任何失败都**降级为默认配置并提示**：配置问题不该挡在「跑起来」前面。
+fn load_config(explicit: Option<&str>) -> AppConfig {
+    let paths = match explicit {
+        Some(path) => ConfigPaths::from_file(path),
+        None => match ConfigPaths::discover() {
+            Ok(paths) => paths,
+            Err(error) => {
+                eprintln!("定位配置目录失败（{error}），改用默认配置。");
+                return AppConfig::default();
+            }
+        },
+    };
+    match agent_config::load(&paths) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("读取配置失败（{error}），改用默认配置。");
+            AppConfig::default()
+        }
     }
 }
 
-fn api_key_from_env(provider: &str) -> Option<String> {
-    std::env::var(api_key_env(provider))
-        .ok()
-        .filter(|k| !k.is_empty())
+/// 密钥优先级（`X1` §4）：CLI 参数 > 环境变量 > 系统钥匙串。
+fn resolve_key(args: &ChatArgs) -> Option<SecretString> {
+    if let Some(raw) = &args.api_key {
+        return Some(SecretString::from(raw.clone()));
+    }
+    match agent_config::resolve_api_key(&args.provider) {
+        Ok(secret) => secret,
+        Err(error) => {
+            eprintln!("读取密钥失败（{error}）。");
+            None
+        }
+    }
+}
+
+/// 在**装配边界**把密钥解出明文交给适配器（适配器要用它构造鉴权头）。
+///
+/// 明文只活在这个局部值与适配器配置中：不进日志、不入库（`X1` §4 / 硬约束 5）。
+fn expose(key: &Option<SecretString>) -> Option<String> {
+    key.as_ref().map(|secret| secret.expose_secret().to_string())
 }
 
 /// M4 的两个演示工具：证明工具循环端到端可用。真实工具集由配置层/宿主提供（M6）。

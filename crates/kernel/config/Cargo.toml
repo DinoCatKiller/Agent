@@ -1,0 +1,30 @@
+[package]
+name = "agent-config"
+description = "配置与密钥：TOML 配置文件 + 系统钥匙串（对应 R1）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# 配置：分环境配置 + 平台标准目录（`X1` §1）
+toml = "0.8"
+directories = "6"
+# 防 `Debug` / 日志泄漏密钥（`X1` §4）
+secrecy = "0.10"
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# 密钥：直连系统钥匙串。**必须按平台显式开 backend** —— keyring 3.x 的 default
+# features 是空的（`docs.rs` 元数据里列的那些 native feature 并不是 default）。
+# 不显式开启会静默退化为 mock 后端：写入只活在单个 `Entry` 实例里，
+# 表现为「set 返回 Ok、get 立刻读不到」，且系统凭据管理器里查无此项。
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
