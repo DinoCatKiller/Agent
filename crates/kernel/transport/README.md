@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| 状态 | ✅ M2 已收口：HTTP / SSE / 收尾 / 取消 + fixtures + `A4`（重试随 `A6`） |
+| 状态 | ✅ M2 已收口：HTTP / SSE / 收尾 / 取消 + fixtures + `A4`；退避重试机制已就绪（`X6` A3），流式重试与降级策略随 `A6` |
 | 边界 | HTTP 客户端封装、SSE 解析、超时 / 取消 / 退避重试。**不含**供应商字段映射（`agent-providers`）、路由策略（`kernel/routing`） |
 | 上游 | `agent-common`（契约类型） |
 | 下游 | `agent-providers` 的适配器 |
@@ -21,7 +21,7 @@
 | SSE 解析 ✅ | `bytes_stream` → `SseEvent`（通用字段 `event`/`data`/`id`/`retry`，字节层切行）；厂商语义留给适配器 |
 | 收尾语义 ✅ | 传输错误 / 可恢复坏帧 / **EOF 截断** 三分（`A2` §4）。机制在 `finish`：`FramePolicy<F>`（适配器判决）+ `finalize`（控制流）；帧类型泛型、与 SSE 解耦，仅 `finalize_bytes` 是 SSE 便捷入口 |
 | 取消 ✅ | `CancellationToken`（即 `CallContext.cancel`）接进**请求**（`cancellable` / `HttpClient::send`）与**流**（`cancel::guard` / `CancelGuard`）；传输层只认 token，`CallContext` 桥接由适配器做 |
-| 重试 | ⬜ 随 `A6` 落地：指数退避 + 抖动，只包 `retryable == true`。**不在 M2 范围** |
+| 重试 ✅ | 指数退避 + 抖动（算法取自 `backoff`，选型 `X6` A3）：`RetryPolicy` + `retry(policy, cancel, op)`，只包 `retryable == true`、可取消。**流式重试**（仅首事件前失败才重试）与**降级策略**随 `A6`（⬜） |
 
 ## 四个必须知道的约束
 

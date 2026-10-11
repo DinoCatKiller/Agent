@@ -1,16 +1,26 @@
 //! `chat` 子命令：CLI 上的对话 REPL（M4）。
 //!
 //! 组装在 [`crate::setup`]（与 `tui` 共用）；本文件只做两件事：消费 [`LoopEvent`] 流做
-//! 流式打印（未来 UI 消费事件流的参考实现）、处理 stdin 与 Ctrl-C。
+//! 流式打印（未来 UI 消费事件流的参考实现）、处理输入与 Ctrl-C。
 //! 业务逻辑零实现——都在 `agent-chat`。
+//!
+//! 输入用 `rustyline`（`X6` A2）：历史 / 行内编辑 / Ctrl-R。非 TTY（管道输入）时
+//! 回退到裸 `read_line`，保持脚本可用。
+
+use std::io::IsTerminal;
+use std::sync::{Arc, Mutex};
 
 use agent_chat::{Chat, ChatService, LoopEvent, RoundStop};
 use agent_common::DeltaKind;
 use futures::StreamExt;
+use rustyline::error::ReadlineError;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::setup::{self, ChatArgs};
+
+/// REPL 提示符。
+const PROMPT: &str = "> ";
 
 pub async fn run(args: ChatArgs) -> i32 {
     let Some(provider) = setup::build_provider(&args) else {
@@ -24,54 +34,102 @@ pub async fn run(args: ChatArgs) -> i32 {
         args.provider, args.model
     );
 
-    // stdin 是阻塞 IO：放 blocking 线程逐行读，经 channel 进异步世界。
-    let (line_tx, mut line_rx) = mpsc::unbounded_channel::<String>();
-    tokio::task::spawn_blocking(move || {
-        let mut buf = String::new();
-        let stdin = std::io::stdin();
-        loop {
-            buf.clear();
-            match stdin.read_line(&mut buf) {
-                Ok(0) | Err(_) => break, // EOF / 读失败
-                Ok(_) => {
-                    let line = buf.trim().to_string();
-                    let stop = line == "/quit" || line == "/exit";
-                    if line_tx.send(line).is_err() || stop {
-                        break;
-                    }
-                }
-            }
-        }
-    });
+    // 生成中的取消令牌共享槽：输入线程在 Ctrl-C 时取走并取消当前轮
+    // （与 `tui` 的 cancel_slot 同一套思路）。
+    let cancel_slot: Arc<Mutex<Option<CancellationToken>>> = Arc::new(Mutex::new(None));
 
-    let mut cancel = CancellationToken::new();
+    // 输入是阻塞 IO：放 blocking 线程逐行读，经 channel 进异步世界。
+    let (line_tx, mut line_rx) = mpsc::unbounded_channel::<String>();
+    {
+        let slot = cancel_slot.clone();
+        tokio::task::spawn_blocking(move || read_lines(line_tx, slot));
+    }
+
     loop {
-        tokio::select! {
-            biased;
-            _ = tokio::signal::ctrl_c() => {
-                // 生成中：取消当前轮；空闲中：提示（不退出，退出用 /quit）。
-                cancel.cancel();
-                continue;
-            }
-            line = line_rx.recv() => {
-                let Some(line) = line else { break }; // stdin 关闭
-                if line == "/quit" || line == "/exit" {
-                    break;
-                }
-                if line.is_empty() {
-                    continue;
-                }
-                if line.starts_with('/') {
-                    println!("未知命令 {line}（可用：/quit）");
-                    continue;
-                }
-                cancel = CancellationToken::new();
-                consume_round(&service, &mut chat, &line, &cancel).await;
-            }
+        let Some(line) = line_rx.recv().await else {
+            break; // 输入线程已退出（EOF / Ctrl-D）
+        };
+        if line == "/quit" || line == "/exit" {
+            break;
         }
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('/') {
+            println!("未知命令 {line}（可用：/quit）");
+            continue;
+        }
+        let cancel = CancellationToken::new();
+        *cancel_slot.lock().expect("cancel slot") = Some(cancel.clone());
+        consume_round(&service, &mut chat, &line, &cancel).await;
+        *cancel_slot.lock().expect("cancel slot") = None;
     }
     println!("再见。");
     0
+}
+
+/// 阻塞读入行。TTY 用 `rustyline`（历史与行内编辑），非 TTY（管道）回退裸 `read_line`。
+fn read_lines(
+    line_tx: mpsc::UnboundedSender<String>,
+    cancel_slot: Arc<Mutex<Option<CancellationToken>>>,
+) {
+    if std::io::stdin().is_terminal() {
+        read_lines_rustyline(line_tx, cancel_slot);
+    } else {
+        read_lines_plain(line_tx);
+    }
+}
+
+fn read_lines_rustyline(
+    line_tx: mpsc::UnboundedSender<String>,
+    cancel_slot: Arc<Mutex<Option<CancellationToken>>>,
+) {
+    let mut editor = match rustyline::DefaultEditor::new() {
+        Ok(editor) => editor,
+        Err(error) => {
+            eprintln!("初始化行编辑器失败（{error}），回退到简单输入。");
+            read_lines_plain(line_tx);
+            return;
+        }
+    };
+    loop {
+        match editor.readline(PROMPT) {
+            Ok(line) => {
+                let line = line.trim().to_string();
+                let stop = line == "/quit" || line == "/exit";
+                let _ = editor.add_history_entry(line.clone());
+                if line_tx.send(line).is_err() || stop {
+                    break;
+                }
+            }
+            // Ctrl-C：生成中取消当前轮；空闲时无动作（不退出，退出用 /quit）。
+            Err(ReadlineError::Interrupted) => {
+                if let Some(token) = cancel_slot.lock().expect("cancel slot").take() {
+                    token.cancel();
+                }
+            }
+            // Ctrl-D / EOF / 其它错误：结束输入。
+            Err(_) => break,
+        }
+    }
+}
+
+fn read_lines_plain(line_tx: mpsc::UnboundedSender<String>) {
+    let mut buf = String::new();
+    let stdin = std::io::stdin();
+    loop {
+        buf.clear();
+        match stdin.read_line(&mut buf) {
+            Ok(0) | Err(_) => break, // EOF / 读失败
+            Ok(_) => {
+                let line = buf.trim().to_string();
+                let stop = line == "/quit" || line == "/exit";
+                if line_tx.send(line).is_err() || stop {
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /// 消费一轮事件流并打印。这是未来 UI 消费 [`LoopEvent`] 的参考实现

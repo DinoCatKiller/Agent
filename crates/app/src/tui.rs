@@ -20,13 +20,16 @@ use agent_chat::{Chat, ChatService, LoopEvent, SessionMeta, SessionRepo};
 use agent_sessions::session::derive_title;
 use agent_sessions::ui::SessionPane;
 use agent_store::Store;
-use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use crossterm::{execute, terminal};
 use futures::StreamExt;
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Layout},
+    layout::{Constraint, Layout, Rect},
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -132,6 +135,8 @@ pub async fn run(args: TuiArgs) -> i32 {
     let mut pane = SessionPane::new();
     let mut focus = Focus::Input;
     let mut current_title: Option<String> = None;
+    // 上一帧的区域快照：ratatui 是即时模式，鼠标命中测试要用它（见 `HitAreas`）。
+    let mut areas = HitAreas::default();
     // 退出时序：生成中退出要先取消，并等 worker 把最后一轮落盘（Sessions 刷新事件即落盘完成
     // 的标记），再恢复终端——否则 process::exit 会把保存任务一起杀掉。
     let mut quit_wait = false;
@@ -153,7 +158,8 @@ pub async fn run(args: TuiArgs) -> i32 {
             model: &args.model,
             session: current_title.as_deref(),
         };
-        if let Err(error) = terminal.draw(|f| draw(f, &chat_ui, &mut pane, focus, &theme, &status))
+        if let Err(error) =
+            terminal.draw(|f| draw(f, &chat_ui, &mut pane, focus, &theme, &status, &mut areas))
         {
             eprintln!("绘制失败：{error}");
             break;
@@ -168,12 +174,13 @@ pub async fn run(args: TuiArgs) -> i32 {
                 None => break, // 事件源关闭（stdin 关闭等）
                 Some(Err(_)) => break,
                 Some(Ok(event)) => {
-                    if process_key(
+                    if process_event(
                         event,
                         &mut focus,
                         &mut chat_ui,
                         &mut pane,
                         &cmd_tx,
+                        &areas,
                     ) == Intent::Quit
                     {
                         if chat_ui.generating() {
@@ -239,19 +246,115 @@ fn apply(
     }
 }
 
-/// 非按键事件忽略；按键抬起（Windows 会同时上报 Press/Release）忽略。
-fn process_key(
+/// 事件分发：按键抬起（Windows 会同时上报 Press/Release）忽略；鼠标走 `handle_mouse`。
+fn process_event(
     event: Event,
     focus: &mut Focus,
     chat_ui: &mut ChatUi,
     pane: &mut SessionPane,
     cmd_tx: &mpsc::Sender<Cmd>,
+    areas: &HitAreas,
 ) -> Intent {
     match event {
         Event::Key(key) if key.kind == KeyEventKind::Press => {
             handle_key(key, focus, chat_ui, pane, cmd_tx)
         }
+        Event::Mouse(mouse) => handle_mouse(mouse, focus, chat_ui, pane, cmd_tx, areas),
         _ => Intent::None,
+    }
+}
+
+/// 上一帧各区域的屏幕矩形（鼠标命中测试用）。
+///
+/// ratatui 是即时模式：区域只在 `draw` 那一帧存在，因此在这里留存一份副本
+/// （`run` 循环每帧刷新，事件处理读它）。
+#[derive(Debug, Default, Clone, Copy)]
+struct HitAreas {
+    sidebar: Rect,
+    transcript: Rect,
+    input: Rect,
+    /// 会话列表实际渲染的首项偏移（列表长于可视区时非零）。
+    sidebar_offset: usize,
+}
+
+impl HitAreas {
+    /// 点是否落在区域内（左闭右开，与 ratatui 的 `Rect` 语义一致）。
+    fn contains(area: Rect, column: u16, row: u16) -> bool {
+        column >= area.x
+            && column < area.x.saturating_add(area.width)
+            && row >= area.y
+            && row < area.y.saturating_add(area.height)
+    }
+
+    /// 侧栏内鼠标行 → 会话索引；落在标题 / 下边框、空白或越界时为 `None`。
+    fn sidebar_index(&self, row: u16, len: usize) -> Option<usize> {
+        // `Block::bordered` 上下各占 1 行，列表项从 `sidebar.y + 1` 开始。
+        let visible = self.sidebar.height.saturating_sub(2) as usize;
+        if visible == 0 || row <= self.sidebar.y {
+            return None;
+        }
+        let row_in_list = usize::from(row - self.sidebar.y - 1);
+        if row_in_list >= visible {
+            return None; // 下边框
+        }
+        let index = self.sidebar_offset + row_in_list;
+        (index < len).then_some(index)
+    }
+}
+
+/// 鼠标：左键点击切焦点 / 载入会话；滚轮在侧栏移动选择、在其它区域滚动转录。
+fn handle_mouse(
+    mouse: MouseEvent,
+    focus: &mut Focus,
+    chat_ui: &mut ChatUi,
+    pane: &mut SessionPane,
+    cmd_tx: &mpsc::Sender<Cmd>,
+    areas: &HitAreas,
+) -> Intent {
+    let (column, row) = (mouse.column, mouse.row);
+    let on_sidebar = HitAreas::contains(areas.sidebar, column, row);
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            if on_sidebar {
+                pane.previous();
+            } else {
+                chat_ui.scroll_up(3);
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            if on_sidebar {
+                pane.next();
+            } else {
+                chat_ui.scroll_down(3);
+            }
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            if on_sidebar {
+                *focus = Focus::Sidebar;
+                if let Some(index) = areas.sidebar_index(row, pane.len()) {
+                    pane.select(index);
+                    load_selected(pane, chat_ui, cmd_tx);
+                }
+            } else if HitAreas::contains(areas.transcript, column, row)
+                || HitAreas::contains(areas.input, column, row)
+            {
+                *focus = Focus::Input;
+            }
+        }
+        _ => {}
+    }
+    Intent::None
+}
+
+/// 载入侧栏当前选中项（侧栏 Enter 与鼠标点击共用）。
+fn load_selected(pane: &SessionPane, chat_ui: &mut ChatUi, cmd_tx: &mpsc::Sender<Cmd>) {
+    if chat_ui.generating() {
+        chat_ui.set_notice("生成中，先取消再切换".into());
+    } else if let Some(meta) = pane.selected().cloned() {
+        let _ = cmd_tx.try_send(Cmd::Load {
+            id: meta.id,
+            title: meta.title,
+        });
     }
 }
 
@@ -310,16 +413,7 @@ fn handle_key(
             Focus::Sidebar => match key.code {
                 KeyCode::Up => pane.previous(),
                 KeyCode::Down => pane.next(),
-                KeyCode::Enter => {
-                    if chat_ui.generating() {
-                        chat_ui.set_notice("生成中，先取消再切换".into());
-                    } else if let Some(meta) = pane.selected().cloned() {
-                        let _ = cmd_tx.try_send(Cmd::Load {
-                            id: meta.id,
-                            title: meta.title,
-                        });
-                    }
-                }
+                KeyCode::Enter => load_selected(pane, chat_ui, cmd_tx),
                 KeyCode::Char('n') => {
                     if !chat_ui.generating() {
                         let _ = cmd_tx.try_send(Cmd::New);
@@ -343,12 +437,17 @@ fn draw(
     focus: Focus,
     theme: &Theme,
     status: &StatusInfo,
+    areas: &mut HitAreas,
 ) {
     pane.set_focused(focus == Focus::Sidebar);
     let outer = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(f.area());
     let body = Layout::horizontal([Constraint::Length(26), Constraint::Min(20)]).split(outer[0]);
     let chat = Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).split(body[1]);
-    pane.render(f, body[0], theme);
+    // 留存本帧区域，供鼠标命中（列表偏移由侧栏渲染回传）。
+    areas.sidebar = body[0];
+    areas.transcript = chat[0];
+    areas.input = chat[1];
+    areas.sidebar_offset = pane.render(f, body[0], theme);
     render_transcript(f, chat_ui, chat[0], theme);
     render_input(f, chat_ui, chat[1], focus == Focus::Input, theme);
     render_status(f, chat_ui, status, outer[1], theme);
@@ -496,20 +595,28 @@ fn new_session_id() -> String {
 
 fn init_terminal() -> io::Result<Terminal<CrosstermBackend<io::Stdout>>> {
     terminal::enable_raw_mode()?;
-    // 不碰鼠标捕获：crossterm 的 DisableMouseCapture 需要 Enable 先行（它靠 enable
-    // 捕获初始模式来恢复），直接 Disable 在 Windows 上必报
-    // 「Initial console modes not set」。本界面只用键盘。
-    execute!(stdout(), terminal::EnterAlternateScreen)?;
+    // 启用鼠标捕获（点击 / 滚轮）。必须与 `TerminalGuard` 的 `DisableMouseCapture`
+    // 成对：crossterm 靠「Enable 时记录的初始模式」来恢复，直接 Disable 在 Windows 上
+    // 会报「Initial console modes not set」。
+    execute!(
+        stdout(),
+        terminal::EnterAlternateScreen,
+        EnableMouseCapture
+    )?;
     Terminal::new(CrosstermBackend::new(stdout()))
 }
 
-/// Drop 时恢复终端（raw mode / 备用屏），panic 路径也不把终端留成花屏。
+/// Drop 时恢复终端（raw mode / 鼠标捕获 / 备用屏），panic 路径也不把终端留成花屏。
 struct TerminalGuard;
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = terminal::disable_raw_mode();
-        let _ = execute!(stdout(), terminal::LeaveAlternateScreen);
+        let _ = execute!(
+            stdout(),
+            DisableMouseCapture,
+            terminal::LeaveAlternateScreen
+        );
     }
 }
 
@@ -748,5 +855,63 @@ mod tests {
         let loaded = repo.load(&metas[0].id).unwrap().unwrap();
         assert_eq!(loaded.messages.len(), 1, "只有用户消息入史");
         assert_eq!(loaded.messages[0].text(), "取消我");
+    }
+
+    // —— 鼠标命中（纯函数，无需真终端）——
+
+    fn rect(x: u16, y: u16, width: u16, height: u16) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn contains_uses_half_open_bounds() {
+        let area = rect(2, 3, 4, 5); // 覆盖 x∈[2,6), y∈[3,8)
+        assert!(HitAreas::contains(area, 2, 3), "左上角含");
+        assert!(HitAreas::contains(area, 5, 7), "右下角前一格含");
+        assert!(!HitAreas::contains(area, 6, 7), "右边界外");
+        assert!(!HitAreas::contains(area, 2, 8), "下边界外");
+        assert!(!HitAreas::contains(area, 1, 3), "左边界外");
+    }
+
+    #[test]
+    fn sidebar_index_skips_border_rows() {
+        let areas = HitAreas {
+            sidebar: rect(0, 0, 26, 12), // 可视 10 行
+            sidebar_offset: 0,
+            ..HitAreas::default()
+        };
+        assert_eq!(areas.sidebar_index(0, 5), None, "标题行不可点");
+        assert_eq!(areas.sidebar_index(1, 5), Some(0), "首项");
+        assert_eq!(areas.sidebar_index(3, 5), Some(2));
+        assert_eq!(areas.sidebar_index(10, 5), None, "索引越界（len=5）");
+        assert_eq!(areas.sidebar_index(10, 20), Some(9), "最后一行仍是列表项");
+        assert_eq!(areas.sidebar_index(11, 20), None, "下边框不可点");
+    }
+
+    #[test]
+    fn sidebar_index_respects_scroll_offset() {
+        let areas = HitAreas {
+            sidebar: rect(0, 0, 26, 6), // 可视 4 行
+            sidebar_offset: 7,
+            ..HitAreas::default()
+        };
+        assert_eq!(areas.sidebar_index(1, 20), Some(7), "首行 = 渲染偏移");
+        assert_eq!(areas.sidebar_index(4, 20), Some(10));
+        assert_eq!(areas.sidebar_index(4, 9), None, "偏移 + 行号越界");
+    }
+
+    #[test]
+    fn sidebar_index_is_none_when_no_visible_rows() {
+        let areas = HitAreas {
+            sidebar: rect(0, 0, 26, 2), // 只剩上下边框
+            sidebar_offset: 0,
+            ..HitAreas::default()
+        };
+        assert_eq!(areas.sidebar_index(1, 5), None);
     }
 }

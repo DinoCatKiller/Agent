@@ -8,105 +8,107 @@ mod repl;
 mod setup;
 mod tui;
 
+use clap::{Args, Parser, Subcommand};
 use setup::ChatArgs;
 
+/// 命令行入口（`X6` A1：clap 声明式解析，取代原来的手写循环）。
+#[derive(Parser)]
+#[command(
+    name = "agent-app",
+    version,
+    about = "CodingRocket（二进制 agent-app，`S2` Q7）",
+    arg_required_else_help = true
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// 契约层冒烟（M1）。
+    SelfCheck,
+    /// 对话 REPL（M4）。
+    Chat(SessionArgs),
+    /// 一期终端界面（M5，`D3`）。
+    Tui(TuiCliArgs),
+}
+
+/// `chat` / `tui` 共用参数。
+#[derive(Args, Debug)]
+struct SessionArgs {
+    /// 供应商标识：openai-compatible | anthropic。
+    #[arg(long)]
+    provider: String,
+    /// 主模型；逗号分隔（或重复传入）时，`b…` 为降级链（`R2`）。
+    #[arg(long, value_delimiter = ',', required = true)]
+    model: Vec<String>,
+    /// 自定义端点（vLLM / 代理等）。
+    #[arg(long)]
+    base_url: Option<String>,
+    /// 密钥；缺省时按 provider 推断环境变量（`R1` 落地前的过渡）。
+    #[arg(long)]
+    api_key: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct TuiCliArgs {
+    #[command(flatten)]
+    session: SessionArgs,
+    /// SQLite 路径（缺省 `./agent-sessions.db`）。
+    #[arg(long)]
+    db: Option<String>,
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.first().map(String::as_str) {
-        Some("self-check") => self_check(),
-        Some("chat") => match parse_session_args(&args[1..], false) {
-            Ok((chat_args, _)) => {
-                let code = tokio::runtime::Runtime::new()
-                    .expect("tokio runtime")
-                    .block_on(repl::run(chat_args));
-                std::process::exit(code);
-            }
-            Err(message) => {
-                eprintln!("{message}");
-                eprintln!(
-                    "用法: agent-app chat --provider <openai-compatible|anthropic> --model <id> [--base-url URL] [--api-key KEY]"
-                );
+    match Cli::parse().command {
+        Command::SelfCheck => self_check(),
+        Command::Chat(args) => {
+            let Some(chat_args) = session_args_into_chat(args) else {
                 std::process::exit(2);
-            }
-        },
-        Some("tui") => match parse_session_args(&args[1..], true) {
-            Ok((chat_args, db)) => {
-                let code = tokio::runtime::Runtime::new()
-                    .expect("tokio runtime")
-                    .block_on(tui::run(tui::TuiArgs {
-                        provider: chat_args.provider,
-                        model: chat_args.model,
-                        fallbacks: chat_args.fallbacks,
-                        base_url: chat_args.base_url,
-                        api_key: chat_args.api_key,
-                        db,
-                    }));
-                std::process::exit(code);
-            }
-            Err(message) => {
-                eprintln!("{message}");
-                eprintln!(
-                    "用法: agent-app tui --provider <openai-compatible|anthropic> --model <id> [--base-url URL] [--api-key KEY] [--db PATH]"
-                );
-                std::process::exit(2);
-            }
-        },
-        Some(other) => {
-            eprintln!("未知命令: {other}");
-            eprintln!("可用命令: self-check | chat | tui");
-            std::process::exit(2);
+            };
+            let code = tokio::runtime::Runtime::new()
+                .expect("tokio runtime")
+                .block_on(repl::run(chat_args));
+            std::process::exit(code);
         }
-        None => {
-            println!(
-                "CodingRocket {}（二进制 agent-app，`S2` Q7）",
-                env!("CARGO_PKG_VERSION")
-            );
-            println!("可用命令: self-check | chat | tui");
-            println!("里程碑与下一步: S1");
+        Command::Tui(args) => {
+            let Some(chat_args) = session_args_into_chat(args.session) else {
+                std::process::exit(2);
+            };
+            let code = tokio::runtime::Runtime::new()
+                .expect("tokio runtime")
+                .block_on(tui::run(tui::TuiArgs {
+                    provider: chat_args.provider,
+                    model: chat_args.model,
+                    fallbacks: chat_args.fallbacks,
+                    base_url: chat_args.base_url,
+                    api_key: chat_args.api_key,
+                    db: args.db,
+                }));
+            std::process::exit(code);
         }
     }
 }
 
-/// `chat` / `tui` 共用参数解析；`tui` 额外接受 `--db`。
-/// `--model a,b` 的逗号分隔写成主模型 + 降级链（`R2`）。
-fn parse_session_args(
-    rest: &[String],
-    allow_db: bool,
-) -> Result<(ChatArgs, Option<String>), String> {
-    let mut provider = None;
-    let mut model = None;
-    let mut base_url = None;
-    let mut api_key = None;
-    let mut db = None;
-    let mut iter = rest.iter();
-    while let Some(flag) = iter.next() {
-        let value = iter.next().ok_or_else(|| format!("缺少 {flag} 的值"))?;
-        match flag.as_str() {
-            "--provider" => provider = Some(value.clone()),
-            "--model" => model = Some(value.clone()),
-            "--base-url" => base_url = Some(value.clone()),
-            "--api-key" => api_key = Some(value.clone()),
-            "--db" if allow_db => db = Some(value.clone()),
-            "--db" => return Err("chat 子命令不接受 --db（会话库随 tui 使用）".into()),
-            other => return Err(format!("未知参数: {other}")),
-        }
-    }
-    let model_raw = model.ok_or("缺少 --model")?;
-    let mut models = model_raw
-        .split(',')
+/// `--model a,b` → 主模型 + 降级链；全为空串视为用法错误（clap 已保证至少一项）。
+fn session_args_into_chat(args: SessionArgs) -> Option<ChatArgs> {
+    let mut models = args
+        .model
+        .into_iter()
         .map(|m| m.trim().to_string())
         .filter(|m| !m.is_empty());
-    let model = models.next().ok_or("缺少 --model")?;
-    Ok((
-        ChatArgs {
-            provider: provider.ok_or("缺少 --provider")?,
-            model,
-            fallbacks: models.collect(),
-            base_url,
-            api_key,
-        },
-        db,
-    ))
+    let Some(model) = models.next() else {
+        eprintln!("错误：--model 不能为空");
+        return None;
+    };
+    Some(ChatArgs {
+        provider: args.provider,
+        model,
+        fallbacks: models.collect(),
+        base_url: args.base_url,
+        api_key: args.api_key,
+    })
 }
 
 use agent_common::{

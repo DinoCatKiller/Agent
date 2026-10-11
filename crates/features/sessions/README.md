@@ -15,8 +15,8 @@
 src/
   lib.rs        模块声明 + 对外导出
   session.rs    会话语义规则：标题自动生成 derive_title（chat 落盘时调用）
-  ui.rs         本功能的界面：SessionPane 会话侧栏（列表 + 选择，纯数据状态 + ratatui 渲染）
-tests/          单测（导航边界、刷新保选中、标题规则）—— 纯状态，断网可跑（Q1）
+  ui.rs         本功能的界面：SessionPane 会话侧栏（列表 + 选择 + 鼠标命中钩子，纯数据状态 + ratatui 渲染）
+tests/          单测（导航边界、刷新保选中、按索引选中、标题规则）—— 纯状态，断网可跑（Q1）
 ```
 
 ## 与 `chat` 切片的分工
@@ -25,6 +25,8 @@ tests/          单测（导航边界、刷新保选中、标题规则）—— 
 - **数据流**：app 的 worker 每次轮末 `save` 后把 `SessionMeta` 列表喂给 `SessionPane::set_sessions`；
   切换会话由 worker `load` 完成后，把 `Chat` 交给 `agent_chat::ui::ChatUi::load_chat` 回放。
 - **标题**：首次落盘时由 worker 调 [`session::derive_title`](src/session.rs) 生成（取首行、截 24 字）。
+- **鼠标**：本切片只提供两个钩子——`render` 回传「实际渲染的首项偏移」、`select(index)` 按索引选中；
+  鼠标坐标 → 索引的换算与事件解析都在 `app` 的事件泵（本切片不认 crossterm 鼠标事件）。
 
 ## 尚未落地（随需要再做）
 

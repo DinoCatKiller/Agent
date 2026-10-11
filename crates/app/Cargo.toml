@@ -18,6 +18,9 @@ agent-routing = { workspace = true }
 agent-sessions = { workspace = true }
 agent-store = { workspace = true }
 agent-transport = { workspace = true }
+# CLI 参数解析与 REPL 行编辑（`X6` A1 / A2）：终端生命周期归二进制入口
+clap = { workspace = true }
+rustyline = { workspace = true }
 # 一期 TUI（`D3`）：crossterm 事件泵在 app（终端生命周期归二进制入口），渲染在 features/*
 crossterm = { workspace = true }
 futures = { workspace = true }
