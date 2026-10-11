@@ -46,9 +46,12 @@ struct SessionArgs {
     /// 自定义端点（vLLM / 代理等）。
     #[arg(long)]
     base_url: Option<String>,
-    /// 密钥；缺省时按 provider 推断环境变量（`R1` 落地前的过渡）。
+    /// 密钥；缺省按「环境变量 → 系统钥匙串」解析（`R1`）。
     #[arg(long)]
     api_key: Option<String>,
+    /// 配置文件路径；缺省走平台标准目录（`R1`）。
+    #[arg(long)]
+    config: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -84,6 +87,7 @@ fn main() {
                     fallbacks: chat_args.fallbacks,
                     base_url: chat_args.base_url,
                     api_key: chat_args.api_key,
+                    config: chat_args.config,
                     db: args.db,
                 }));
             std::process::exit(code);
@@ -108,6 +112,7 @@ fn session_args_into_chat(args: SessionArgs) -> Option<ChatArgs> {
         fallbacks: models.collect(),
         base_url: args.base_url,
         api_key: args.api_key,
+        config: args.config,
     })
 }
 

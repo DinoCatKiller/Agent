@@ -93,6 +93,7 @@
 | — | crate 门面 | [`crates/kernel/transport/README.md`](crates/kernel/transport/README.md) | 动传输层 / SSE 前 | ~0.6k | ✅ |
 | A4 | 流式、取消与超时 | [`crates/kernel/transport/docs/streaming.md`](crates/kernel/transport/docs/streaming.md) | 动 SSE / 中断 / 超时 / 装配一次调用 | ~2k | ✅ |
 | A4-V | 传输管线图（`A4` 的可视化） | [`crates/kernel/transport/docs/pipeline-map.html`](crates/kernel/transport/docs/pipeline-map.html) | 想一眼看懂流式调用的装配与收尾 | 1 张图 | ✅ |
+| A6 | 错误、重试与降级 | [`crates/kernel/transport/docs/errors-and-fallback.md`](crates/kernel/transport/docs/errors-and-fallback.md) | 限流 / 超时 / 审核 / 不可用 | ~1.5k | ✅ |
 | R4 | 缓存、限流与并发 | `crates/kernel/transport/docs/cache-and-ratelimit.md` | 重复请求、QPS 控制 | — | ⬜ |
 
 ### `crates/features/*`（功能切片：一个功能 = 一个文件夹，见 `D5`）
@@ -106,12 +107,17 @@
 | A7 | 上下文与 Token | [`crates/features/chat/docs/context-and-tokens.md`](crates/features/chat/docs/context-and-tokens.md) | 裁剪、摘要、计费 | ~1.2k | ✅ M4 |
 | A5-V | 轮次循环图（`A5`/`A7` 的可视化） | [`crates/features/chat/docs/round-map.html`](crates/features/chat/docs/round-map.html) | 想一眼看懂 run_round 与工具循环 | 1 张图 | ✅ |
 
+### `crates/kernel/config`
+
+| ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
+|----|------|------|--------|------|------|
+| — | crate 门面 | [`crates/kernel/config/README.md`](crates/kernel/config/README.md) | 加配置项、动密钥存储前 | ~0.8k | ✅ |
+| R1 | 配置与密钥 | [`crates/kernel/config/docs/config-and-secrets.md`](crates/kernel/config/docs/config-and-secrets.md) | 加配置项、接密钥 | ~1.5k | ✅ |
+
 ### `crates/kernel/*`（机制内核，按需创建）
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| A6 | 错误、重试与降级 | [`crates/kernel/transport/docs/errors-and-fallback.md`](crates/kernel/transport/docs/errors-and-fallback.md) | 限流 / 超时 / 审核 / 不可用 | ~1.5k | ✅ |
-| R1 | 配置与密钥 | `crates/kernel/config/docs/config-and-secrets.md` | 加配置项、接密钥 | — | ⬜ |
 | R3 | 可观测性与成本 | `crates/kernel/telemetry/docs/observability.md` | 日志 / trace / 计费 | — | ⬜ |
 
 ### `crates/kernel/routing`

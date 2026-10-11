@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| 状态 | ✅ M4：契约冒烟 + 对话 REPL；✅ M5：`tui` 一期终端界面（侧栏会话 + 流式转录 + 轮末落盘）；✅ M6：请求统一经 `Router` 出（`--model a,b` 失败降级链）；✅ `X6` A1/A2：CLI 用 `clap`、REPL 输入用 `rustyline` |
+| 状态 | ✅ M4 契约冒烟 + 对话 REPL ｜ ✅ M5 `tui` 一期终端界面（会话 + 流式 + 键鼠）｜ ✅ M6 请求经 `Router` 出（降级链）｜ ✅ `X6` A1/A2 CLI `clap` + REPL `rustyline` ｜ ✅ `A6` 候选内重试 ｜ ✅ `R1` 配置文件 + 系统钥匙串 |
 | 边界 | 组装依赖、承载 CLI 命令、终端生命周期。**不含**业务逻辑（都在 `features/*` 里） |
-| 上游 | `agent-common` / `agent-providers` / `agent-transport` / `agent-chat` / `agent-sessions` / `agent-store` |
+| 上游 | `agent-common` / `agent-providers` / `agent-transport` / `agent-routing` / `agent-config` / `agent-chat` / `agent-sessions` / `agent-store` |
 | 下游 | 无（最终产物） |
 | 何时读 | 想跑起来看一眼、或新增 CLI 命令时 |
 
@@ -21,12 +21,13 @@ cargo run -p agent-app -- self-check
 cargo run -p agent-app -- chat --provider openai-compatible --model gpt-4o
 cargo run -p agent-app -- chat --provider anthropic --model claude-sonnet-4-5-20250929
 # 可选：--base-url（vLLM / 本地服务，传入后不做模型清单拦截）
-#       --api-key（缺省读 OPENAI_API_KEY / ANTHROPIC_API_KEY 环境变量）
-#       --model a,b（逗号分隔 = 失败降级链：a 遇 429/5xx/超时/断网/Auth 自动落到 b，R2）
+#       --api-key（缺省按「环境变量 → 系统钥匙串」解析，R1）
+#       --config PATH（配置文件；缺省走平台标准目录，R1）
+#       --model a,b（逗号分隔 = 失败降级链；A6：同一候选先退避重试 3 次，用尽才换下一家）
 
 # 一期 TUI（M5，`D3`）
 cargo run -p agent-app -- tui --provider openai-compatible --model gpt-4o
-# 可选：--db PATH（会话库路径，缺省 ./agent-sessions.db）；--model 同样支持 a,b 降级链
+# 可选：--db PATH（会话库路径，缺省 ./agent-sessions.db）
 ```
 
 > **终端要求（Windows）**：crossterm 的 raw mode 走 Win32 控制台 API，请在 **Windows Terminal / PowerShell / cmd** 里运行。
@@ -46,22 +47,30 @@ REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、�
 非交互场景（如 `echo "hi" | …`）自动回退到裸 `read_line`，管道输入照常可用。
 内置两个 demo 工具（`current_time` / `echo`）证明工具循环端到端可用。
 
+## 密钥与配置（`R1`）
+
+- 优先级：`--api-key` > 环境变量（`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`）> **系统钥匙串**。
+- 配置文件（TOML）**只放非敏感项**；路径用 `--config` 指定，或走平台标准目录（Windows `%APPDATA%\CodingRocket\config.toml`）。
+- 配置读不到 / 解不开 → 提示一行后**降级为默认配置继续跑**，不挡启动。
+- 细节、安全约定与 `keyring` 的坑 → `R1`。
+
 ## 它不能做什么
 
-- ❌ 自动重试（退避机制已在 `agent-transport::retry`，接线随 `A6`）、密钥管理（`R1` 待建）
-- ❌ 密钥经 `R1` 管理前，只走参数 / 环境变量，且不入库、不打日志
+- ❌ 设置界面（写配置 / 存密钥的 UI）—— 属 `features/settings`，尚未实现。
+- ❌ 无钥匙串服务时的加密文件降级（`R1` 已识别该降级路径，未实现）。
+- ❌ 密钥永不入库、不打日志（硬约束 5）。
 
 ## 布局
 
 ```
 src/main.rs     clap 命令定义 + 分发（self-check 保留在 main 内）
-src/setup.rs    装配共用：供应商构造 / 密钥来源 / demo 工具（chat 与 tui 共用）
+src/setup.rs    装配共用：配置 / 密钥 / 供应商构造 / demo 工具（chat 与 tui 共用）
 src/repl.rs     chat 命令：rustyline 输入 + 消费 LoopEvent 打印（事件消费的参考实现）
-src/tui.rs      tui 命令：终端生命周期 + 事件泵 + worker（唯一拥有 Chat 与 SessionRepo）
+src/tui.rs      tui 命令：终端生命周期 + 事件泵（键鼠）+ worker
 tests/e2e.rs    端到端：真实适配器 + reqwest 栈 → wiremock，工具循环两轮收口（Q1 §1）
 ```
 
 ## 相关
 
-- `S1` 当前阶段 ｜ `A1` 架构 ｜ `A5` 工具调用 ｜ `Q1` 测试策略 ｜ UI 形态：`D3`、样式：`D4`
-- CLI / REPL 选型 → `X6` A1 / A2
+- `S1` 当前阶段 ｜ `A1` 架构 ｜ `A5` 工具调用 ｜ `A6` 错误 / 重试 / 降级 ｜ `R1` 配置与密钥 ｜ `Q1` 测试策略
+- UI 形态：`D3`、样式：`D4` ｜ CLI / REPL 选型 → `X6` A1 / A2

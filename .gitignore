@@ -5,7 +5,7 @@
 .vscode/
 *.user
 
-# 密钥与本地配置绝不入库（见 docs/20-spec/config-and-secrets.md，待创建）
+# 密钥与本地配置绝不入库（见 crates/kernel/config/docs/config-and-secrets.md，R1）
 .env
 *.local.toml
 
