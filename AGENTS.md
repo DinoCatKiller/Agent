@@ -110,7 +110,7 @@
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| A6 | 错误、重试与降级 | `crates/kernel/transport/docs/errors-and-fallback.md` | 限流 / 超时 / 审核 / 不可用 | — | ⬜ |
+| A6 | 错误、重试与降级 | [`crates/kernel/transport/docs/errors-and-fallback.md`](crates/kernel/transport/docs/errors-and-fallback.md) | 限流 / 超时 / 审核 / 不可用 | ~1.5k | ✅ |
 | R1 | 配置与密钥 | `crates/kernel/config/docs/config-and-secrets.md` | 加配置项、接密钥 | — | ⬜ |
 | R3 | 可观测性与成本 | `crates/kernel/telemetry/docs/observability.md` | 日志 / trace / 计费 | — | ⬜ |
 

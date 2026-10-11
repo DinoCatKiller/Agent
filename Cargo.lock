@@ -74,10 +74,12 @@ version = "0.1.0"
 dependencies = [
  "agent-common",
  "agent-providers",
+ "agent-transport",
  "async-stream",
  "futures",
  "serde_json",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

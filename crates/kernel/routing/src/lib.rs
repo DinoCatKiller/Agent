@@ -23,8 +23,10 @@ use agent_common::{
     ErrorCategory, ModelRequest, ModelResponse, ModelSpec, ProviderError, StreamEvent,
 };
 use agent_providers::{CallContext, ErasedProvider, EventStream, Provider, required_capabilities};
+use agent_transport::{Backoff, RetryPolicy, retry};
 use async_stream::stream;
 use futures::StreamExt;
+use tokio_util::sync::CancellationToken;
 
 /// 路由器对外 id（错误归因用；真实供应商 id 看各候选的 `ProviderError.provider`）。
 pub const ROUTER_ID: &str = "router";
@@ -58,6 +60,21 @@ fn should_fallback(error: &ProviderError) -> bool {
     error.retryable || matches!(error.category, ErrorCategory::Auth)
 }
 
+/// 取下一次退避并等待（`A6` 的候选内重试用它）。
+///
+/// 返回 `true` = 还有重试额度，可重试同一候选；`false` = 额度用尽（换下一候选）
+/// 或等待期间被取消。退避算法来自 `agent-transport`，全项目只有一份。
+async fn wait_backoff(backoff: &mut Backoff, cancel: &CancellationToken) -> bool {
+    let Some(delay) = backoff.next_delay() else {
+        return false;
+    };
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => false,
+        _ = tokio::time::sleep(delay) => true,
+    }
+}
+
 fn no_route(model: &str) -> ProviderError {
     ProviderError::new(ROUTER_ID, ErrorCategory::InvalidRequest)
         .with_message(format!("no route for model '{model}'"))
@@ -68,10 +85,23 @@ fn no_route(model: &str) -> ProviderError {
 /// - **隐式路由**：未登记显式路由的模型，按注册顺序找「清单里有该模型」的供应商；
 /// - **显式兜底链**（[`Router::with_route`]）：请求 `target` 时按候选依次尝试——
 ///   主模型挂了换备模型、跨供应商别名都靠它。
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Router {
     providers: Vec<Arc<dyn ErasedProvider>>,
     routes: HashMap<String, Vec<Candidate>>,
+    retry: RetryPolicy,
+}
+
+impl Default for Router {
+    fn default() -> Self {
+        Self {
+            providers: Vec::new(),
+            routes: HashMap::new(),
+            // 默认**不重试**：保持「一次失败即换下一家」的既有行为。
+            // 宿主用 `with_retry` 显式开启候选内重试（`A6`）。
+            retry: RetryPolicy::none(),
+        }
+    }
 }
 
 impl Router {
@@ -111,6 +141,13 @@ impl Router {
             })
             .collect();
         self.routes.insert(target, chain);
+        self
+    }
+
+    /// 候选内重试策略（`A6`）：同一候选先重试到 `policy.max_attempts` 次，
+    /// 仍失败才换下一候选。默认 [`RetryPolicy::none`]（不重试，行为与 M6 一致）。
+    pub fn with_retry(mut self, policy: RetryPolicy) -> Self {
+        self.retry = policy;
         self
     }
 
@@ -182,11 +219,14 @@ impl Router {
             if ctx.cancel.is_cancelled() {
                 break;
             }
-            match candidate
-                .provider
-                .chat_boxed(candidate.request(&req), ctx.clone())
-                .await
-            {
+            // 候选内重试（`A6`）：先重试同一候选到额度用尽，之后才考虑换下一家。
+            let outcome = retry(&self.retry, &ctx.cancel, |_| {
+                candidate
+                    .provider
+                    .chat_boxed(candidate.request(&req), ctx.clone())
+            })
+            .await;
+            match outcome {
                 Ok(response) => return Ok(response),
                 Err(error) if should_fallback(&error) => last = Some(error),
                 Err(error) => return Err(error),
@@ -237,46 +277,62 @@ impl Provider for Router {
         if candidates.is_empty() {
             return Err(Self::first_failure(rejected, &req.model));
         }
+        let policy = self.retry.clone();
         let out = stream! {
-            let total = candidates.len();
             let mut last_error: Option<ProviderError> = None;
-            for (index, candidate) in candidates.into_iter().enumerate() {
-                if ctx.cancel.is_cancelled() {
-                    return;
-                }
-                let mut inner = match candidate.provider.stream(candidate.request(&req), ctx.clone()) {
-                    Ok(inner) => inner,
-                    Err(error) if should_fallback(&error) => {
-                        last_error = Some(error);
-                        continue;
-                    }
-                    Err(error) => {
-                        yield StreamEvent::Error { error };
+            for candidate in candidates {
+                // 候选内重试（`A6`）：退避序列器按候选重置。
+                let mut backoff = policy.backoff();
+                loop {
+                    if ctx.cancel.is_cancelled() {
                         return;
                     }
-                };
-                // 偷看首事件决定是否降级（`R2` §3：Start 之后不再换流）。
-                match inner.next().await {
-                    Some(StreamEvent::Error { error })
-                        if should_fallback(&error) && index + 1 < total =>
-                    {
-                        last_error = Some(error);
-                        continue;
-                    }
-                    Some(event) => {
-                        yield event;
-                        while let Some(next) = inner.next().await {
-                            yield next;
+                    let mut inner = match candidate.provider.stream(candidate.request(&req), ctx.clone()) {
+                        Ok(inner) => inner,
+                        // 同步失败（发请求前就暴露）：不可降级则原样上抛。
+                        Err(error) => {
+                            if !should_fallback(&error) {
+                                yield StreamEvent::Error { error };
+                                return;
+                            }
+                            last_error = Some(error);
+                            if wait_backoff(&mut backoff, &ctx.cancel).await {
+                                continue;
+                            }
+                            break;
                         }
-                        return;
-                    }
-                    None => {
-                        // 无事件即终止：正常流保证 Start 起步（A2 §4），视作可降级失败。
-                        last_error = Some(
-                            ProviderError::new(candidate.provider.id(), ErrorCategory::Truncated)
-                                .with_message("candidate stream ended without events"),
-                        );
-                        continue;
+                    };
+                    // 偷看首事件决定「重试 / 降级 / 正常转发」（`R2` §3：`Start` 之后不再换流）。
+                    match inner.next().await {
+                        Some(StreamEvent::Error { error }) => {
+                            if !should_fallback(&error) {
+                                yield StreamEvent::Error { error };
+                                return;
+                            }
+                            last_error = Some(error);
+                            if wait_backoff(&mut backoff, &ctx.cancel).await {
+                                continue;
+                            }
+                            break;
+                        }
+                        Some(event) => {
+                            yield event;
+                            while let Some(next) = inner.next().await {
+                                yield next;
+                            }
+                            return;
+                        }
+                        None => {
+                            // 无事件即终止：正常流保证 `Start` 起步（`A2` §4），视作可降级失败。
+                            last_error = Some(
+                                ProviderError::new(candidate.provider.id(), ErrorCategory::Truncated)
+                                    .with_message("candidate stream ended without events"),
+                            );
+                            if wait_backoff(&mut backoff, &ctx.cancel).await {
+                                continue;
+                            }
+                            break;
+                        }
                     }
                 }
             }
@@ -388,6 +444,144 @@ mod behavior {
     /// 按运行时真实形态调用：擦除后只剩一套 `ErasedProvider` 方法，无歧义。
     fn erased(router: Router) -> Arc<dyn ErasedProvider> {
         Arc::new(router)
+    }
+
+    /// `A6` 候选内重试用的「快退避」：抖动 0，配合 `start_paused` 确定性跳过等待。
+    fn fast_retry(max_attempts: u32) -> RetryPolicy {
+        RetryPolicy {
+            max_attempts,
+            initial_interval: std::time::Duration::from_millis(1),
+            max_interval: std::time::Duration::from_millis(2),
+            multiplier: 1.0,
+            jitter: 0.0,
+        }
+    }
+
+    /// `A6`：首事件前失败 → 先重试**同一候选**，成功就不换家。
+    #[tokio::test(start_paused = true)]
+    async fn retry_same_candidate_before_falling_back() {
+        let a = stub("a", &[simple_spec("m", "a")])
+            .stream_sync_err(rate_limit("a"))
+            .stream_once(vec![
+                StreamEvent::start("a"),
+                StreamEvent::delta_text("retried"),
+                StreamEvent::end(),
+            ]);
+        let b = stub("b", &[simple_spec("m", "b")]).stream_once(vec![
+            StreamEvent::start("b"),
+            StreamEvent::delta_text("backup"),
+            StreamEvent::end(),
+        ]);
+        let calls_a = a.calls.clone();
+        let calls_b = b.calls.clone();
+        let router = erased(
+            Router::new()
+                .with_provider(a)
+                .with_provider(b)
+                .with_retry(fast_retry(3)),
+        );
+
+        let events = collect(
+            router
+                .stream(
+                    ModelRequest::new("m", vec![agent_common::Message::user("hi")]),
+                    CallContext::default(),
+                )
+                .expect("route exists"),
+        )
+        .await;
+
+        assert_eq!(
+            events,
+            vec![
+                StreamEvent::start("a"),
+                StreamEvent::delta_text("retried"),
+                StreamEvent::end(),
+            ],
+            "重试成功 → 不降级，事件全来自 A"
+        );
+        assert_eq!(
+            *calls_a.lock().unwrap(),
+            vec!["a:m".to_string(), "a:m".to_string()],
+            "A 被尝试两次"
+        );
+        assert!(calls_b.lock().unwrap().is_empty(), "备用候选未被触碰");
+    }
+
+    /// `A6`：重试额度用尽才降级。
+    #[tokio::test(start_paused = true)]
+    async fn retry_exhausted_then_falls_back() {
+        let a = stub("a", &[simple_spec("m", "a")])
+            .stream_sync_err(rate_limit("a"))
+            .stream_sync_err(rate_limit("a"))
+            .stream_sync_err(rate_limit("a"));
+        let b = stub("b", &[simple_spec("m", "b")]).stream_once(vec![
+            StreamEvent::start("b"),
+            StreamEvent::delta_text("backup"),
+            StreamEvent::end(),
+        ]);
+        let calls_a = a.calls.clone();
+        let router = erased(
+            Router::new()
+                .with_provider(a)
+                .with_provider(b)
+                .with_retry(fast_retry(3)),
+        );
+
+        let events = collect(
+            router
+                .stream(
+                    ModelRequest::new("m", vec![agent_common::Message::user("hi")]),
+                    CallContext::default(),
+                )
+                .expect("route exists"),
+        )
+        .await;
+
+        assert_eq!(
+            events,
+            vec![
+                StreamEvent::start("b"),
+                StreamEvent::delta_text("backup"),
+                StreamEvent::end(),
+            ],
+            "3 次尝试都失败 → 降级到 B（对消费者透明）"
+        );
+        assert_eq!(
+            calls_a.lock().unwrap().len(),
+            3,
+            "A 恰好被尝试 max_attempts 次"
+        );
+    }
+
+    /// `A6`：未配 `with_retry` 时不重试 —— 库默认保持 M6 的既有行为。
+    #[tokio::test(start_paused = true)]
+    async fn default_router_does_not_retry() {
+        let a = stub("a", &[simple_spec("m", "a")]).stream_sync_err(rate_limit("a"));
+        let b = stub("b", &[simple_spec("m", "b")]).stream_once(vec![
+            StreamEvent::start("b"),
+            StreamEvent::delta_text("backup"),
+            StreamEvent::end(),
+        ]);
+        let calls_a = a.calls.clone();
+        let router = erased(Router::new().with_provider(a).with_provider(b));
+
+        let events = collect(
+            router
+                .stream(
+                    ModelRequest::new("m", vec![agent_common::Message::user("hi")]),
+                    CallContext::default(),
+                )
+                .unwrap(),
+        )
+        .await;
+
+        assert_eq!(events.last(), Some(&StreamEvent::end()), "B 完整接管");
+        assert_eq!(
+            calls_a.lock().unwrap().len(),
+            1,
+            "默认策略下 A 只被调用一次（无重试）"
+        );
     }
 
     #[tokio::test]

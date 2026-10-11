@@ -32,5 +32,5 @@ pub mod sse;
 pub use cancel::{CancelGuard, cancellable, guard};
 pub use finish::{FinalizedStream, Frame, FramePolicy, finalize, finalize_bytes};
 pub use http::{HttpClient, HttpConfig, IdleTimeout, TransportError};
-pub use retry::{RetryPolicy, retry};
+pub use retry::{Backoff, RetryPolicy, retry};
 pub use sse::{SseDecoder, SseEvent, SseStream, parse_sse};
