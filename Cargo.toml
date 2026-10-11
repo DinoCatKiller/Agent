@@ -26,6 +26,7 @@ agent-transport = { path = "crates/kernel/transport" }
 agent-store = { path = "crates/kernel/store" }
 agent-routing = { path = "crates/kernel/routing" }
 agent-config = { path = "crates/kernel/config" }
+agent-telemetry = { path = "crates/kernel/telemetry" }
 agent-chat = { path = "crates/features/chat" }
 agent-sessions = { path = "crates/features/sessions" }
 
@@ -44,6 +45,8 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "signal"] }
 tokio-util = "0.7"
 tracing = "0.1"
+# 日志初始化与级别过滤（R3 §1）：env-filter 支持 RUST_LOG
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # 本地存储（`X1` §1）：单机桌面无连接池；bundled 免装 SQLite（需 C 编译器）
 rusqlite = { version = "0.32", features = ["bundled"] }
 # 一期 TUI（`D3`）：终端界面；crossterm 的事件流（event-stream）适配 tokio::select! 事件泵

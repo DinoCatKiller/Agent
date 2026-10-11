@@ -1,0 +1,12 @@
+[package]
+name = "agent-telemetry"
+description = "可观测性与成本：tracing 初始化 + token 成本计算（对应 R3）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+agent-common = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

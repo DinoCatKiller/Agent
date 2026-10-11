@@ -65,6 +65,8 @@ struct TuiCliArgs {
 }
 
 fn main() {
+    // `R3`：日志初始化（级别读 `RUST_LOG`，输出 stderr；幂等）
+    agent_telemetry::init_from_env();
     match Cli::parse().command {
         Command::SelfCheck => self_check(),
         Command::Chat(args) => {
