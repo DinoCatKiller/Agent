@@ -13,13 +13,11 @@
 
 use std::io::{self, stdout};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use agent_chat::ChatService;
+use agent_chat::channel::{Cmd, UiEvent};
 use agent_chat::ui::{ChatUi, StatusInfo, Theme, render_input, render_status, render_transcript};
-use agent_chat::{Chat, ChatService, LoopEvent, SessionMeta, SessionRepo};
-use agent_sessions::session::derive_title;
 use agent_sessions::ui::SessionPane;
-use agent_store::Store;
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEvent, KeyEventKind,
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -33,6 +31,8 @@ use ratatui::{
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+
+use crate::worker;
 
 use crate::setup::{self, ChatArgs};
 
@@ -51,29 +51,8 @@ pub struct TuiArgs {
     pub db: Option<String>,
 }
 
-/// UI → worker 的命令通道。
-#[derive(Debug)]
-enum Cmd {
-    Submit(String),
-    Load { id: String, title: String },
-    New,
-}
-
-/// worker → UI 的事件通道（`D3`：UI 无关——二期 GPUI 消费同一套）。
-enum UiEvent {
-    /// 会话列表整体刷新（启动、每次落盘后）。
-    Sessions(Vec<SessionMeta>),
-    /// 会话已加载（worker 侧 `Chat` 已替换）。
-    SessionLoaded { title: String, chat: Chat },
-    /// 新会话（worker 侧已重置）。
-    Cleared,
-    /// 编排事件原样转发。
-    Loop(LoopEvent),
-    /// `run_round` 同步 fast-fail。
-    Rejected(String),
-    /// 杂项提示（生成中不可切换、落盘失败…）。
-    Notice(String),
-}
+// `Cmd` / `UiEvent` 已上移到 `agent_chat::channel`：二期 GPUI 渲染端消费的是同一套契约，
+// 放在切片里两边才不会各写一份（`D3`「UI 无关的事件流 + 命令通道」）。
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -97,7 +76,7 @@ pub async fn run(args: TuiArgs) -> i32 {
         .db
         .clone()
         .unwrap_or_else(|| "agent-sessions.db".into());
-    let repo = match open_repo(&db_path) {
+    let repo = match worker::open_repo(&db_path) {
         Ok(repo) => repo,
         Err(error) => {
             eprintln!("打开会话库失败（{db_path}）：{error}");
@@ -109,11 +88,10 @@ pub async fn run(args: TuiArgs) -> i32 {
     let service = ChatService::new(provider, setup::demo_tools());
     // 取消令牌的共享槽位：worker 轮内不接收命令，所以取消不能走命令通道——
     // UI 直接把令牌塞进槽位并 cancel（worker 轮末清空）。
-    let cancel_slot: Arc<std::sync::Mutex<Option<CancellationToken>>> =
-        Arc::new(std::sync::Mutex::new(None));
+    let cancel_slot: Arc<std::sync::Mutex<Option<CancellationToken>>> = worker::cancel_slot();
     let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(32);
     let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<UiEvent>();
-    tokio::spawn(worker(
+    tokio::spawn(worker::run_worker(
         model,
         service,
         repo,
@@ -220,11 +198,6 @@ pub async fn run(args: TuiArgs) -> i32 {
 enum Intent {
     None,
     Quit,
-}
-
-fn open_repo(path: &str) -> Result<SessionRepo, Box<dyn std::error::Error>> {
-    let store = Store::open(path)?;
-    Ok(SessionRepo::open(store)?)
 }
 
 fn apply(
@@ -456,143 +429,8 @@ fn draw(
     render_status(f, chat_ui, status, outer[1], theme);
 }
 
-// —— worker：唯一拥有 `Chat` 与 `SessionRepo` ——
-
-async fn worker(
-    model: String,
-    service: ChatService,
-    repo: SessionRepo,
-    cancel_slot: Arc<std::sync::Mutex<Option<CancellationToken>>>,
-    mut cmd_rx: mpsc::Receiver<Cmd>,
-    ui_tx: mpsc::UnboundedSender<UiEvent>,
-) {
-    let mut chat = Chat::new(model);
-    // (session_id, title)；首次落盘时创建。
-    let mut session: Option<(String, String)> = None;
-    // 是否有一轮进行中（New / Load / Submit 互斥的依据）——以 cancel_slot 是否持有令牌为准。
-    let busy = || cancel_slot.lock().expect("cancel slot").is_some();
-    let _ = ui_tx.send(UiEvent::Sessions(repo_list(&repo).await));
-
-    while let Some(cmd) = cmd_rx.recv().await {
-        match cmd {
-            Cmd::New => {
-                if busy() {
-                    let _ = ui_tx.send(UiEvent::Notice("生成中，先取消再新建".into()));
-                    continue;
-                }
-                chat = Chat::new(chat.model.clone());
-                session = None;
-                let _ = ui_tx.send(UiEvent::Cleared);
-            }
-            Cmd::Load { id, title } => {
-                if busy() {
-                    let _ = ui_tx.send(UiEvent::Notice("生成中，先取消再切换".into()));
-                    continue;
-                }
-                let repo2 = repo.clone();
-                let id2 = id.clone();
-                let loaded = match tokio::task::spawn_blocking(move || repo2.load(&id2)).await {
-                    Ok(Ok(Some(chat))) => chat,
-                    Ok(Ok(None)) => {
-                        let _ = ui_tx.send(UiEvent::Notice("会话不存在或已被删除".into()));
-                        continue;
-                    }
-                    Ok(Err(error)) => {
-                        let _ = ui_tx.send(UiEvent::Notice(format!("读取会话失败：{error}")));
-                        continue;
-                    }
-                    Err(_) => {
-                        let _ = ui_tx.send(UiEvent::Notice("读取会话任务失败".into()));
-                        continue;
-                    }
-                };
-                chat = loaded;
-                session = Some((id, title.clone()));
-                let _ = ui_tx.send(UiEvent::SessionLoaded {
-                    title,
-                    chat: chat.clone(),
-                });
-            }
-            Cmd::Submit(text) => {
-                if busy() {
-                    let _ = ui_tx.send(UiEvent::Notice("生成中…".into()));
-                    continue;
-                }
-                let existing = session
-                    .as_ref()
-                    .map(|(id, title)| (id.clone(), title.clone()));
-                let (id, title) = match existing {
-                    Some(pair) => pair,
-                    None => {
-                        let id = new_session_id();
-                        let title = derive_title(&text);
-                        session = Some((id.clone(), title.clone()));
-                        (id, title)
-                    }
-                };
-
-                let token = CancellationToken::new();
-                *cancel_slot.lock().expect("cancel slot") = Some(token.clone());
-
-                match service.run_round(&mut chat, text, token) {
-                    Err(error) => {
-                        // fast-fail：用户输入已入史（见 run_round），提示后可继续。
-                        let _ = ui_tx.send(UiEvent::Rejected(error.to_string()));
-                    }
-                    Ok(round) => {
-                        tokio::pin!(round);
-                        while let Some(event) = round.next().await {
-                            if ui_tx.send(UiEvent::Loop(event)).is_err() {
-                                break; // UI 已退出
-                            }
-                        }
-                    }
-                }
-                *cancel_slot.lock().expect("cancel slot") = None;
-
-                // 轮末落盘（取消 / 错误也存：用户输入已在史中）。
-                let (repo2, chat2, id2, title2) = (repo.clone(), chat.clone(), id, title);
-                let now = now_ms();
-                let saved =
-                    tokio::task::spawn_blocking(move || repo2.save(&id2, &title2, &chat2, now))
-                        .await;
-                match saved {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        let _ = ui_tx.send(UiEvent::Notice(format!("保存会话失败：{error}")));
-                    }
-                    Err(_) => {
-                        let _ = ui_tx.send(UiEvent::Notice("保存会话任务失败".into()));
-                    }
-                }
-                let _ = ui_tx.send(UiEvent::Sessions(repo_list(&repo).await));
-            }
-        }
-    }
-}
-
-async fn repo_list(repo: &SessionRepo) -> Vec<SessionMeta> {
-    let repo2 = repo.clone();
-    tokio::task::spawn_blocking(move || repo2.list().unwrap_or_default())
-        .await
-        .unwrap_or_default()
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
-
-/// 会话 id：纳秒时间戳的十六进制（单用户本地场景足够唯一；正式方案随 `R1`）。
-fn new_session_id() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("s{nanos:024x}")
-}
+// worker 已上移到 `crate::worker`：命令通道与事件语义只能有一份，
+// 否则 TUI 与 GPUI 的行为会慢慢漂开（见 `worker.rs` 顶部注释）。
 
 // —— 终端生命周期 ——
 
@@ -627,9 +465,10 @@ mod tests {
     use std::sync::Mutex;
     use std::time::Duration;
 
-    use agent_chat::{RoundStop, ToolSet};
+    use agent_chat::{Chat, LoopEvent, RoundStop, SessionRepo, ToolSet};
     use agent_common::{DeltaKind, FinishReason, Role};
     use agent_providers::{OpenAiCompatible, OpenAiConfig};
+    use agent_store::Store;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -702,7 +541,7 @@ mod tests {
         let slot: Slot = Arc::new(Mutex::new(None));
         let (cmd_tx, cmd_rx) = mpsc::channel(32);
         let (ui_tx, ui_rx) = mpsc::unbounded_channel();
-        tokio::spawn(worker(
+        tokio::spawn(worker::run_worker(
             "fake-model".into(),
             service,
             repo.clone(),

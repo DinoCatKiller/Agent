@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | ID | —（功能切片，非索引文档） |
-| 状态 | ✅ M4 落地：状态机 + 轮次编排（事件流）+ 工具边界 + 上下文裁剪；✅ M5 落地 `repo.rs` 会话持久化 + `ui.rs` 界面（一期 TUI 的对话侧）；✅ M6 落地工具并行执行（保序回填） |
+| 状态 | ✅ M4 落地：状态机 + 轮次编排（事件流）+ 工具边界 + 上下文裁剪；✅ M5 落地 `repo.rs` 会话持久化 + `ui.rs` 界面（一期 TUI 的对话侧）；✅ M6 落地工具并行执行（保序回填）；✅ 二期 GPUI 渲染端 `gpui.rs` + 通道契约 `channel.rs`（`gui` feature，2026-10-12） |
 | 边界 | **语义**：一次对话怎么进行、状态怎么变、界面长什么样。含工具调用编排、上下文管理、业务表结构与界面状态机 |
-| 依赖 | `agent-common`（契约）｜ `agent-providers`（`Provider` / `CallContext`）｜ `agent-store`（连接 / 迁移机制）｜ `ratatui`（仅 `ui.rs` 渲染端） |
+| 依赖 | `agent-common`（契约）｜ `agent-providers`（`Provider` / `CallContext`）｜ `agent-store`（连接 / 迁移机制）｜ `ratatui`（仅 `ui.rs` 渲染端）｜ `agent-ui-kit`（仅 `gui` feature，`gpui.rs` 渲染端 + 令牌主题） |
 | 不允许 | 依赖 `app`；被 `kernel/*` 依赖；**自己打开 / 管理连接**（HTTP 客户端与 SQLite 连接是机制，属 `kernel`） |
 | 何时读 | 改对话逻辑、加对话能力、写对话界面时 |
 
@@ -22,6 +22,8 @@ src/
   repo.rs       本功能的持久化 —— SessionRepo：会话表 + save/load/list/rename/delete（Chat 原样 JSON 落盘）
   ui.rs         本功能的界面 —— ChatUi 状态机（吃 LoopEvent，无 ratatui 可测）+ ratatui 渲染端
                 + Theme（design/tokens.json 令牌，D4 一期）
+  channel.rs    UI 无关的 Cmd / UiEvent 契约（两个渲染端共用，D3）
+  gpui.rs       二期的界面 —— ChatView（GPUI 渲染端，复用同一个 ChatUi；仅 gui feature）
 tests/round.rs  编排集成测试（假 provider，9 例，断网）
 docs/           规格：A5（工具调用）、A7（上下文与 Token）
 ```
@@ -37,6 +39,10 @@ while let Some(event) = round.next().await { /* 渲染 LoopEvent */ }
 UI 的接入约定（`D3`「事件流 + 命令通道」）：`ChatUi::on_event` 消费 `LoopEvent`，
 `ChatUi::load_chat` 用 `SessionRepo::load` 的结果整体替换显示；
 状态机与渲染端分离，二期换 GPUI 只换渲染端。
+
+**二期 GPUI（`gui` feature）**：`ChatView` 消费同一套 `Cmd` / `UiEvent`（`channel.rs`），
+内部仍是同一个 `ChatUi`——两个渲染端的回滚、提交边界、工具状态因此完全一致。
+运行：`cargo run -p agent-app --features gui -- gui --provider … --model …`。
 
 两条铁律（改这里之前必读）：
 

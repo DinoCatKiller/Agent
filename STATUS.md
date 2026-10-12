@@ -22,9 +22,9 @@
 |---|------|------|------|
 | 1 | 可行性探针：编译 / 起窗口 / tokio 桥 / 中文 IME（`X2` §7 待办） | `tmp/gpui-spike`（不入库） | ✅ 仅剩 IME 待人工 |
 | 2 | `agent-ui-kit`：`tokens.json` → GPUI 主题桥、组件库入口（`tw!` 暂不自研，`S2` Q8） | 新建 `crates/kernel/ui-kit` | ✅ 2026-10-12 |
-| 3 | 对话界面：会话列表 / 对话区 / 输入区（复用 `ChatUi` 状态机） | `features/chat` | ⬜ 下一步 |
-| 4 | `gui` 子命令：窗口生命周期 + tokio↔GPUI 桥 | `app` | ⬜ |
-| 5 | 设置界面（写配置 / 存密钥） | `features/settings` | ⬜ |
+| 3 | 对话界面：会话列表 / 对话区 / 输入区（复用 `ChatUi` 状态机） | `features/chat`（`gpui.rs` + `channel.rs`） | ✅ 2026-10-12 |
+| 4 | `gui` 子命令：窗口生命周期 + tokio↔GPUI 桥 | `app`（`gui.rs` + 抽出的 `worker.rs`） | ✅ 2026-10-12（待人工看窗口） |
+| 5 | 设置界面（写配置 / 存密钥） | `features/settings` | ⬜ 下一步 |
 
 本轮**不做**：`GUI` §3 的 L3 CSS 兼容层（`D4` 已把它列为后期，先吃 L1 令牌）；`G-3` 长会话虚拟列表与 `G-5` 打包分发留到界面跑通之后。
 

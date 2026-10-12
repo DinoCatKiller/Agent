@@ -73,7 +73,7 @@ crates/kernel/providers/tests/fixtures/
 | 命令 | 用途 |
 |------|------|
 | `cargo test --workspace` | 全部测试 |
-| `cargo clippy --workspace --all-targets -- -D warnings` | 静态检查（CI 必过） |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 静态检查（CI 必过）。**`--all-features` 不能省**：`gui` 那条分支（GPUI 渲染端）默认不编译，少了它就不会被检查 |
 | `cargo fmt --check` | 格式 |
 | `cargo run -p agent-app -- self-check` | 契约冒烟 |
 

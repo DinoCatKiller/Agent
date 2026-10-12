@@ -6,9 +6,9 @@
 
 | | |
 |---|---|
-| 状态 | ✅ M4 契约冒烟 + 对话 REPL ｜ ✅ M5 `tui` 一期终端界面（会话 + 流式 + 键鼠）｜ ✅ M6 请求经 `Router` 出（降级链）｜ ✅ `X6` A1/A2 CLI `clap` + REPL `rustyline` ｜ ✅ `A6` 候选内重试 ｜ ✅ `R1` 配置文件 + 系统钥匙串 ｜ ✅ `R3` 日志初始化 + 成本计算 |
-| 边界 | 组装依赖、承载 CLI 命令、终端生命周期。**不含**业务逻辑（都在 `features/*` 里） |
-| 上游 | `agent-common` / `agent-providers` / `agent-transport` / `agent-routing` / `agent-config` / `agent-telemetry` / `agent-chat` / `agent-sessions` / `agent-store` |
+| 状态 | ✅ M4 契约冒烟 + 对话 REPL ｜ ✅ M5 `tui` 一期终端界面（会话 + 流式 + 键鼠）｜ ✅ M6 请求经 `Router` 出（降级链）｜ ✅ `X6` A1/A2 CLI `clap` + REPL `rustyline` ｜ ✅ `A6` 候选内重试 ｜ ✅ `R1` 配置文件 + 系统钥匙串 ｜ ✅ `R3` 日志初始化 + 成本计算 ｜ ✅ 二期 `gui` 子命令（GPUI 窗口，`gui` feature，2026-10-12） |
+| 边界 | 组装依赖、承载 CLI 命令、终端 / 窗口生命周期。**不含**业务逻辑（都在 `features/*` 里） |
+| 上游 | `agent-common` / `agent-providers` / `agent-transport` / `agent-routing` / `agent-config` / `agent-telemetry` / `agent-chat` / `agent-sessions` / `agent-store`；`agent-ui-kit`（**仅 `gui` feature**） |
 | 下游 | 无（最终产物） |
 | 何时读 | 想跑起来看一眼、或新增 CLI 命令时 |
 
@@ -32,6 +32,10 @@ cargo run -p agent-app -- chat --provider anthropic --model claude-sonnet-4-5-20
 # 一期 TUI（M5，`D3`）
 cargo run -p agent-app -- tui --provider openai-compatible --model gpt-4o
 # 可选：--db PATH（会话库路径，缺省 ./agent-sessions.db）
+
+# 二期 GUI（`D3` 方案 A）：**注意 `--features gui`**，默认构建不含 GPUI（详见下方「为什么 GUI 在 feature 后面」）
+cargo run -p agent-app --features gui -- gui --provider openai-compatible --model gpt-4o
+# 同 tui 的 --db / --config / --api-key / --base-url；窗口 1100x760，标题 CodingRocket
 ```
 
 > **终端要求（Windows）**：crossterm 的 raw mode 走 Win32 控制台 API，请在 **Windows Terminal / PowerShell / cmd** 里运行。
@@ -58,6 +62,14 @@ REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、�
 - 配置读不到 / 解不开 → 提示一行后**降级为默认配置继续跑**，不挡启动。
 - 细节、安全约定与 `keyring` 的坑 → `R1`。
 
+## 为什么 GUI 在 feature 后面
+
+`gui` 默认关闭：GPUI 的依赖树很大（debug 约 4GB，可执行文件 +50MB 量级），
+一期 TUI 产物不该为尚未完成的图形界面买单（`S2` Q6 的 ≤30MB 警戒线）。
+
+代价只有一条：**门禁必须带 `--all-features`**，否则 `gui` 那条分支不会被编译检查（`Q1` §5）。
+等图形界面成为主形态，把 `gui` 加进 `default` 即可，其余代码不用动。
+
 ## 它不能做什么
 
 - ❌ 设置界面（写配置 / 存密钥的 UI）—— 属 `features/settings`，尚未实现。
@@ -68,9 +80,11 @@ REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、�
 
 ```
 src/main.rs     clap 命令定义 + 分发（self-check 保留在 main 内）
-src/setup.rs    装配共用：配置 / 密钥 / 供应商构造 / demo 工具（chat 与 tui 共用）
+src/setup.rs    装配共用：配置 / 密钥 / 供应商构造 / demo 工具（所有命令共用）
+src/worker.rs   会话宿主：唯一拥有 `Chat` + `SessionRepo`（TUI 与 GUI **共用**，语义只有一份）
 src/repl.rs     chat 命令：rustyline 输入 + 消费 LoopEvent 打印（事件消费的参考实现）
-src/tui.rs      tui 命令：终端生命周期 + 事件泵（键鼠）+ worker
+src/tui.rs      tui 命令：终端生命周期 + 事件泵（键鼠）
+src/gui.rs      gui 命令（`gui` feature）：窗口 + 后台 tokio runtime + 事件桥
 tests/e2e.rs    端到端：真实适配器 + reqwest 栈 → wiremock，工具循环两轮收口（Q1 §1）
 ```
 
