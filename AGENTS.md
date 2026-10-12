@@ -134,6 +134,12 @@
 |----|------|------|--------|------|------|
 | — | 存储门面 | [`crates/kernel/store/README.md`](crates/kernel/store/README.md) | 动持久化 / 建表 / 事务前 | ~0.6k | ✅ M5 |
 
+### `crates/kernel/ui-kit`
+
+| ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
+|----|------|------|--------|------|------|
+| — | crate 门面 | [`crates/kernel/ui-kit/README.md`](crates/kernel/ui-kit/README.md) | 加组件、改配色 / 圆角 / 间距 / 字号、升 GPUI 时 | ~1.3k | ✅ 骨架 |
+
 ### `crates/app`
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
@@ -165,14 +171,14 @@
 | X5 | TS 样式资产移植可行性 | [`docs/research/styling-portability.md`](docs/research/styling-portability.md) | 想复用 Web 样式 / 设计系统 | ~2.5k | ✅ |
 | X6 | 可复用框架评估（哪些自研可换现成库） | [`docs/research/reusable-frameworks.md`](docs/research/reusable-frameworks.md) | 想减少自研、评估引入新依赖 | ~2k | ✅ |
 
-> **迁移预告**：`X2` / `X4` / `X5` 与 `D3` / `D4` / `GUI` 都属于 UI 领域；按 `D5`，界面代码**跟功能走**——`features/*` 各自持有 `ui.rs`（`gpui` 仅出现在 `features/*` 与 `app`），不再有独立 `agent-ui` crate。因为引用只写 ID，迁移不需要改其它文档。
+> **迁移预告**：`X2` / `X4` / `X5` 与 `D3` / `D4` / `GUI` 都属于 UI 领域；按 `D5`，界面代码**跟功能走**——`features/*` 各自持有 `ui.rs`，不再有独立 `agent-ui` crate（界面按功能切）。**共用的组件层是 `crates/kernel/ui-kit`**（`D4` 的 `agent-ui-kit`，属机制），`gpui` 依赖只出现在 `kernel/ui-kit`、`features/*` 与 `app`。因为引用只写 ID，迁移不需要改其它文档。
 
 ## 3. 任务路由（按需读）
 全文见 `M1`。只在**开新任务、不确定该读哪些文档**时读。
 
 ## 4. 硬约束（始终生效）
 
-1. **技术栈已定**：Rust（edition 2024）+ tokio 后端。UI 形态未定（D3）前**不写 UI 代码**，不引入 Electron / Tauri 等替代方案。
+1. **技术栈已定**：Rust（edition 2024）+ tokio 后端。UI 形态按 `D3` 分期已定：一期 Ratatui TUI（已落地）→ 二期 **GPUI**（进行中）。不引入 Electron / Tauri 等替代方案；`D3` 的逃生通道（切 Tauri）只在 `GUI` §3.4 的停止条件触发时才重开。
 2. 供应商差异**不得泄漏**到编排核心（落在 `features/chat`）；`features/*` 只依赖 `A2` 的契约。
 3. **一个结论只有一个家**：其它文档只许用 ID 引用，不许复制内容。
 4. 未决问题只写在 `S2`；ADR 只增不改。

@@ -26,6 +26,7 @@
 
 | 问题 | 结论 | 日期 |
 |------|------|------|
+| UI 组件层落点（Q8） | 新建 **`crates/kernel/ui-kit`**（`agent-ui-kit`，机制层）；`A1` 的 UI 依赖约束放宽为「`kernel/ui-kit`、`features/*`、`app`」。`tw!` 宏**暂不自研**（gpui-component 已带 shadcn 风格样式层），真有缺口再评估 | 2026-10-12 |
 | 产物体积与签名（Q6） | 本期不自签不公证；产物 **≤30MB 警戒线**（超了查 feature 泄漏）；触发条件：公开发布日→评估签名，GUI 二期→macOS 公证一并处理 | 2026-10-07 |
 | 是否支持 MCP 客户端（Q4） | 支持；自研最小 stdio 客户端（client / tools only）→ `D8`，进 `RM` M7 | 2026-10-07 |
 | 项目正式名称（Q7） | **CodingRocket**；crate 包名维持 `agent-*`（内部技术名），**可执行文件名定为 `codingrocket`**（只改用户可见那一层，2026-10-11 落定） | 2026-10-11 |

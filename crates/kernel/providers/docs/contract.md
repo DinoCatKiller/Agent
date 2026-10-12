@@ -177,12 +177,14 @@ pub struct ProviderError {
     pub retryable: bool,            // 默认取自 category，策略层可覆盖
     pub status: Option<u16>,
     pub request_id: Option<String>,
-    pub raw: Option<serde_json::Value>,
+    pub raw: Option<Box<serde_json::Value>>,   // 装箱：见下方「为什么 raw 是 Box」
     pub source_message: Option<String>,   // 底层原因已字符串化
 }
 ```
 
 **注意**：这里刻意**不用** `Box<dyn Error>` 作为 `source`。错误对象要能进 `StreamEvent`、日志与 fixtures 回放，因此必须 `Clone + Serialize`；原始原因以字符串保留在 `source_message`。
+
+**为什么 `raw` 是 `Box`**：`serde_json::Value` 的大小随 `preserve_order` 特征变化 —— 二期引入 `gpui-kit` 后，`gpui-pre` 会打开该特征，`Value` 的容器从 `BTreeMap` 变成 `IndexMap`，`Value` 从 ~40B 涨到 ~72B，把本类型从 120B 顶到 152B，越过 clippy `result_large_err` 的 128B 门槛。本类型会进 `StreamEvent` 并穿过传输层，保持小有实际收益；装箱后序列化结果不变（`null` / 省略行为一致）。
 
 每个 adapter 必须提供「HTTP 状态 / 错误体 → `ErrorCategory`」的映射表。
 

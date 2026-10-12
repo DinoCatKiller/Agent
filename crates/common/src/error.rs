@@ -52,8 +52,13 @@ pub struct ProviderError {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
     /// 供应商原始错误体，排错与 fixtures 用。
+    ///
+    /// **装箱的原因**：`serde_json::Value` 的大小随 `preserve_order` 特征变化
+    /// （`gpui-pre` 会打开它，容器从 `BTreeMap` 变成 `IndexMap`，`Value` 从 ~40B 涨到 ~72B），
+    /// 不装箱会把本类型顶过 clippy 的 128B 门槛（`result_large_err`）。
+    /// 本类型会进 `StreamEvent` 并穿过传输层，保持它小是有价值的；序列化结果不变。
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raw: Option<Value>,
+    pub raw: Option<Box<Value>>,
     /// 底层原因（已字符串化，保证可序列化）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_message: Option<String>,
@@ -83,7 +88,7 @@ impl ProviderError {
     }
 
     pub fn with_raw(mut self, raw: Value) -> Self {
-        self.raw = Some(raw);
+        self.raw = Some(Box::new(raw));
         self
     }
 
