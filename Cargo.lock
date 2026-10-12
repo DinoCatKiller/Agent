@@ -119,6 +119,7 @@ dependencies = [
  "agent-providers",
  "agent-routing",
  "agent-sessions",
+ "agent-settings",
  "agent-store",
  "agent-telemetry",
  "agent-transport",
@@ -219,7 +220,8 @@ dependencies = [
 name = "agent-settings"
 version = "0.1.0"
 dependencies = [
- "agent-common",
+ "agent-config",
+ "agent-ui-kit",
 ]
 
 [[package]]

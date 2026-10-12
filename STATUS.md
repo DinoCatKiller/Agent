@@ -24,7 +24,9 @@
 | 2 | `agent-ui-kit`：`tokens.json` → GPUI 主题桥、组件库入口（`tw!` 暂不自研，`S2` Q8） | 新建 `crates/kernel/ui-kit` | ✅ 2026-10-12 |
 | 3 | 对话界面：会话列表 / 对话区 / 输入区（复用 `ChatUi` 状态机） | `features/chat`（`gpui.rs` + `channel.rs`） | ✅ 2026-10-12 |
 | 4 | `gui` 子命令：窗口生命周期 + tokio↔GPUI 桥 | `app`（`gui.rs` + 抽出的 `worker.rs`） | ✅ 2026-10-12（待人工看窗口） |
-| 5 | 设置界面（写配置 / 存密钥） | `features/settings` | ⬜ 下一步 |
+| 5 | 设置界面（写配置 / 存密钥） | `features/settings`（`settings.rs` + `service.rs` + `ui.rs`） | ✅ 2026-10-12（`A` 语义：保存后重启生效） |
+
+本轮切片 1–5 已全部落地。**下一步待定**：`B` 方案（设置保存后立即生效）｜`GUI` §3 的 L3 CSS 层 ｜`G-3` 长会话虚拟列表 ｜`G-5` 打包分发。
 
 本轮**不做**：`GUI` §3 的 L3 CSS 兼容层（`D4` 已把它列为后期，先吃 L1 令牌）；`G-3` 长会话虚拟列表与 `G-5` 打包分发留到界面跑通之后。
 

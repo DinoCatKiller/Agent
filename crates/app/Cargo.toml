@@ -16,10 +16,12 @@ path = "src/main.rs"
 # 二期 GUI（`D3` 方案 A）：GPUI 窗口子命令 `gui`。**默认关闭**——
 # 一期 TUI 产物不该为尚未完成的 GUI 背上 GPUI 的依赖树与体积（`S2` Q6 的 ≤30MB）。
 # 门禁要跑 `--all-features`，否则这条分支不会被检查（`Q1` §5）。
-gui = ["agent-chat/gui", "dep:agent-ui-kit"]
+gui = ["agent-chat/gui", "agent-settings/gui", "dep:agent-ui-kit"]
 
 [dependencies]
 agent-chat = { workspace = true }
+# 设置切片（可选：只有 `gui` feature 才拉进来——一期 TUI 还没有设置界面）
+agent-settings = { workspace = true, optional = true }
 # 二期 GUI 的组件层（可选：只有 `gui` feature 才拉进来）
 agent-ui-kit = { workspace = true, optional = true }
 agent-common = { workspace = true }

@@ -6,9 +6,9 @@
 
 | | |
 |---|---|
-| 状态 | ✅ M4 契约冒烟 + 对话 REPL ｜ ✅ M5 `tui` 一期终端界面（会话 + 流式 + 键鼠）｜ ✅ M6 请求经 `Router` 出（降级链）｜ ✅ `X6` A1/A2 CLI `clap` + REPL `rustyline` ｜ ✅ `A6` 候选内重试 ｜ ✅ `R1` 配置文件 + 系统钥匙串 ｜ ✅ `R3` 日志初始化 + 成本计算 ｜ ✅ 二期 `gui` 子命令（GPUI 窗口，`gui` feature，2026-10-12） |
+| 状态 | ✅ M4 契约冒烟 + 对话 REPL ｜ ✅ M5 `tui` 一期终端界面（会话 + 流式 + 键鼠）｜ ✅ M6 请求经 `Router` 出（降级链）｜ ✅ `X6` A1/A2 CLI `clap` + REPL `rustyline` ｜ ✅ `A6` 候选内重试 ｜ ✅ `R1` 配置文件 + 系统钥匙串 ｜ ✅ `R3` 日志初始化 + 成本计算 ｜ ✅ 二期 `gui` 子命令（GPUI 窗口，`gui` feature，2026-10-12）｜ ✅ `gui` 内含设置页（`features/settings`，写配置 + 存钥匙串） |
 | 边界 | 组装依赖、承载 CLI 命令、终端 / 窗口生命周期。**不含**业务逻辑（都在 `features/*` 里） |
-| 上游 | `agent-common` / `agent-providers` / `agent-transport` / `agent-routing` / `agent-config` / `agent-telemetry` / `agent-chat` / `agent-sessions` / `agent-store`；`agent-ui-kit`（**仅 `gui` feature**） |
+| 上游 | `agent-common` / `agent-providers` / `agent-transport` / `agent-routing` / `agent-config` / `agent-telemetry` / `agent-chat` / `agent-sessions` / `agent-store`；`agent-ui-kit` / `agent-settings`（**仅 `gui` feature**） |
 | 下游 | 无（最终产物） |
 | 何时读 | 想跑起来看一眼、或新增 CLI 命令时 |
 
@@ -36,6 +36,9 @@ cargo run -p agent-app -- tui --provider openai-compatible --model gpt-4o
 # 二期 GUI（`D3` 方案 A）：**注意 `--features gui`**，默认构建不含 GPUI（详见下方「为什么 GUI 在 feature 后面」）
 cargo run -p agent-app --features gui -- gui --provider openai-compatible --model gpt-4o
 # 同 tui 的 --db / --config / --api-key / --base-url；窗口 1100x760，标题 CodingRocket
+# 窗口内两个标签页：**对话**（`features/chat` 的 ChatView）与**设置**（`features/settings`）。
+# 设置页写的就是 `--config` / 平台标准目录那个配置文件 + 系统钥匙串；
+# 按 `S1` 切片 5 的 `A` 语义，**保存后需要重启 `gui` 才生效**。
 ```
 
 > **终端要求（Windows）**：crossterm 的 raw mode 走 Win32 控制台 API，请在 **Windows Terminal / PowerShell / cmd** 里运行。
@@ -72,7 +75,7 @@ REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、�
 
 ## 它不能做什么
 
-- ❌ 设置界面（写配置 / 存密钥的 UI）—— 属 `features/settings`，尚未实现。
+- ❌ 设置**保存后立即生效**：`A` 语义 = 重启生效（`S1` 切片 5），B 方案的热切换未做。
 - ❌ 无钥匙串服务时的加密文件降级（`R1` 已识别该降级路径，未实现）。
 - ❌ 密钥永不入库、不打日志（硬约束 5）。
 

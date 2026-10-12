@@ -11,7 +11,12 @@
 //! 与 TUI 的关系：**同一份 worker、同一份 `ChatUi` 状态机、同一份 `Cmd`/`UiEvent`**，
 //! 差别只在渲染端（`features/chat/src/gpui.rs` vs `ui.rs`）。
 
+use std::sync::Arc;
+
 use agent_chat::{ChatService, ChatView, Cmd, StatusInfo, UiEvent};
+use agent_settings::SettingsService;
+use agent_settings::ui::SettingsView;
+use agent_ui_kit::UiTheme;
 use agent_ui_kit::kit::*;
 use tokio::sync::mpsc;
 
@@ -92,11 +97,21 @@ pub fn run(args: GuiArgs) -> i32 {
         model: args.model.clone(),
     };
 
+    // 设置面板的数据入口。定位配置目录失败不该挡启动（`R1`：配置问题不挡「跑起来」），
+    // 只是设置页不可用——所以这里降级为一句可读的提示。
+    let (settings_service, settings_error) = match SettingsService::discover() {
+        Ok(service) => (Some(Arc::new(service)), None),
+        Err(error) => (
+            None,
+            Some(format!("定位配置目录失败，设置页不可用：{error}")),
+        ),
+    };
+
     application().run(move |cx| {
         // 组件库 + 设计令牌主题（必须在开窗之前）
         agent_ui_kit::init(cx);
         open_window(window_options(), cx, |window, cx| {
-            let view = cx.new(|cx| {
+            let chat = cx.new(|cx| {
                 ChatView::new(
                     window,
                     cx,
@@ -107,7 +122,7 @@ pub fn run(args: GuiArgs) -> i32 {
             });
             // 桥：worker 的事件流 → 视图。`rx.recv().await` 在 GPUI 的执行器里轮询
             // （`X2` §8 已验证过这个形态）。
-            view.update(cx, |_view, cx| {
+            chat.update(cx, |_view, cx| {
                 cx.spawn(async move |this, cx| {
                     while let Some(event) = ui_rx.recv().await {
                         if this.update(cx, |view, cx| view.apply(event, cx)).is_err() {
@@ -117,7 +132,17 @@ pub fn run(args: GuiArgs) -> i32 {
                 })
                 .detach();
             });
-            view
+
+            let settings = settings_service
+                .as_ref()
+                .map(|service| cx.new(|cx| SettingsView::new(window, cx, service.clone())));
+
+            cx.new(|_| Shell {
+                chat,
+                settings,
+                settings_error: settings_error.clone(),
+                tab: Tab::Chat,
+            })
         })
         .expect("open window");
     });
@@ -140,4 +165,123 @@ fn window_options() -> WindowOptions {
         }),
         ..Default::default()
     }
+}
+
+// —— 外壳：标签页（对话 / 设置） ——
+//
+// 放在 `app` 是因为它**跨功能**组装两个 `features/*` 的视图（`D6`：组装归宿主）。
+// 各功能自己不知道对方存在。
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Chat,
+    Settings,
+}
+
+struct Shell {
+    chat: Entity<ChatView>,
+    /// `None` = 定位配置目录失败（原因在 `settings_error`）。
+    settings: Option<Entity<SettingsView>>,
+    settings_error: Option<String>,
+    tab: Tab,
+}
+
+impl Render for Shell {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = UiTheme::global(cx);
+        let (bg, fg, dim, border, surface, accent) = (
+            theme.colors.background,
+            theme.colors.foreground,
+            theme.colors.muted_foreground,
+            theme.colors.border,
+            theme.colors.surface,
+            theme.colors.accent,
+        );
+
+        let body = match self.tab {
+            Tab::Chat => div().flex().flex_1().min_h(px(0.)).child(self.chat.clone()),
+            Tab::Settings => match &self.settings {
+                Some(view) => div().flex().flex_1().min_h(px(0.)).child(view.clone()),
+                None => div().p_4().text_color(dim).child(
+                    self.settings_error
+                        .clone()
+                        .unwrap_or_else(|| "设置页不可用".to_string()),
+                ),
+            },
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(bg)
+            .text_color(fg)
+            .text_sm()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .px_3()
+                    .py_2()
+                    .bg(surface)
+                    .border_b_1()
+                    .border_color(border)
+                    .child(tab_button(
+                        "tab-chat",
+                        "对话",
+                        self.tab == Tab::Chat,
+                        accent,
+                        dim,
+                        cx.listener(|this, _, _, cx| this.select(Tab::Chat, cx)),
+                    ))
+                    .child(tab_button(
+                        "tab-settings",
+                        "设置",
+                        self.tab == Tab::Settings,
+                        accent,
+                        dim,
+                        cx.listener(|this, _, window, cx| this.select_settings(window, cx)),
+                    )),
+            )
+            .child(body)
+    }
+}
+
+impl Shell {
+    fn select(&mut self, tab: Tab, cx: &mut Context<Self>) {
+        self.tab = tab;
+        cx.notify();
+    }
+
+    /// 切到设置页时重新读盘：用户可能刚在外部改过（也可能刚把它改坏）。
+    fn select_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.tab = Tab::Settings;
+        if let Some(view) = self.settings.clone() {
+            view.update(cx, |view, cx| view.reload(window, cx));
+        }
+        cx.notify();
+    }
+}
+
+fn tab_button(
+    id: &'static str,
+    label: &'static str,
+    active: bool,
+    accent: Hsla,
+    dim: Hsla,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    div()
+        .id(ElementId::Name(id.into()))
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .cursor_pointer()
+        .text_color(if active { accent } else { dim })
+        .hover(|d| d.text_color(accent))
+        .on_click(on_click)
+        .child(label)
+        .into_any_element()
 }

@@ -102,7 +102,7 @@
 |----|------|------|--------|------|------|
 | — | 对话功能门面 | [`crates/features/chat/README.md`](crates/features/chat/README.md) | 改对话逻辑 / 界面时 | ~0.7k | ✅ M4–M5 |
 | — | 会话功能门面 | [`crates/features/sessions/README.md`](crates/features/sessions/README.md) | 改会话列表 / 切换时 | ~0.6k | ✅ M5 |
-| — | 设置功能门面 | [`crates/features/settings/README.md`](crates/features/settings/README.md) | 加设置项 / 改密钥录入时 | ~0.5k | ✅ 骨架 |
+| — | 设置功能门面 | [`crates/features/settings/README.md`](crates/features/settings/README.md) | 加设置项 / 改密钥录入时 | ~1.4k | ✅ A 语义 |
 | A5 | 工具调用 | [`crates/features/chat/docs/tool-calling.md`](crates/features/chat/docs/tool-calling.md) | 工具定义、并行调用、结果回填 | ~1.3k | ✅ M4 |
 | A7 | 上下文与 Token | [`crates/features/chat/docs/context-and-tokens.md`](crates/features/chat/docs/context-and-tokens.md) | 裁剪、摘要、计费 | ~1.2k | ✅ M4 |
 | A5-V | 轮次循环图（`A5`/`A7` 的可视化） | [`crates/features/chat/docs/round-map.html`](crates/features/chat/docs/round-map.html) | 想一眼看懂 run_round 与工具循环 | 1 张图 | ✅ |
