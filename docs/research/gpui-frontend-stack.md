@@ -132,7 +132,56 @@ fn main() {
 | tokio ↔ GPUI 桥 | ✅ 自研形态成立：`tokio::runtime::Runtime` 存 `Global`，任务侧 `mpsc` → GPUI 侧 `cx.spawn(async move \|this, cx\| …)` + `this.update(...)` 回写，实测 250ms/跳稳定 |
 | 版本陷阱 | `gpui-kit` 的 `gpui` 依赖是 **`gpui-pre`**（重命名）；自己单独写 `gpui = "0.2"` 会**解析到另一个包**，类型不通用。要用就写 `gpui = { package = "gpui-pre", version = "=0.3.8" }` 对齐 |
 | MSVC / SDK 下限 | VS 2019 + SDK 19041 **够用**，`X2` §2 的「SDK ≥ 10.0.20348」是 Zed 自身的要求，不是本 crate 的 |
-| 隐藏的全局副作用 | `gpui-pre` 自己声明 `serde_json/preserve_order`，**整个 workspace 生效**：`Value` 的容器由 `BTreeMap` 变 `IndexMap`（~40B → ~72B），把 `common::ProviderError` 从 120B 顶到 152B、撞上 clippy `result_large_err`。已改成 `raw: Option<Box<Value>>` 解决（`A2` §5 已记） |
+| 隐藏的全局副作用 | `gpui-pre` 自己声明 `serde_json/preserve_order`，而 feature 是**全图合一**的 → 全 workspace 的 `Value` 换布局，连锁尺寸变化见 §8.1 |
+
+### 8.1 `serde_json/preserve_order` 的连锁尺寸变化（实测 2026-10-12）
+
+`gpui-pre` 声明了 `serde_json/preserve_order`（object 容器由 `BTreeMap` 换成 `IndexMap`，
+为的是保住 JSON 的插入顺序）。cargo 的 feature 是**全图并集**、只能加不能减，
+所以这个换布局传导到全 workspace：
+
+| 类型 | 无 `preserve_order` | 有（引入 GPUI 后） |
+|------|-----|-----|
+| `serde_json::Value` | 32 B | 72 B |
+| `ToolCall`（内联 `arguments: Value`） | 104 B | 144 B |
+| `StreamEvent`（流式热路径，每个 token 搬一次） | 104 B | 144 B |
+| `ProviderError`（内联 `raw: Option<Value>`） | 112 B | **152 B** ❌ 越过 clippy `result_large_err` 的默认 128 B |
+
+**处置（2026-10-12）：不改变类型形状，改 `clippy.toml` 的门槛为 160。** 理由：
+
+1. 尺寸变化来自**外部依赖的特征合一**，不是我们的错误类型失控；为它给字段装箱，属于让外部变化改写我们的契约形状。
+2. **clippy 抓到的是小头**。它只对 `Err` 类型报警，所以点了 `ProviderError`（+40 B）；
+   而涨得同样多的 `ToolCall` / `StreamEvent`（+40 B，**每个 token 一次**）它**不报** —— 那些在 `Ok` 位置。
+3. 装箱方案评估过但未采纳：`ProviderError` 88 B、`StreamEvent` 只从 152 B 回到 144 B（8 B/事件），收益弱于「类型保持朴素」（少一层解引用、少一次堆分配）。
+
+**验证方法**（别只信「跑通了」）：门槛设 128 → 整工作区命中 **15 处**；设 160 → **0 处**。
+两个坑：① 必须用 `--workspace`——单包 `cargo clippy -p <crate>` 时 GPUI 不在子图里，
+`preserve_order` 根本没打开，lint **不会出现**；② `clippy.toml` **不在 cargo 的指纹里**，
+改完会重放上一次的缓存诊断，需 `cargo clean -p <crate>` 才能确认真生效（`Q1` §5 已记）。
+
+复跑方法：`tmp/size-probe`（不入库），把 `Cargo.toml` 里 `preserve_order` 注释/取消注释，
+跑两次 `cargo run` 对比。镜像结构体与真实类型尺寸已对齐校验。
+
+### 8.2 为什么依赖链路里是 `gpui-pre` 和第三方组件库
+
+常被问「为什么用社区版 GPUI」。查证后的答案是：**GPUI 本体是官方的，只有组件库是第三方的。**
+
+| 包 | 发布方 | 最新 | 更新节奏 |
+|----|--------|------|---------|
+| `gpui`（稳定名） | Zed 官方（repo `zed-industries/zed`，home `gpui.rs`） | 0.2.2 | 2025-10-22 之后再无发布 |
+| `gpui-pre`（预发布快照线） | 同样官方：author `Nathan Sobo <nathan@zed.dev>`，description 标注 `snapshot of zed@279fe07` | 0.3.9 | **每周一发**（0.3.5 9/14 → 0.3.9 10/12） |
+| `gpui-kit` / `gpui-component` / `gpui-base` | **第三方：longbridge**（repo `longbridge/gpui-kit`） | 0.7.1 | 跟随上游 |
+
+所以「稳定名 `gpui`」是一条**一年没更新**的旧线，Zed 自己在用的新东西走 `gpui-pre` 快照线。
+`gpui-kit` pin 死 `gpui-pre =0.3.8`，我们跟着它走 = 贴着**官方活跃线**，不是贴社区 fork。
+`X2` §5 提到的那几个社区 fork（`gpui-ce` / `gpui-unofficial`）**一个都没用**。
+
+第三方的是**组件层**（60+ 组件、Markdown/HTML 渲染、虚拟表格、Tree-sitter 编辑器），
+出自 longbridge —— 这正是 `D1` 决定「经 `gpui-kit` 间接依赖」的原因：官方没有可单独依赖的
+组件 crate（Zed 的组件在 zed 仓库内部），自己写等于把 `GUI` G-1 的全部工作量扛下来。
+
+代价与缓解：每周发版 + pre-1.0 → 破坏性变更持续存在。缓解就是 `D1`/`GUI` 定的那两条：
+**版本 pin 死**，且 **GPUI 调用只出现在 `kernel/ui-kit`** —— 升级是「改一个 crate」的事。
 
 待人工验：**中文 IME**（`InputState` 候选框 / 组合串在当前 Windows 输入法下是否正常）。
 
