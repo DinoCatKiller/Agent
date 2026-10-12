@@ -28,6 +28,26 @@
 | 系统钥匙串 | `CodingRocket` 服务，账号 `<provider>:api_key` | — |
 | 内置默认 | — | OpenAI / Anthropic 官方端点 |
 
+### 1.1 provider / model 的解析顺序（2026-10-12 补）
+
+| 项 | 顺序 |
+|----|------|
+| provider | `--provider` > 配置文件 `default_provider` > **报错退出** |
+| model | `--model` 首个 > `providers.<provider>.model` > `default_model` > **报错退出** |
+
+三点约定：
+
+1. **缺了就报错，不给猜**：模型选错是真花钱的事（`A2` §2 的精神）。报错文案要指路
+   （「在配置文件里设 `default_provider` / `default_model`」）。
+2. **通用 vs 具体的查找顺序与端点一致**：`providers.<id>.model` 优先于顶层 `default_model`，
+   和 `base_url_for` 的「供应商级 → 顶层」是同一条规则，不是两套。
+3. **降级链只由 CLI 表达**（`--model a,b`，`R2`）：配置里的默认值不带降级链。
+
+> **背景（为什么现在才写这段）**：`default_provider` / `default_model` 在 2026-10-12 之前是
+> **只写不读**的 —— 各子命令把 `--provider` / `--model` 设成必填，默认值永远轮不到，
+> 于是设置界面让用户改的两个值毫无作用。改成「CLI 可省 + 缺失报错」后它们才真正生效；
+> `model_for()` 也才第一次被 `app` 调用。
+
 ## 2. 配置文件
 
 只允许这些字段（`deny_unknown_fields`，拼错即报错）：

@@ -49,10 +49,12 @@ enum Command {
 #[derive(Args, Debug)]
 struct SessionArgs {
     /// 供应商标识：openai-compatible | anthropic。
+    /// 省略时取配置文件 `default_provider`（`R1`）。
     #[arg(long)]
-    provider: String,
+    provider: Option<String>,
     /// 主模型；逗号分隔（或重复传入）时，`b…` 为降级链（`R2`）。
-    #[arg(long, value_delimiter = ',', required = true)]
+    /// 省略时取 `providers.<provider>.model`，再回退到 `default_model`（`R1`）。
+    #[arg(long, value_delimiter = ',')]
     model: Vec<String>,
     /// 自定义端点（vLLM / 代理等）。
     #[arg(long)]
@@ -126,25 +128,26 @@ fn main() {
     }
 }
 
-/// `--model a,b` → 主模型 + 降级链；全为空串视为用法错误（clap 已保证至少一项）。
+/// CLI 参数 → **生效的** `ChatArgs`。
+///
+/// 解析策略只有一处（[`setup::resolve`]）：`--provider` / `--model` 都可省，
+/// 省了就从配置文件的 `default_provider` / `providers.<p>.model` / `default_model` 取（`R1`）；
+/// 两边都没有 → 报错退出（模型选错是真花钱的事，不能猜）。
 fn session_args_into_chat(args: SessionArgs) -> Option<ChatArgs> {
-    let mut models = args
-        .model
-        .into_iter()
-        .map(|m| m.trim().to_string())
-        .filter(|m| !m.is_empty());
-    let Some(model) = models.next() else {
-        eprintln!("错误：--model 不能为空");
-        return None;
-    };
-    Some(ChatArgs {
+    let cli = setup::ChatCli {
         provider: args.provider,
-        model,
-        fallbacks: models.collect(),
+        model: args.model,
         base_url: args.base_url,
         api_key: args.api_key,
         config: args.config,
-    })
+    };
+    match setup::resolve(&cli) {
+        Ok(chat_args) => Some(chat_args),
+        Err(message) => {
+            eprintln!("错误：{message}");
+            None
+        }
+    }
 }
 
 use agent_common::{

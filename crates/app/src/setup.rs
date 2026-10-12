@@ -32,6 +32,78 @@ pub struct ChatArgs {
     pub config: Option<String>,
 }
 
+/// `--provider` / `--model` 都可省的 CLI 参数（其余同 [`ChatArgs`]）。
+#[derive(Debug, Clone, Default)]
+pub struct ChatCli {
+    pub provider: Option<String>,
+    /// 逗号分隔的主模型 + 降级链；空 = 交给配置文件（`R1`）。
+    pub model: Vec<String>,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub config: Option<String>,
+}
+
+/// 把 CLI 参数解析成**生效的** [`ChatArgs`]。
+///
+/// 解析顺序（`R1` §优先级，2026-10-12 定）：
+///
+/// | 项 | 顺序 |
+/// |----|------|
+/// | provider | `--provider` > 配置文件 `default_provider` > **报错** |
+/// | model | `--model` 首个 > `providers.<provider>.model` > `default_model` > **报错** |
+///
+/// 为什么缺了要报错而不是随便挑一个：模型选错是**真花钱**的事，不能猜（`A2` §2 的精神）。
+/// 这也是「配置文件里的 `default_*` 终于有人读」的地方 —— 在此之前它们只写不读，
+/// 因为 CLI 曾把 provider/model 设成必填，默认值永远轮不到。
+pub fn resolve(cli: &ChatCli) -> Result<ChatArgs, String> {
+    let config = load_config(cli.config.as_deref());
+
+    let provider = match cli
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .or_else(|| config.default_provider.clone())
+    {
+        Some(provider) => provider,
+        None => {
+            return Err(
+                "没给供应商：加 --provider，或在配置文件里设 default_provider（可用：openai-compatible / anthropic）"
+                    .to_string(),
+            );
+        }
+    };
+
+    let mut models = cli
+        .model
+        .iter()
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty());
+    let first = models.next();
+    let fallbacks: Vec<String> = models.collect();
+    let model = match first
+        .or_else(|| config.model_for(&provider).map(str::to_string))
+        .or_else(|| config.default_model.clone())
+    {
+        Some(model) => model,
+        None => {
+            return Err(format!(
+                "没给模型：加 --model，或在配置文件里设 default_model 或 providers.{provider}.model"
+            ));
+        }
+    };
+
+    Ok(ChatArgs {
+        provider,
+        model,
+        fallbacks,
+        base_url: cli.base_url.clone(),
+        api_key: cli.api_key.clone(),
+        config: cli.config.clone(),
+    })
+}
+
 pub fn build_provider(args: &ChatArgs) -> Option<Arc<dyn ErasedProvider>> {
     let config = load_config(args.config.as_deref());
     // 密钥优先级（`X1` §4）：CLI 参数 > 环境变量 > 系统钥匙串。
@@ -109,6 +181,15 @@ pub fn build_provider(args: &ChatArgs) -> Option<Arc<dyn ErasedProvider>> {
                 .map(|model| (provider_id.to_string(), model.clone())),
         );
         router = router.with_route(args.model.clone(), chain);
+    } else if custom_base {
+        // 自定义端点（vLLM / 本地服务 / 代理）：我们**故意**不拦截模型清单（上面 `models: Vec::new()`），
+        // 但路由表也就没有可查的模型 → 必须显式登一条，否则请求死在
+        // 「no route for model」（README 说的「不拦清单」在这里才真正成立）。
+        // 只登当前这个模型：自定义端点下模型总是显式给出的（CLI `--model` 或配置文件）。
+        router = router.with_route(
+            args.model.clone(),
+            vec![(provider_id.to_string(), args.model.clone())],
+        );
     }
     Some(Arc::new(router) as Arc<dyn ErasedProvider>)
 }
@@ -200,5 +281,100 @@ impl Tool for Echo {
 
     fn run(&self, arguments: Value) -> futures::future::BoxFuture<'static, ToolOutput> {
         Box::pin(async move { Ok(json!({ "echo": arguments })) })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! `resolve` 的解析顺序（`R1`）：只读临时配置文件，**不碰钥匙串、不联网**（`Q1`）。
+
+    use super::*;
+
+    fn cli_at(config: &std::path::Path) -> ChatCli {
+        ChatCli {
+            config: Some(config.display().to_string()),
+            ..ChatCli::default()
+        }
+    }
+
+    fn write_config(name: &str, body: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "agent-app-setup-{}-{name}.toml",
+            std::process::id()
+        ));
+        std::fs::write(&path, body).expect("写临时配置");
+        path
+    }
+
+    #[test]
+    fn cli_beats_config() {
+        let path = write_config(
+            "cli-wins",
+            "default_provider = \"anthropic\"\ndefault_model = \"c1\"\n",
+        );
+        let mut cli = cli_at(&path);
+        cli.provider = Some("openai-compatible".into());
+        cli.model = vec!["m1".into(), "m2".into()];
+
+        let args = resolve(&cli).expect("解析");
+        assert_eq!(args.provider, "openai-compatible");
+        assert_eq!(args.model, "m1");
+        assert_eq!(args.fallbacks, vec!["m2".to_string()]);
+    }
+
+    #[test]
+    fn config_defaults_fill_in_when_cli_silent() {
+        let path = write_config(
+            "defaults",
+            "default_provider = \"anthropic\"\ndefault_model = \"claude-x\"\n",
+        );
+        let args = resolve(&cli_at(&path)).expect("解析");
+        assert_eq!(args.provider, "anthropic");
+        assert_eq!(args.model, "claude-x");
+        // 降级链只由 CLI 的 `--model a,b` 表达（`R2`），配置默认不带
+        assert!(args.fallbacks.is_empty());
+    }
+
+    #[test]
+    fn provider_level_model_beats_top_level() {
+        let path = write_config(
+            "provider-model",
+            "default_provider = \"openai-compatible\"\ndefault_model = \"top\"\n\n[providers.openai-compatible]\nmodel = \"per-provider\"\n",
+        );
+        let args = resolve(&cli_at(&path)).expect("解析");
+        assert_eq!(args.model, "per-provider");
+    }
+
+    #[test]
+    fn missing_provider_and_model_are_errors() {
+        let path = write_config("empty", "");
+        let provider_error = resolve(&cli_at(&path)).expect_err("没有 provider 应当报错");
+        assert!(
+            provider_error.contains("default_provider"),
+            "错误提示应指路：{provider_error}"
+        );
+
+        let mut cli = cli_at(&path);
+        cli.provider = Some("anthropic".into());
+        let model_error = resolve(&cli).expect_err("没有 model 应当报错");
+        assert!(
+            model_error.contains("default_model"),
+            "错误提示应指路：{model_error}"
+        );
+    }
+
+    #[test]
+    fn blank_cli_values_fall_through_to_config() {
+        let path = write_config(
+            "blank",
+            "default_provider = \"anthropic\"\ndefault_model = \"c1\"\n",
+        );
+        let mut cli = cli_at(&path);
+        cli.provider = Some("   ".into());
+        cli.model = vec!["  ".into()];
+
+        let args = resolve(&cli).expect("空白等于没给");
+        assert_eq!(args.provider, "anthropic");
+        assert_eq!(args.model, "c1");
     }
 }

@@ -21,9 +21,9 @@ cargo run -p agent-app -- --help
 # 契约层自检（7 段，断网）
 cargo run -p agent-app -- self-check
 
-# 对话 REPL（M4）
+# 对话 REPL（M4）。`--provider` / `--model` 都可省 —— 省了从配置文件取（R1）
 cargo run -p agent-app -- chat --provider openai-compatible --model gpt-4o
-cargo run -p agent-app -- chat --provider anthropic --model claude-sonnet-4-5-20250929
+cargo run -p agent-app -- chat          # 完全靠配置文件里的默认值也能起来（见下「解析顺序」）
 # 可选：--base-url（vLLM / 本地服务，传入后不做模型清单拦截）
 #       --api-key（缺省按「环境变量 → 系统钥匙串」解析，R1）
 #       --config PATH（配置文件；缺省走平台标准目录，R1）
@@ -60,6 +60,11 @@ REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、�
 
 ## 密钥与配置（`R1`）
 
+- **provider / model 的解析顺序**（`setup::resolve`，唯一入口）：
+  - provider：`--provider` > 配置文件 `default_provider` > **报错退出**（提示可用值）
+  - model：`--model` 首个 > `providers.<provider>.model` > `default_model` > **报错退出**
+  - 两边都没有就报错而不是猜 —— 模型选错是真花钱的事（`A2` §2 的精神）。降级链只由
+    `--model a,b` 表达（`R2`），配置默认值不带降级链。
 - 优先级：`--api-key` > 环境变量（`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`）> **系统钥匙串**。
 - 配置文件（TOML）**只放非敏感项**；路径用 `--config` 指定，或走平台标准目录（Windows `%APPDATA%\CodingRocket\config.toml`）。
 - 配置读不到 / 解不开 → 提示一行后**降级为默认配置继续跑**，不挡启动。
