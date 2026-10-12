@@ -75,7 +75,11 @@ impl UiTheme {
             accent: hex_or("color.accent", &c.accent, &d.accent),
             accent_foreground: hex_or("color.accentFg", &c.accent_fg, &d.accent_fg),
             destructive: hex_or("color.destructive", &c.destructive, &d.destructive),
-            destructive_foreground: hex_or("color.destructiveFg", &c.destructive_fg, &d.destructive_fg),
+            destructive_foreground: hex_or(
+                "color.destructiveFg",
+                &c.destructive_fg,
+                &d.destructive_fg,
+            ),
             border: hex_or("color.border", &c.border, &d.border),
             input: hex_or("color.input", &c.input, &d.input),
             ring: hex_or("color.ring", &c.ring, &d.ring),

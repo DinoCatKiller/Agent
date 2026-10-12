@@ -164,7 +164,11 @@ mod tests {
     fn env_var_name_depends_on_provider() {
         assert_eq!(api_key_env("anthropic"), "ANTHROPIC_API_KEY");
         assert_eq!(api_key_env("openai-compatible"), "OPENAI_API_KEY");
-        assert_eq!(api_key_env("vllm"), "OPENAI_API_KEY", "兼容族共用同一环境变量");
+        assert_eq!(
+            api_key_env("vllm"),
+            "OPENAI_API_KEY",
+            "兼容族共用同一环境变量"
+        );
     }
 
     #[test]

@@ -601,11 +601,7 @@ fn init_terminal() -> io::Result<Terminal<CrosstermBackend<io::Stdout>>> {
     // 启用鼠标捕获（点击 / 滚轮）。必须与 `TerminalGuard` 的 `DisableMouseCapture`
     // 成对：crossterm 靠「Enable 时记录的初始模式」来恢复，直接 Disable 在 Windows 上
     // 会报「Initial console modes not set」。
-    execute!(
-        stdout(),
-        terminal::EnterAlternateScreen,
-        EnableMouseCapture
-    )?;
+    execute!(stdout(), terminal::EnterAlternateScreen, EnableMouseCapture)?;
     Terminal::new(CrosstermBackend::new(stdout()))
 }
 

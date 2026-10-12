@@ -138,14 +138,20 @@ mod tests {
 
     fn temp_path(name: &str) -> PathBuf {
         let mut path = std::env::temp_dir();
-        path.push(format!("agent-config-test-{}-{name}.toml", std::process::id()));
+        path.push(format!(
+            "agent-config-test-{}-{name}.toml",
+            std::process::id()
+        ));
         path
     }
 
     #[test]
     fn missing_file_yields_default_config() {
         let paths = ConfigPaths::from_file(temp_path("missing"));
-        assert_eq!(load(&paths).expect("missing is not an error"), AppConfig::default());
+        assert_eq!(
+            load(&paths).expect("missing is not an error"),
+            AppConfig::default()
+        );
     }
 
     #[test]
@@ -203,7 +209,11 @@ mod tests {
     #[test]
     fn unknown_field_is_rejected() {
         let path = temp_path("unknown-field");
-        std::fs::write(&path, "default_model = \"m\"\napi_key = \"should-not-be-here\"\n").unwrap();
+        std::fs::write(
+            &path,
+            "default_model = \"m\"\napi_key = \"should-not-be-here\"\n",
+        )
+        .unwrap();
         let paths = ConfigPaths::from_file(&path);
         let error = load(&paths).expect_err("密钥写进配置文件必须报错");
         assert!(matches!(error, ConfigError::Parse { .. }));

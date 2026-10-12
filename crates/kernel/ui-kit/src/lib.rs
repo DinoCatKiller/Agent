@@ -19,10 +19,10 @@ pub use tokens::Tokens;
 /// GPUI 入口（gpui-kit）。它的 `*` 里带 `gpui` 的重导出，所以
 /// `use agent_ui_kit::kit::*;` 一次拿到 `div` / `Render` / `Window` 这些。
 pub use gpui_kit as kit;
-/// 组件库：`gpui-component` 的 60+ 组件。
-pub use gpui_kit::component;
 /// 行为基座：`gpui-base`（含 `SemanticThemeTokens` 等令牌类型）。
 pub use gpui_kit::base;
+/// 组件库：`gpui-component` 的 60+ 组件。
+pub use gpui_kit::component;
 
 /// UI 入口初始化：先起组件库（gpui-kit 要求 `init` 先于一切），
 /// 再把设计令牌推进 gpui-component 的主题，最后挂成全局。

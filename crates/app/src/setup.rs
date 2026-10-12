@@ -154,7 +154,8 @@ fn resolve_key(args: &ChatArgs) -> Option<SecretString> {
 ///
 /// 明文只活在这个局部值与适配器配置中：不进日志、不入库（`X1` §4 / 硬约束 5）。
 fn expose(key: &Option<SecretString>) -> Option<String> {
-    key.as_ref().map(|secret| secret.expose_secret().to_string())
+    key.as_ref()
+        .map(|secret| secret.expose_secret().to_string())
 }
 
 /// M4 的两个演示工具：证明工具循环端到端可用。真实工具集由配置层/宿主提供（M6）。
