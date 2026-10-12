@@ -29,7 +29,6 @@ fn draft_normalizes_whitespace_and_empty() {
         base_url: " https://example.test/v1 ".into(),
         proxy: String::new(),
         stream_idle_timeout_secs: " 30 ".into(),
-        api_key: "sk-should-not-land-in-settings".into(),
     };
     let settings = draft.to_settings().expect("合法草稿");
 
@@ -45,9 +44,8 @@ fn draft_normalizes_whitespace_and_empty() {
     );
     assert_eq!(settings.proxy, None);
     assert_eq!(settings.stream_idle_timeout_secs, Some(30));
-    // 草稿里的明文密钥**没有**任何路径进入 Settings —— 它只能经 `save_key` 进钥匙串
-    // （`Settings` 根本没有这个字段；这里用 Debug 兜底确认不被顺带带出）
-    assert!(!format!("{settings:?}").contains("sk-should-not-land-in-settings"));
+    // 密钥**不在** `Draft` / `Settings` 里：它按 provider 单独进钥匙串（`R1`），
+    // 「不落文件」由 `api_key_goes_to_backend_and_never_into_the_file` 守着。
 }
 
 #[test]
@@ -59,7 +57,6 @@ fn validate_reports_every_problem_at_once() {
         base_url: "example.test".into(),
         proxy: "socks4://127.0.0.1:1080".into(),
         stream_idle_timeout_secs: "99999".into(),
-        api_key: String::new(),
     };
     let errors = draft.to_settings().expect_err("应当报错");
     let fields: Vec<&str> = errors.iter().map(|e| e.field).collect();

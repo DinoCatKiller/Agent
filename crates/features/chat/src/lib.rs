@@ -45,7 +45,7 @@ pub use channel::{Cmd, UiEvent};
 pub use chat::{Chat, ChatSettings, TurnDraft};
 pub use context::trim_to_fit;
 #[cfg(feature = "gui")]
-pub use gpui::{ChatView, StatusInfo};
+pub use gpui::{ChatView, ModelChoice, StatusInfo};
 pub use repo::{RepoError, SessionMeta, SessionRepo};
 pub use service::{ChatService, LoopEvent, RoundStop, ServiceConfig};
 pub use tools::{Tool, ToolOutput, ToolSet};

@@ -239,6 +239,40 @@ fn expose(key: &Option<SecretString>) -> Option<String> {
         .map(|secret| secret.expose_secret().to_string())
 }
 
+/// 内置模型清单：`(provider, model)` 候选，供界面的模型选择器用（清单出自 `R2` 的适配器）。
+///
+/// 放在 `app` 是因为「哪个适配器 id 对应哪份清单」是**装配层知识** —— `features/*`
+/// 不认识供应商名单（`D6`）。自定义端点（传了 `--base-url`）时内置清单未必适用，
+/// 界面另有「手输模型名」的入口。
+///
+/// 只有 `gui` 用它（TUI 的模型由 `--model` / 配置决定），故随 feature 走。
+#[cfg(feature = "gui")]
+pub fn model_choices() -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for spec in agent_providers::openai_default_models() {
+        out.push(("openai-compatible".to_string(), spec.id));
+    }
+    for spec in agent_providers::anthropic_default_models() {
+        out.push(("anthropic".to_string(), spec.id));
+    }
+    out
+}
+
+/// 已知供应商 id（去重后的 [`model_choices`]）——供设置界面的「按供应商配密钥」分行用。
+///
+/// 同一份 id 列表只此一处：`ModelSpec.provider` 与适配器 id 并不一致（前者是展示名），
+/// 所以不能从适配器清单里现取。
+#[cfg(feature = "gui")]
+pub fn provider_ids() -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    for (provider, _) in model_choices() {
+        if !ids.contains(&provider) {
+            ids.push(provider);
+        }
+    }
+    ids
+}
+
 /// M4 的两个演示工具：证明工具循环端到端可用。真实工具集由配置层/宿主提供（M6）。
 pub fn demo_tools() -> ToolSet {
     ToolSet::new()

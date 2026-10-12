@@ -70,6 +70,16 @@ impl Palette {
     }
 }
 
+/// 一个可选项：供应商 + 模型。
+///
+/// **清单由宿主提供**（`app::setup::model_choices`）：`features/*` 不认识供应商名单，
+/// 那是装配层的知识（`D6`）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelChoice {
+    pub provider: String,
+    pub model: String,
+}
+
 /// 对话视图。宿主持有 `Entity<ChatView>`，用 [`ChatView::apply`] 喂事件。
 pub struct ChatView {
     /// 状态机：与 TUI 是同一个（`ui.rs`）。
@@ -83,6 +93,9 @@ pub struct ChatView {
     /// 取消令牌共享槽位（与 TUI 同一套约定：轮内不接命令，取消走槽位）。
     cancel_slot: Arc<Mutex<Option<CancellationToken>>>,
     status: StatusInfo,
+    /// 内置模型清单（宿主给的）+ 手输模型（自定义端点用）。
+    candidates: Vec<ModelChoice>,
+    custom_model: Entity<InputState>,
     sessions: Vec<SessionMeta>,
     session_id: Option<String>,
     session_title: Option<String>,
@@ -96,12 +109,15 @@ impl ChatView {
         window: &mut Window,
         cx: &mut Context<Self>,
         status: StatusInfo,
+        candidates: Vec<ModelChoice>,
         cmd_tx: tokio::sync::mpsc::Sender<Cmd>,
         cancel_slot: Arc<Mutex<Option<CancellationToken>>>,
     ) -> Self {
         let input = cx.new(|cx| {
             InputState::new(window, cx).placeholder("输入消息，Enter 发送（Shift+Enter 换行）")
         });
+        let custom_model =
+            cx.new(|cx| InputState::new(window, cx).placeholder("自定义模型名（本地端点用）"));
         // 订阅输入事件：Enter 提交。`Input` 自己处理 IME 与组合串，这里只认「按了回车」。
         let sub = cx.subscribe_in(
             &input,
@@ -126,6 +142,8 @@ impl ChatView {
             cmd_tx,
             cancel_slot,
             status,
+            candidates,
+            custom_model,
             sessions: Vec::new(),
             session_id: None,
             session_title: None,
@@ -147,6 +165,12 @@ impl ChatView {
                 self.session_title = None;
             }
             UiEvent::Loop(event) => self.ui.on_event(event),
+            // 生效组合以 worker 为准（`channel.rs` 的约定：宿主不自己猜）——
+            // 否则切换失败（缺密钥 / 供应商未知）时界面会显示成成功的
+            UiEvent::ModelChanged { provider, model } => {
+                self.status.provider = provider;
+                self.status.model = model;
+            }
             UiEvent::Rejected(message) => self.ui.rejected(message),
             UiEvent::Notice(message) => self.ui.set_notice(message),
         }
@@ -217,6 +241,42 @@ impl ChatView {
             self.session_title = None;
         }
         cx.notify();
+    }
+
+    /// 切模型：provider + model **一起**切（密钥按 provider 分别存，见 `Cmd::SelectModel`）。
+    ///
+    /// 界面**不做乐观更新**：状态栏等 worker 回 `UiEvent::ModelChanged` 才变，
+    /// 这样「缺密钥切不过去」时不会先显示成功。
+    fn pick_model(&mut self, choice: ModelChoice, cx: &mut Context<Self>) {
+        if self.ui.generating() {
+            self.ui.set_notice("生成中：先取消，再切模型".to_string());
+            cx.notify();
+            return;
+        }
+        if choice.provider == self.status.provider && choice.model == self.status.model {
+            return;
+        }
+        if self
+            .cmd_tx
+            .try_send(Cmd::SelectModel {
+                provider: choice.provider,
+                model: choice.model,
+            })
+            .is_err()
+        {
+            self.ui.set_notice("命令通道繁忙，稍后再试".to_string());
+        }
+        cx.notify();
+    }
+
+    /// 用手输的模型名切换（provider 不变）—— 自定义端点（vLLM / 本地服务）用。
+    fn use_custom_model(&mut self, cx: &mut Context<Self>) {
+        let model = self.custom_model.read(cx).value().trim().to_string();
+        if model.is_empty() {
+            return;
+        }
+        let provider = self.status.provider.clone();
+        self.pick_model(ModelChoice { provider, model }, cx);
     }
 
     /// `ChatUi` 说「跟随底部」（`scroll() == None`）时把转录吸到底。
@@ -376,6 +436,7 @@ impl ChatView {
             .p_2()
             .border_t_1()
             .border_color(p.border)
+            .child(self.model_picker(cx, p))
             .child(Input::new(&self.input))
             .child(
                 div()
@@ -403,6 +464,77 @@ impl ChatView {
             )
             .into_any_element()
     }
+
+    /// 一行模型选择：内置清单的 chip + 手输模型名（自定义端点用）。
+    ///
+    /// 点 chip = `Cmd::SelectModel { provider, model }`：**一起切** —— 密钥按 provider 存，
+    /// 换 provider 必须连带重建 provider 实例（见 `channel.rs`）。
+    fn model_picker(&self, cx: &mut Context<Self>, p: Palette) -> AnyElement {
+        let current_provider = self.status.provider.clone();
+        let current_model = self.status.model.clone();
+        let mut row = div()
+            .id("model-picker")
+            .flex()
+            .flex_row()
+            .flex_wrap()
+            .items_center()
+            .gap_1()
+            .max_h(px(76.))
+            .overflow_y_scroll()
+            .child(div().text_xs().text_color(p.dim).child("模型"));
+
+        for choice in self.candidates.clone() {
+            let selected = choice.provider == current_provider && choice.model == current_model;
+            let label = format!("{}·{}", short_provider(&choice.provider), choice.model);
+            row = row.child(chip(
+                &label,
+                selected,
+                p,
+                cx.listener(move |this, _, _, cx| this.pick_model(choice.clone(), cx)),
+            ));
+        }
+
+        row.child(
+            div()
+                .flex_1()
+                .min_w(px(120.))
+                .child(Input::new(&self.custom_model)),
+        )
+        .child(
+            Button::new("use-custom-model")
+                .label("用这个")
+                .on_click(cx.listener(|this, _, _, cx| this.use_custom_model(cx))),
+        )
+        .into_any_element()
+    }
+}
+
+/// 模型 chip：当前生效的那个用强调色描出来。
+fn chip(
+    label: &str,
+    selected: bool,
+    p: Palette,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    div()
+        .id(ElementId::Name(label.to_string().into()))
+        .px_2()
+        .py_0p5()
+        .rounded_md()
+        .cursor_pointer()
+        .text_xs()
+        .border_1()
+        .border_color(if selected { p.accent } else { p.border })
+        .text_color(if selected { p.accent } else { p.fg })
+        .hover(|d| d.text_color(p.accent))
+        .on_click(on_click)
+        .child(label.to_string())
+        .into_any_element()
+}
+
+/// 供应商短名（chip 上省地方）：`openai-compatible` → `openai`。
+fn short_provider(provider: &str) -> &str {
+    provider.strip_suffix("-compatible").unwrap_or(provider)
 }
 
 /// 一条转录条目 → 一行 element。前缀与配色与 ratatui 端保持一致（`ui.rs::entry_line`）。

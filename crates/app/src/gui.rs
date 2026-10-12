@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use agent_chat::{ChatService, ChatView, Cmd, StatusInfo, UiEvent};
+use agent_chat::{ChatView, Cmd, ModelChoice, StatusInfo, UiEvent};
 use agent_settings::SettingsService;
 use agent_settings::ui::SettingsView;
 use agent_ui_kit::UiTheme;
@@ -65,8 +65,10 @@ pub fn run(args: GuiArgs) -> i32 {
         }
     };
 
-    let model = args.model.clone();
-    let service = ChatService::new(provider, setup::demo_tools());
+    // 生效组合（provider + model）与「重建 provider 的上下文」——界面里切模型时 worker 用它。
+    // 初始 provider 在宿主先构造好：未知供应商能在开窗口之前就退出（`R1`）。
+    let selection = worker::Selection::new(chat_args.provider.clone(), chat_args.model.clone());
+    let factory = worker::ProviderFactory::new(&chat_args, setup::demo_tools());
 
     // 后台 runtime：worker 跑在这里，UI 线程只收事件。
     let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -84,8 +86,9 @@ pub fn run(args: GuiArgs) -> i32 {
     let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(32);
     let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<UiEvent>();
     runtime.spawn(worker::run_worker(
-        model,
-        service,
+        selection,
+        provider,
+        factory,
         repo,
         cancel_slot.clone(),
         cmd_rx,
@@ -96,6 +99,8 @@ pub fn run(args: GuiArgs) -> i32 {
         provider: args.provider.clone(),
         model: args.model.clone(),
     };
+    // 选择器的候选清单：装配层给（`features/*` 不认识供应商名单）
+    let model_choices = setup::model_choices();
 
     // 设置面板的数据入口。定位配置目录失败不该挡启动（`R1`：配置问题不挡「跑起来」），
     // 只是设置页不可用——所以这里降级为一句可读的提示。
@@ -116,6 +121,13 @@ pub fn run(args: GuiArgs) -> i32 {
                     window,
                     cx,
                     status.clone(),
+                    model_choices
+                        .iter()
+                        .map(|(provider, model)| ModelChoice {
+                            provider: provider.clone(),
+                            model: model.clone(),
+                        })
+                        .collect(),
                     cmd_tx.clone(),
                     cancel_slot.clone(),
                 )
@@ -133,9 +145,9 @@ pub fn run(args: GuiArgs) -> i32 {
                 .detach();
             });
 
-            let settings = settings_service
-                .as_ref()
-                .map(|service| cx.new(|cx| SettingsView::new(window, cx, service.clone())));
+            let settings = settings_service.as_ref().map(|service| {
+                cx.new(|cx| SettingsView::new(window, cx, service.clone(), setup::provider_ids()))
+            });
 
             cx.new(|_| Shell {
                 chat,

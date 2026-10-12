@@ -20,6 +20,12 @@ pub enum Cmd {
     Load { id: String, title: String },
     /// 新建空会话。
     New,
+    /// 切换生效的 provider + model（运行中切换；生成中会被拒绝）。
+    ///
+    /// 按**组合**切而不是只切模型：密钥按 provider 分别存
+    /// （`R1`：钥匙串账号 `<provider>:api_key`），换 provider 必须连带重建 provider 实例
+    /// 以重新取密钥。
+    SelectModel { provider: String, model: String },
 }
 
 /// worker → UI 的事件通道。
@@ -33,6 +39,11 @@ pub enum UiEvent {
     Cleared,
     /// 编排事件原样转发（`A5` 的 `LoopEvent`）。
     Loop(LoopEvent),
+    /// 生效的 provider / model 变了（启动时发一次，之后每次切换都发）。
+    ///
+    /// **worker 是唯一真相源**：宿主只跟着更新状态栏与选择器，不自己猜 ——
+    /// 否则切换失败（缺密钥、供应商未知）时界面会显示成成功的。
+    ModelChanged { provider: String, model: String },
     /// `run_round` 同步 fast-fail。
     Rejected(String),
     /// 杂项提示（生成中不可切换、落盘失败…）。

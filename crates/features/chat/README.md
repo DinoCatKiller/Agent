@@ -44,6 +44,16 @@ UI 的接入约定（`D3`「事件流 + 命令通道」）：`ChatUi::on_event` 
 内部仍是同一个 `ChatUi`——两个渲染端的回滚、提交边界、工具状态因此完全一致。
 运行：`cargo run -p agent-app --features gui -- gui --provider … --model …`。
 
+**运行中切模型**（`channel.rs` 的 `Cmd::SelectModel` / `UiEvent::ModelChanged`）：
+按 **(provider, model) 组合**切，不是只切模型——密钥按 provider 分别存（`R1`），
+换 provider 必须连带重建 provider 实例。两条约定：
+
+- **生成中不许切**（`busy` 时回一条 `Notice`）：切在「轮边界」上，与 `A` 方案的语义一致；
+- **界面不做乐观更新**：状态栏与选择器等 worker 回播 `ModelChanged` 才变，
+  这样「缺密钥导致切不过去」时不会先显示成成功。
+
+候选清单由宿主给（[`ModelChoice`]）：`features/*` 不认识供应商名单，那是装配层的知识（`D6`）。
+
 两条铁律（改这里之前必读）：
 
 1. **只在 `End` 后入史**：增量攒在 `TurnDraft`，取消 / 出错丢弃即回滚（截断是 `End{Truncated}`，照常入史——那是用户看到的输出）。`ui.rs` 的显示回滚与它对齐：`ModelTurnEnded` 是提交边界。

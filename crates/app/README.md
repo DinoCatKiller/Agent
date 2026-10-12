@@ -37,8 +37,10 @@ cargo run -p agent-app -- tui --provider openai-compatible --model gpt-4o
 cargo run -p agent-app --features gui -- gui --provider openai-compatible --model gpt-4o
 # 同 tui 的 --db / --config / --api-key / --base-url；窗口 1100x760，标题 CodingRocket
 # 窗口内两个标签页：**对话**（`features/chat` 的 ChatView）与**设置**（`features/settings`）。
-# 设置页写的就是 `--config` / 平台标准目录那个配置文件 + 系统钥匙串；
-# 按 `S1` 切片 5 的 `A` 语义，**保存后需要重启 `gui` 才生效**。
+# 对话页底部有**模型选择器**：内置清单的 chip（`openai·gpt-4o` 这样）+ 手输模型名
+#   （自定义端点用）。点 chip = 切 (provider, model)，**生成中不可切**，切换即时生效。
+# 设置页每行是**一个供应商的 API Key**（钥匙串按 `<provider>:api_key` 存）；
+#   配置项（默认供应商 / 模型 / 端点 / 代理 / 超时）按 `A` 语义**重启后生效**。
 ```
 
 > **终端要求（Windows）**：crossterm 的 raw mode 走 Win32 控制台 API，请在 **Windows Terminal / PowerShell / cmd** 里运行。
@@ -66,7 +68,8 @@ REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、�
   - 两边都没有就报错而不是猜 —— 模型选错是真花钱的事（`A2` §2 的精神）。降级链只由
     `--model a,b` 表达（`R2`），配置默认值不带降级链。
 - 优先级：`--api-key` > 环境变量（`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`）> **系统钥匙串**。
-- 配置文件（TOML）**只放非敏感项**；路径用 `--config` 指定，或走平台标准目录（Windows `%APPDATA%\CodingRocket\config.toml`）。
+- 配置文件（TOML）**只放非敏感项**；路径用 `--config` 指定，或走平台标准目录
+  （Windows `%APPDATA%\CodingRocket\config\config.toml` —— 注意 `config` 目录 + `config.toml` 文件名）。
 - 配置读不到 / 解不开 → 提示一行后**降级为默认配置继续跑**，不挡启动。
 - 细节、安全约定与 `keyring` 的坑 → `R1`。
 

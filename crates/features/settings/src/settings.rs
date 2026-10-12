@@ -90,9 +90,8 @@ impl Settings {
 
 /// 界面草稿：字段都是字符串（输入框的天然形态），保存时转成 [`Settings`]。
 ///
-/// **`api_key` 的明文只活在这个结构里的一小段时间**：它不是 [`Settings`] 的一部分（不进
-/// 配置文件）、没有 `Debug` 实现（不会被顺手 `{:?}` 打出来）、保存后由界面清空。
-/// 已存进钥匙串的密钥**不回显**——界面只显示「已配置 / 未配置」。
+/// **不含密钥**：密钥按供应商分别进钥匙串（账号 `<provider>:api_key`，`R1`），
+/// 界面上的「新密钥」输入框是临时的，保存后即清空、已存值不回显。
 #[derive(Clone, Default)]
 pub struct Draft {
     pub default_provider: String,
@@ -100,7 +99,6 @@ pub struct Draft {
     pub base_url: String,
     pub proxy: String,
     pub stream_idle_timeout_secs: String,
-    pub api_key: String,
 }
 
 impl Draft {
@@ -115,7 +113,6 @@ impl Draft {
                 .stream_idle_timeout_secs
                 .map(|s| s.to_string())
                 .unwrap_or_default(),
-            api_key: String::new(),
         }
     }
 

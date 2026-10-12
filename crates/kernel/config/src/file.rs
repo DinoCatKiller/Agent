@@ -57,8 +57,9 @@ pub struct ProviderConfig {
 
 /// 配置文件位置。
 ///
-/// 默认走平台标准目录（Windows `%APPDATA%\CodingRocket\config.toml`、
-/// macOS `~/Library/Application Support/CodingRocket/`、Linux `~/.config/CodingRocket/`）；
+/// 默认走平台标准目录（Windows `%APPDATA%\CodingRocket\config\config.toml` ——
+/// 注意 `config` 子目录与文件名同名、macOS `~/Library/Application Support/CodingRocket/`、
+/// Linux `~/.config/CodingRocket/`）；
 /// 宿主可用 CLI 参数显式指定（[`ConfigPaths::from_file`]）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigPaths {

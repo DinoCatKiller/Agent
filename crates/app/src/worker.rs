@@ -11,12 +11,15 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use agent_chat::channel::{Cmd, UiEvent};
-use agent_chat::{Chat, ChatService, SessionMeta, SessionRepo};
+use agent_chat::{Chat, ChatService, SessionMeta, SessionRepo, ToolSet};
+use agent_providers::ErasedProvider;
 use agent_sessions::session::derive_title;
 use agent_store::Store;
 use futures::StreamExt;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+
+use crate::setup::{self, ChatArgs};
 
 /// 取消令牌的共享槽位。
 ///
@@ -35,21 +38,101 @@ pub fn cancel_slot() -> CancelSlot {
     Arc::new(Mutex::new(None))
 }
 
+/// 生效的 provider + model（用户可随时切，见 [`Cmd::SelectModel`]）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selection {
+    pub provider: String,
+    pub model: String,
+}
+
+impl Selection {
+    pub fn new(provider: impl Into<String>, model: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            model: model.into(),
+        }
+    }
+
+    /// `openai-compatible / gpt-4o` —— 状态栏与提示用。
+    pub fn label(&self) -> String {
+        format!("{} / {}", self.provider, self.model)
+    }
+}
+
+/// 重建 provider 的上下文（切换 provider / model 时用）。
+///
+/// 一个必须讲清楚的细节：**CLI 的 `--api-key` 只对启动时那个 provider 有效**。
+/// 换到别家还带着它，等于把 A 家的密钥送给 B 家 —— `R1` 的优先级里 CLI 最高，
+/// 会盖过钥匙串里 B 家正确的那把。所以只在 provider 相同时沿用。
+pub struct ProviderFactory {
+    base_url: Option<String>,
+    api_key: Option<String>,
+    api_key_provider: String,
+    config: Option<String>,
+    tools: ToolSet,
+}
+
+impl ProviderFactory {
+    pub fn new(cli: &ChatArgs, tools: ToolSet) -> Self {
+        Self {
+            base_url: cli.base_url.clone(),
+            api_key: cli.api_key.clone(),
+            api_key_provider: cli.provider.clone(),
+            config: cli.config.clone(),
+            tools,
+        }
+    }
+
+    /// 工具集（每次重建 `ChatService` 都要一份）。
+    pub fn tools(&self) -> ToolSet {
+        self.tools.clone()
+    }
+
+    /// 为某个选择构造 provider。`None` = 未知供应商（`build_provider` 已打印原因）。
+    pub fn build(&self, selection: &Selection) -> Option<Arc<dyn ErasedProvider>> {
+        let args = ChatArgs {
+            provider: selection.provider.clone(),
+            model: selection.model.clone(),
+            // 切换后的组合只有这一个候选：降级链是 CLI 的概念（`R2`），界面不参与
+            fallbacks: Vec::new(),
+            base_url: self.base_url.clone(),
+            api_key: if selection.provider == self.api_key_provider {
+                self.api_key.clone()
+            } else {
+                None
+            },
+            config: self.config.clone(),
+        };
+        setup::build_provider(&args)
+    }
+}
+
 /// worker 主循环。宿主自己决定怎么起它：
 /// TUI 走 `tokio::spawn`，GPUI 走后台 runtime 的 `runtime.spawn`。
+///
+/// `initial_provider` 由宿主先构造并校验（未知供应商能在开窗口之前退出），
+/// 之后的切换一律走 `factory` 重建 —— 因为换 provider 意味着换密钥。
 pub async fn run_worker(
-    model: String,
-    service: ChatService,
+    selection: Selection,
+    initial_provider: Arc<dyn ErasedProvider>,
+    factory: ProviderFactory,
     repo: SessionRepo,
     cancel_slot: CancelSlot,
     mut cmd_rx: mpsc::Receiver<Cmd>,
     ui_tx: mpsc::UnboundedSender<UiEvent>,
 ) {
-    let mut chat = Chat::new(model);
+    let mut current = selection.clone();
+    let mut service = ChatService::new(initial_provider, factory.tools());
+    let mut chat = Chat::new(current.model.clone());
     // (session_id, title)；首次落盘时创建。
     let mut session: Option<(String, String)> = None;
     // 是否有一轮进行中（New / Load / Submit 互斥的依据）——以 cancel_slot 是否持有令牌为准。
     let busy = || cancel_slot.lock().expect("cancel slot").is_some();
+    // 先播报一次生效组合：宿主的状态栏与选择器**以 worker 为准**，不自己猜
+    let _ = ui_tx.send(UiEvent::ModelChanged {
+        provider: current.provider.clone(),
+        model: current.model.clone(),
+    });
     let _ = ui_tx.send(UiEvent::Sessions(repo_list(&repo).await));
 
     while let Some(cmd) = cmd_rx.recv().await {
@@ -87,6 +170,12 @@ pub async fn run_worker(
                 };
                 chat = loaded;
                 session = Some((id, title.clone()));
+                // 会话自带模型：跟着它走，并让界面显示真相（provider 是宿主级选择，不随会话变）
+                current.model = chat.model.clone();
+                let _ = ui_tx.send(UiEvent::ModelChanged {
+                    provider: current.provider.clone(),
+                    model: current.model.clone(),
+                });
                 let _ = ui_tx.send(UiEvent::SessionLoaded {
                     title,
                     chat: chat.clone(),
@@ -145,6 +234,36 @@ pub async fn run_worker(
                     }
                 }
                 let _ = ui_tx.send(UiEvent::Sessions(repo_list(&repo).await));
+            }
+            Cmd::SelectModel { provider, model } => {
+                let next = Selection::new(provider, model);
+                if next == current {
+                    continue;
+                }
+                if busy() {
+                    let _ = ui_tx.send(UiEvent::Notice("生成中，先取消再切模型".into()));
+                    continue;
+                }
+                match factory.build(&next) {
+                    Some(provider) => {
+                        // 同一会话换模型：历史保留，**下一轮**用新模型
+                        // （`Chat::request` 读的就是 `chat.model`）。
+                        service = ChatService::new(provider, factory.tools());
+                        chat.model = next.model.clone();
+                        current = next;
+                        let _ = ui_tx.send(UiEvent::ModelChanged {
+                            provider: current.provider.clone(),
+                            model: current.model.clone(),
+                        });
+                    }
+                    None => {
+                        // 构造失败的原因 `build_provider` 已打印（缺密钥 / 未知供应商）
+                        let _ = ui_tx.send(UiEvent::Notice(format!(
+                            "切到 {} 失败：供应商未知或构造 provider 失败",
+                            next.label()
+                        )));
+                    }
+                }
             }
         }
     }

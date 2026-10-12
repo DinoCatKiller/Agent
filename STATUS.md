@@ -34,6 +34,14 @@
 
 ## 上一阶段
 
+- **运行中切模型 + 多份密钥（2026-10-12）**：补齐「配置多个密钥、随手切模型」。
+  ①`channel.rs` 加 `Cmd::SelectModel` / `UiEvent::ModelChanged`——按 **(provider, model) 组合**切
+  （密钥按 provider 存，换家必须重建 provider），生成中拒绝、界面不做乐观更新（以 worker 播报为准）；
+  ②worker 持有 `ProviderFactory`，切换时重建；`--api-key` **只对启动时那个 provider 有效**
+  （否则会把 A 家的密钥送给 B 家）；③GPUI 加模型选择器（内置清单 chip + 手输模型名）；
+  ④设置界面改为**每供应商一行密钥**；`Draft` 去掉密钥字段。
+  顺带修两处：测试夹具读了开发者本机真实配置（治本：测试用空配置，`config` 显式指向临时文件）；
+  文档里的配置路径少写一层（真实是 `%APPDATA%\CodingRocket\config\config.toml`）。
 - **二期 GUI 启动轮（2026-10-12）**：`D3` 方案 A 落地 —— ①可行性探针（编译 / 起窗口 / tokio 桥全通，`X2` §8）；②新建 `kernel/ui-kit`（令牌 → GPUI 主题桥）；③`features/chat` 的 GPUI 渲染端（`gpui.rs` + `channel.rs`，通道契约上移到切片）；④`app` 的 `gui` 子命令（`gui.rs` + 抽出的 `worker.rs`，`gui` feature 默认关）；⑤设置界面（`features/settings` 三件套，`A` 语义）。顺带修掉两处「只写不读」：`default_provider` / `default_model` 现在真生效（`R1` §1.1），自定义端点不再死在 `no route for model`。
 - **补规格文档（2026-10-11）**：`R3`（可观测性与成本 —— 结论是新建 `kernel/telemetry` 骨架）、`Q2`（效果评测与回归）、`Q3`（安全与合规）。均先立约定，实现随各自触发条件。
 - **定名落地（2026-10-11）**：只改用户可见那一层 —— 可执行文件名 `agent-app` → **`codingrocket`**；crate 包名维持 `agent-*`（内部技术名）。
