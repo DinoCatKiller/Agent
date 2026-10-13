@@ -17,6 +17,7 @@ use agent_chat::{ChatView, Cmd, ModelChoice, StatusInfo, UiEvent};
 use agent_settings::SettingsService;
 use agent_settings::ui::SettingsView;
 use agent_ui_kit::UiTheme;
+use agent_ui_kit::kit::assets::Assets;
 use agent_ui_kit::kit::*;
 use tokio::sync::mpsc;
 
@@ -100,7 +101,7 @@ pub fn run(args: GuiArgs) -> i32 {
         model: args.model.clone(),
     };
     // 选择器的候选清单：装配层给（`features/*` 不认识供应商名单）
-    let model_choices = setup::model_choices();
+    let model_choices = setup::model_choices(&chat_args);
 
     // 设置面板的数据入口。定位配置目录失败不该挡启动（`R1`：配置问题不挡「跑起来」），
     // 只是设置页不可用——所以这里降级为一句可读的提示。
@@ -112,7 +113,10 @@ pub fn run(args: GuiArgs) -> i32 {
         ),
     };
 
-    application().run(move |cx| {
+    // `.with_assets` 不是可选项：GPUI 默认的 asset source 是 `impl AssetSource for ()`
+    // （空实现），不带它**所有 SVG 图标都画不出来**（勾、放大镜、下拉箭头全空白）。
+    // `Assets` 是组件库的默认图标包（106 个，够用且比 `AllAssets` 小）。
+    application().with_assets(Assets).run(move |cx| {
         // 组件库 + 设计令牌主题（必须在开窗之前）
         agent_ui_kit::init(cx);
         open_window(window_options(), cx, |window, cx| {

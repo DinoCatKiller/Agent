@@ -15,8 +15,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use agent_ui_kit::UiTheme;
-use agent_ui_kit::component::button::Button;
+use agent_ui_kit::component::button::{Button, ButtonVariants as _};
 use agent_ui_kit::component::input::{Input, InputEvent, InputState};
+use agent_ui_kit::component::list::ListItem;
+use agent_ui_kit::component::popover::{Popover, PopoverState};
+use agent_ui_kit::component::{Icon, IconName};
 use agent_ui_kit::kit::prelude::FluentBuilder as _;
 use agent_ui_kit::kit::*;
 use tokio_util::sync::CancellationToken;
@@ -93,14 +96,23 @@ pub struct ChatView {
     /// 取消令牌共享槽位（与 TUI 同一套约定：轮内不接命令，取消走槽位）。
     cancel_slot: Arc<Mutex<Option<CancellationToken>>>,
     status: StatusInfo,
-    /// 内置模型清单（宿主给的）+ 手输模型（自定义端点用）。
+    /// 候选清单（宿主给的，见 `ModelChoice`）+ 手输模型名（空态时把它当模型名用）。
     candidates: Vec<ModelChoice>,
-    custom_model: Entity<InputState>,
+    /// 模型选择器的搜索框。**必须在 `new` 里建一次**：`Popover::content` 每帧都重渲染，
+    /// 在里面 `cx.new` 会每帧造一个 entity（`popover.rs:250` 明确警告）。
+    model_search: Entity<InputState>,
+    /// 弹层开关。受控：`.open(..)` 读它，`.on_open_change(..)` 写它——这样"点条目后关闭"
+    /// 才由我们说了算（否则只能等点面板外面）。
+    model_menu_open: bool,
+    /// 弹层里模型列表的滚动句柄。
+    model_scroll: ScrollHandle,
     sessions: Vec<SessionMeta>,
     session_id: Option<String>,
     session_title: Option<String>,
     /// 订阅必须持有，drop 即取消订阅。
     _sub: Subscription,
+    /// 搜索框订阅（内容一变就重渲染 → 重新过滤）。同上，必须持有。
+    _search_sub: Subscription,
 }
 
 impl ChatView {
@@ -116,8 +128,7 @@ impl ChatView {
         let input = cx.new(|cx| {
             InputState::new(window, cx).placeholder("输入消息，Enter 发送（Shift+Enter 换行）")
         });
-        let custom_model =
-            cx.new(|cx| InputState::new(window, cx).placeholder("自定义模型名（本地端点用）"));
+        let model_search = cx.new(|cx| InputState::new(window, cx).placeholder("搜索模型…"));
         // 订阅输入事件：Enter 提交。`Input` 自己处理 IME 与组合串，这里只认「按了回车」。
         let sub = cx.subscribe_in(
             &input,
@@ -128,6 +139,16 @@ impl ChatView {
                     && !shift
                 {
                     this.submit(window, cx);
+                }
+            },
+        );
+        // 搜索框只用来过滤候选：内容一变就重渲染，过滤在渲染期算（见 `model_capsule`）。
+        let search_sub = cx.subscribe_in(
+            &model_search,
+            window,
+            |_this, _state, event: &InputEvent, _window, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
                 }
             },
         );
@@ -143,11 +164,14 @@ impl ChatView {
             cancel_slot,
             status,
             candidates,
-            custom_model,
+            model_search,
+            model_menu_open: false,
+            model_scroll: ScrollHandle::new(),
             sessions: Vec::new(),
             session_id: None,
             session_title: None,
             _sub: sub,
+            _search_sub: search_sub,
         }
     }
 
@@ -269,9 +293,11 @@ impl ChatView {
         cx.notify();
     }
 
-    /// 用手输的模型名切换（provider 不变）—— 自定义端点（vLLM / 本地服务）用。
-    fn use_custom_model(&mut self, cx: &mut Context<Self>) {
-        let model = self.custom_model.read(cx).value().trim().to_string();
+    /// 用**手输的模型名**切换（provider 不变）—— 自定义端点（vLLM / 本地服务）用。
+    ///
+    /// 入口在弹层的空态里：搜不到任何候选时，把搜索框里那串字当成模型名。
+    fn use_model_name(&mut self, model: String, cx: &mut Context<Self>) {
+        let model = model.trim().to_string();
         if model.is_empty() {
             return;
         }
@@ -436,7 +462,7 @@ impl ChatView {
             .p_2()
             .border_t_1()
             .border_color(p.border)
-            .child(self.model_picker(cx, p))
+            .child(self.model_capsule(cx, p))
             .child(Input::new(&self.input))
             .child(
                 div()
@@ -465,74 +491,201 @@ impl ChatView {
             .into_any_element()
     }
 
-    /// 一行模型选择：内置清单的 chip + 手输模型名（自定义端点用）。
+    /// 输入条上方的模型选择器：一个胶囊 + 受控弹层（搜索 / 按供应商分组 / 打勾 / 管理模型）。
     ///
-    /// 点 chip = `Cmd::SelectModel { provider, model }`：**一起切** —— 密钥按 provider 存，
-    /// 换 provider 必须连带重建 provider 实例（见 `channel.rs`）。
-    fn model_picker(&self, cx: &mut Context<Self>, p: Palette) -> AnyElement {
-        let current_provider = self.status.provider.clone();
-        let current_model = self.status.model.clone();
-        let mut row = div()
-            .id("model-picker")
-            .flex()
-            .flex_row()
-            .flex_wrap()
-            .items_center()
-            .gap_1()
-            .max_h(px(76.))
-            .overflow_y_scroll()
-            .child(div().text_xs().text_color(p.dim).child("模型"));
+    /// 语义与 TUI 一致：点一项发 `Cmd::SelectModel { provider, model }` —— **一起切**
+    /// （密钥按 provider 存，换 provider 必须连带重建实例，见 `channel.rs`）。
+    /// 界面**不做乐观更新**：状态栏等 worker 回 `UiEvent::ModelChanged` 才变。
+    fn model_capsule(&self, cx: &mut Context<Self>, p: Palette) -> AnyElement {
+        let entity = cx.entity();
+        let search = self.model_search.clone();
+        let scroll = self.model_scroll.clone();
+        let open = self.model_menu_open;
+        let generating = self.ui.generating();
 
-        for choice in self.candidates.clone() {
-            let selected = choice.provider == current_provider && choice.model == current_model;
-            let label = format!("{}·{}", short_provider(&choice.provider), choice.model);
-            row = row.child(chip(
-                &label,
-                selected,
-                p,
-                cx.listener(move |this, _, _, cx| this.pick_model(choice.clone(), cx)),
-            ));
+        // 过滤 + 按 provider 分组。候选几十到几百条，每帧重算足够。
+        let query = self.model_search.read(cx).value().trim().to_lowercase();
+        let typed = self.model_search.read(cx).value().trim().to_string();
+        let mut groups: Vec<(String, Vec<ModelChoice>)> = Vec::new();
+        for choice in &self.candidates {
+            let hit = query.is_empty()
+                || choice.model.to_lowercase().contains(&query)
+                || choice.provider.to_lowercase().contains(&query);
+            if !hit {
+                continue;
+            }
+            match groups.last_mut() {
+                // 去重：同一 (provider, model) 只留一条（行的 ElementId 由二者拼成）。
+                Some((provider, rows))
+                    if provider == &choice.provider
+                        && !rows.iter().any(|row| row.model == choice.model) =>
+                {
+                    rows.push(choice.clone());
+                }
+                Some(_) => {}
+                None => groups.push((choice.provider.clone(), vec![choice.clone()])),
+            }
         }
 
-        row.child(
+        let current_provider = self.status.provider.clone();
+        let current_model = self.status.model.clone();
+        let (border, dim, accent) = (p.border, p.dim, p.accent);
+
+        // `content` 是 `move` 闭包，会按值吃掉 `entity` —— 先留一份给 `on_open_change`。
+        let content_entity = entity.clone();
+        let content = move |_state: &mut PopoverState,
+                            _window: &mut Window,
+                            _cx: &mut Context<PopoverState>| {
+            let mut list = div()
+                .id("model-list")
+                .flex()
+                .flex_col()
+                .max_h(px(320.))
+                .overflow_y_scroll()
+                .track_scroll(&scroll);
+
+            for (provider, rows) in &groups {
+                list = list.child(
+                    div()
+                        .px_2()
+                        .pt_2()
+                        .pb_1()
+                        .text_xs()
+                        .text_color(dim)
+                        .child(short_provider(provider).to_string()),
+                );
+                for choice in rows {
+                    let is_current =
+                        choice.provider == current_provider && choice.model == current_model;
+                    let label = choice.model.clone();
+                    let id = format!("model::{}::{}", choice.provider, choice.model);
+                    let choice = choice.clone();
+                    let entity = content_entity.clone();
+                    list = list.child(
+                        ListItem::new(SharedString::from(id))
+                            .selected(is_current)
+                            // `check_icon` 只在 `confirmed` 为真时才画勾（`list_item.rs:245`）
+                            .confirmed(is_current)
+                            .check_icon(IconName::Check)
+                            .on_click(move |_, _, cx| {
+                                entity.update(cx, |view, cx| {
+                                    view.model_menu_open = false;
+                                    if generating {
+                                        view.ui.set_notice("生成中：先取消，再切模型".to_string());
+                                    } else {
+                                        view.pick_model(choice.clone(), cx);
+                                    }
+                                    cx.notify();
+                                });
+                            })
+                            .child(label),
+                    );
+                }
+            }
+
+            if groups.is_empty() {
+                if typed.is_empty() {
+                    list = list.child(
+                        div()
+                            .px_2()
+                            .py_2()
+                            .text_xs()
+                            .text_color(dim)
+                            .child("没有候选模型（宿主清单为空）"),
+                    );
+                } else {
+                    // 搜不到 → 直接把这串字当模型名（自定义端点常见：服务端有不认识的模型）
+                    let name = typed.clone();
+                    let entity = content_entity.clone();
+                    list = list.child(
+                        ListItem::new("model-use-typed")
+                            .on_click(move |_, _, cx| {
+                                entity.update(cx, |view, cx| {
+                                    view.model_menu_open = false;
+                                    view.use_model_name(name.clone(), cx);
+                                    cx.notify();
+                                });
+                            })
+                            .child(div().text_color(accent).child(format!("使用「{typed}」"))),
+                    );
+                }
+            }
+
+            // 底部：管理模型（切片 B 接「开关 + 落盘」）
+            list = list.child(div().h(px(1.)).bg(border)).child(
+                ListItem::new("model-manage")
+                    .on_click({
+                        let entity = content_entity.clone();
+                        move |_, _, cx| {
+                            entity.update(cx, |view, cx| {
+                                view.model_menu_open = false;
+                                view.ui.set_notice("管理模型：下一步接入".to_string());
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(Icon::new(IconName::Settings2).text_color(dim))
+                            .child("管理模型"),
+                    ),
+            );
+
             div()
-                .flex_1()
-                .min_w(px(120.))
-                .child(Input::new(&self.custom_model)),
-        )
-        .child(
-            Button::new("use-custom-model")
-                .label("用这个")
-                .on_click(cx.listener(|this, _, _, cx| this.use_custom_model(cx))),
-        )
-        .into_any_element()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    Input::new(&search)
+                        .prefix(Icon::new(IconName::Search).text_color(dim))
+                        .cleanable(true),
+                )
+                .child(list)
+                .into_any_element()
+        };
+
+        let on_open_change = {
+            let entity = entity.clone();
+            let search = self.model_search.clone();
+            move |is_open: &bool, window: &mut Window, cx: &mut App| {
+                let is_open = *is_open;
+                entity.update(cx, |view, cx| {
+                    view.model_menu_open = is_open;
+                    cx.notify();
+                });
+                if is_open {
+                    // 打开就把焦点给搜索框（不给的话还得再点一次才能打字）
+                    let handle = search.focus_handle(cx);
+                    window.focus(&handle, cx);
+                }
+            }
+        };
+
+        Popover::new("model-picker")
+            // 面板开在胶囊**上方**：`BottomLeft` = 触发元素下边缘、左对齐（`popover.rs:157`）
+            .anchor(Anchor::BottomLeft)
+            .offset(px(6.))
+            .open(open)
+            .w(px(300.))
+            .on_open_change(on_open_change)
+            .trigger(
+                Button::new("model-capsule")
+                    .ghost()
+                    .compact()
+                    .icon(IconName::Asterisk)
+                    .label(self.status.model.clone())
+                    .dropdown_caret(true),
+            )
+            .content(content)
+            .into_any_element()
     }
 }
 
-/// 模型 chip：当前生效的那个用强调色描出来。
-fn chip(
-    label: &str,
-    selected: bool,
-    p: Palette,
-    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-) -> AnyElement {
-    div()
-        .id(ElementId::Name(label.to_string().into()))
-        .px_2()
-        .py_0p5()
-        .rounded_md()
-        .cursor_pointer()
-        .text_xs()
-        .border_1()
-        .border_color(if selected { p.accent } else { p.border })
-        .text_color(if selected { p.accent } else { p.fg })
-        .hover(|d| d.text_color(p.accent))
-        .on_click(on_click)
-        .child(label.to_string())
-        .into_any_element()
-}
-
-/// 供应商短名（chip 上省地方）：`openai-compatible` → `openai`。
+/// 供应商短名（分组标题上省地方）：`openai-compatible` → `openai`。
 fn short_provider(provider: &str) -> &str {
     provider.strip_suffix("-compatible").unwrap_or(provider)
 }

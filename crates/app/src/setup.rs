@@ -239,38 +239,68 @@ fn expose(key: &Option<SecretString>) -> Option<String> {
         .map(|secret| secret.expose_secret().to_string())
 }
 
-/// 内置模型清单：`(provider, model)` 候选，供界面的模型选择器用（清单出自 `R2` 的适配器）。
+/// 已知适配器 id —— `build_provider` 的 `match` 分支（`X2` §8.2）。
+///
+/// **单点定义**：候选清单与「按供应商配密钥」都从这里取，别各写一份。
+/// 改这里必须同步改 `build_provider` 的 `match`。
+#[cfg(feature = "gui")]
+pub const ADAPTERS: [&str; 2] = ["openai-compatible", "anthropic"];
+
+/// 模型选择器的候选清单：`(provider, model)`。
+///
+/// **来源 = 内置目录 ∪ 配置里声明的模型 ∪ 当前生效的模型**：
+///
+/// - 内置目录：出自 `R2` 的适配器（`openai_default_models` / `anthropic_default_models`）；
+/// - 配置声明：`providers.<adapter>.model` 与顶层 `default_model`（`R1`）—— 在此之前
+///   它们只被读来决定"启动用哪个"，进了界面就看不见了，等于配了等于没配；
+/// - 当前生效：解析出的那一对永远在列（否则切走之后选不回来）。
+///
+/// **配了自定义端点的适配器不列内置目录**：`gpt-4o` 这类名字对 Ollama / vLLM 没有意义，
+/// 与服务端报错的口径一致（`build_provider` 的 `custom_base`）。
 ///
 /// 放在 `app` 是因为「哪个适配器 id 对应哪份清单」是**装配层知识** —— `features/*`
-/// 不认识供应商名单（`D6`）。自定义端点（传了 `--base-url`）时内置清单未必适用，
-/// 界面另有「手输模型名」的入口。
+/// 不认识供应商名单（`D6`）。
 ///
 /// 只有 `gui` 用它（TUI 的模型由 `--model` / 配置决定），故随 feature 走。
 #[cfg(feature = "gui")]
-pub fn model_choices() -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for spec in agent_providers::openai_default_models() {
-        out.push(("openai-compatible".to_string(), spec.id));
+pub fn model_choices(args: &ChatArgs) -> Vec<(String, String)> {
+    /// 追加（跳过空名与重复）。
+    fn push(out: &mut Vec<(String, String)>, provider: &str, model: &str) {
+        let entry = (provider.to_string(), model.to_string());
+        if !model.is_empty() && !out.contains(&entry) {
+            out.push(entry);
+        }
     }
-    for spec in agent_providers::anthropic_default_models() {
-        out.push(("anthropic".to_string(), spec.id));
+
+    let config = load_config(args.config.as_deref());
+    let mut out: Vec<(String, String)> = Vec::new();
+
+    let catalogs = [
+        (ADAPTERS[0], agent_providers::openai_default_models()),
+        (ADAPTERS[1], agent_providers::anthropic_default_models()),
+    ];
+    for (adapter, builtin) in catalogs {
+        // CLI 的 `--base-url` 只作用于**生效的那个**适配器，其余看配置。
+        let custom_base = (adapter == args.provider && args.base_url.is_some())
+            || config.base_url_for(adapter).is_some();
+        if !custom_base {
+            for spec in builtin {
+                push(&mut out, adapter, &spec.id);
+            }
+        }
+        if let Some(model) = config.model_for(adapter) {
+            push(&mut out, adapter, model);
+        }
     }
+    push(&mut out, &args.provider, &args.model);
+
     out
 }
 
-/// 已知供应商 id（去重后的 [`model_choices`]）——供设置界面的「按供应商配密钥」分行用。
-///
-/// 同一份 id 列表只此一处：`ModelSpec.provider` 与适配器 id 并不一致（前者是展示名），
-/// 所以不能从适配器清单里现取。
+/// 「按供应商配密钥」的分行 id —— 就是两个适配器（密钥按适配器存，`X1` §4）。
 #[cfg(feature = "gui")]
 pub fn provider_ids() -> Vec<String> {
-    let mut ids: Vec<String> = Vec::new();
-    for (provider, _) in model_choices() {
-        if !ids.contains(&provider) {
-            ids.push(provider);
-        }
-    }
-    ids
+    ADAPTERS.iter().map(|id| id.to_string()).collect()
 }
 
 /// M4 的两个演示工具：证明工具循环端到端可用。真实工具集由配置层/宿主提供（M6）。
