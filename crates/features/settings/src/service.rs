@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use agent_config::{
     ConfigError, ConfigPaths, ExposeSecret, Preferences, SecretStore, SecretString, account_for,
-    api_key_env, load, save,
+    load, save,
 };
 
 use crate::settings::Settings;
@@ -148,9 +148,12 @@ impl SettingsService {
         save(&self.paths, &config)
     }
 
-    /// 该 provider 的密钥来源（只回来源，**不回明文**）。
-    pub fn key_source(&self, provider: &str) -> Result<KeySource, ConfigError> {
-        if env_key_present(provider) {
+    /// 该条目的密钥来源（只回来源，**不回明文**）。
+    ///
+    /// `env` 是约定环境变量名，由调用方给（映射在 `agent_providers::catalog`）——
+    /// `None` = 该条目没有约定名（本地服务 / 自定义厂商），只看钥匙串。
+    pub fn key_source(&self, provider: &str, env: Option<&str>) -> Result<KeySource, ConfigError> {
+        if env.is_some_and(env_key_present) {
             return Ok(KeySource::Env);
         }
         match self.secrets.get(provider)? {
@@ -198,7 +201,9 @@ impl SettingsService {
     }
 }
 
-/// 环境变量里是否已提供该 provider 的密钥（只判「有没有」，不看值）。
-pub fn env_key_present(provider: &str) -> bool {
-    std::env::var_os(api_key_env(provider)).is_some_and(|value| !value.is_empty())
+/// 环境变量里是否已提供密钥（只判「有没有」，不看值）。
+///
+/// 参数是**环境变量名**而不是条目 id：名字由宿主从 `agent_providers::catalog` 查好传来。
+pub fn env_key_present(env: &str) -> bool {
+    std::env::var_os(env).is_some_and(|value| !value.is_empty())
 }

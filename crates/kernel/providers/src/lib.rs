@@ -5,11 +5,14 @@
 //! - 路由层通过 [`ProviderRegistry`] 拿到 `dyn ErasedProvider`，不依赖任何具体实现。
 
 pub mod anthropic;
+pub mod catalog;
 pub mod openai;
 
 pub use anthropic::{
     AnthropicCompatible, AnthropicConfig, AnthropicFramePolicy, anthropic_default_models,
 };
+// 内置供应商目录：厂商 → 适配器 + 端点 + 密钥变量名（用户不必知道适配器这回事）。
+pub use catalog::{ADAPTERS, ProviderPreset, adapter_for, api_key_env_for, display_name, preset};
 pub use openai::{
     OpenAiCompatible, OpenAiConfig, OpenAiFramePolicy, map_finish_reason, map_http_error,
     openai_default_models, parse_chat_response,

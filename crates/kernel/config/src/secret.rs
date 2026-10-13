@@ -74,20 +74,19 @@ impl SecretStore {
     }
 }
 
-/// 某供应商的密钥环境变量名（`R1` 的过渡约定，`A2` §6 要求密钥不写死）。
-pub fn api_key_env(provider: &str) -> &'static str {
-    match provider {
-        "anthropic" => "ANTHROPIC_API_KEY",
-        _ => "OPENAI_API_KEY",
-    }
-}
-
-/// 解析某供应商的密钥：**环境变量优先，其次钥匙串**（`X1` §4）。
+/// 解析某条目的密钥：**环境变量优先，其次钥匙串**（`X1` §4）。
+///
+/// `env` 是**调用方给的**环境变量名 —— `config` 是机制层，不认识供应商目录
+/// （`D6`）：厂商 → 变量名的映射在 `agent_providers::catalog`。没有约定名的条目
+/// （本地服务、自定义厂商）传 `None`，只看钥匙串。
 ///
 /// 两者都没有 → `Ok(None)`（调用方决定是否提示）。
-/// 钥匙串后端不可用 → 环境变量仍有效时不算失败；否则返回 [`ConfigError::Keyring`]。
-pub fn resolve_api_key(provider: &str) -> Result<Option<SecretString>, ConfigError> {
-    if let Some(secret) = env_api_key(provider) {
+/// 钥匙串后端不可用 → 不阻断，`Ok(None)`（上层提示「未配置密钥」）。
+pub fn resolve_api_key(
+    provider: &str,
+    env: Option<&str>,
+) -> Result<Option<SecretString>, ConfigError> {
+    if let Some(secret) = env.and_then(env_api_key) {
         tracing::debug!(target: "agent_config", provider, "密钥来自环境变量");
         return Ok(Some(secret));
     }
@@ -107,12 +106,15 @@ pub fn resolve_api_key(provider: &str) -> Result<Option<SecretString>, ConfigErr
 }
 
 /// 钥匙串账号名：按 provider 区分（同一服务下多把密钥）。
+///
+/// **按条目 id**（`ollama:api_key` / `openrouter:api_key`），不按适配器：
+/// 同一个适配器下接多家厂商是很正常的（`C1` 之后尤其如此）。
 pub fn account_for(provider: &str) -> String {
     format!("{provider}:api_key")
 }
 
-fn env_api_key(provider: &str) -> Option<SecretString> {
-    std::env::var(api_key_env(provider))
+fn env_api_key(name: &str) -> Option<SecretString> {
+    std::env::var(name)
         .ok()
         .filter(|value| !value.is_empty())
         .map(SecretString::from)
@@ -160,14 +162,17 @@ mod tests {
         );
     }
 
+    /// 环境变量名由调用方给（映射在 `agent_providers::catalog`）——
+    /// 这里只验「给了名字就查，没给就不查」这一件事。
+    ///
+    /// 用**不存在的条目 id** 保证钥匙串里一定没有它，测试不受本机状态影响。
     #[test]
-    fn env_var_name_depends_on_provider() {
-        assert_eq!(api_key_env("anthropic"), "ANTHROPIC_API_KEY");
-        assert_eq!(api_key_env("openai-compatible"), "OPENAI_API_KEY");
-        assert_eq!(
-            api_key_env("vllm"),
-            "OPENAI_API_KEY",
-            "兼容族共用同一环境变量"
+    fn env_name_is_supplied_by_the_caller() {
+        assert!(
+            resolve_api_key("agent-config-test-absent", None)
+                .expect("不报错")
+                .is_none(),
+            "没给环境变量名 + 钥匙串没存过 → 就是没有密钥"
         );
     }
 

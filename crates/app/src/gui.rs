@@ -110,6 +110,8 @@ pub fn run(args: GuiArgs) -> i32 {
     let prefs = setup::load_preferences(chat_args.config.as_deref());
     let visible =
         setup::visible_choices(&all_choices, &prefs, &chat_args.provider, &chat_args.model);
+    // 设置页的供应商行（展示名与约定环境变量名都来自 `kernel/providers` 的目录）
+    let provider_rows = setup::provider_rows(&chat_args);
 
     // 设置面板的数据入口。定位配置目录失败不该挡启动（`R1`：配置问题不挡「跑起来」），
     // 只是设置页不可用——所以这里降级为一句可读的提示。
@@ -136,7 +138,7 @@ pub fn run(args: GuiArgs) -> i32 {
                         window,
                         cx,
                         service.clone(),
-                        setup::provider_ids(),
+                        provider_rows.clone(),
                         all_choices.clone(),
                     )
                 })

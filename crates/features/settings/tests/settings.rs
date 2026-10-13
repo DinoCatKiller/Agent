@@ -135,14 +135,18 @@ fn api_key_goes_to_backend_and_never_into_the_file() {
 
     let secret = SecretString::from("sk-super-secret-value");
     assert_eq!(
-        service.key_source("openai-compatible").expect("查来源"),
+        service
+            .key_source("openai-compatible", None)
+            .expect("查来源"),
         KeySource::None
     );
     service
         .save_key("openai-compatible", &secret)
         .expect("写密钥");
     assert_eq!(
-        service.key_source("openai-compatible").expect("查来源"),
+        service
+            .key_source("openai-compatible", None)
+            .expect("查来源"),
         KeySource::Keyring
     );
 
@@ -160,7 +164,9 @@ fn api_key_goes_to_backend_and_never_into_the_file() {
         .delete_key("openai-compatible")
         .expect("再删一次也成功");
     assert_eq!(
-        service.key_source("openai-compatible").expect("查来源"),
+        service
+            .key_source("openai-compatible", None)
+            .expect("查来源"),
         KeySource::None
     );
 }

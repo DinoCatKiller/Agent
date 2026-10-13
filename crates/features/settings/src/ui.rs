@@ -43,9 +43,11 @@ pub struct SettingsView {
     /// **每个供应商一行密钥**：密钥在钥匙串里本来就是按 provider 存的
     /// （账号 `<provider>:api_key`，`R1`），所以界面也按 provider 分行。
     keys: Vec<ProviderKeyRow>,
-    /// 已知供应商（宿主给的）——「默认供应商」用 chip 选，避免手滑写出未知名字：
-    /// 它现在**真的生效**（`R1` §1.1），写错会让 `gui` 直接起不来。
-    providers: Vec<String>,
+    /// 可配密钥 / 可当默认供应商的条目（宿主给的）。
+    ///
+    /// 为什么用 chip 选「默认供应商」：它**真的生效**（`R1` §1.1），
+    /// 手滑写出未知名字会让 `gui`（没有命令行参数的启动方式）直接起不来。
+    providers: Vec<ProviderRow>,
     /// 全部候选模型（宿主编排给的）——「模型」页要看到**全量**才能把关掉的再打开。
     models: Vec<(String, String)>,
     /// 「模型」页的搜索框。
@@ -61,9 +63,24 @@ pub struct SettingsView {
     _search_sub: Subscription,
 }
 
+/// 设置页里的一个供应商条目 —— **宿主构造**（`features/*` 不认识供应商目录，`D6`）。
+///
+/// `app` 从 `agent_providers::catalog`（预设厂商）+ 配置文件里已连接的条目拼出来。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderRow {
+    /// 条目 id：钥匙串账号、`default_provider` 用它（`<id>:api_key`，`R1`）。
+    pub id: String,
+    /// 展示名（目录里的 `name`，自定义条目就是 id）。
+    pub name: String,
+    /// 约定环境变量名。`None` = 没有约定名（本地服务 / 自定义厂商）→ 只看钥匙串。
+    pub env: Option<String>,
+    /// 是否必须有密钥 —— 只用于提示文案：本地服务不该催用户去填。
+    pub key_required: bool,
+}
+
 /// 一个供应商的密钥行。
 struct ProviderKeyRow {
-    provider: String,
+    row: ProviderRow,
     /// 本次要写入的新密钥（明文只活在输入框与那一次调用里；**已存值不回显**）。
     input: Entity<InputState>,
     /// 生效来源：环境变量 > 钥匙串 > 未配置（`R1`）。
@@ -83,7 +100,7 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
         service: Arc<SettingsService>,
-        providers: Vec<String>,
+        providers: Vec<ProviderRow>,
         models: Vec<(String, String)>,
     ) -> Self {
         let (draft, load_error) = match service.load() {
@@ -107,15 +124,17 @@ impl SettingsView {
 
         let provider_options = providers.clone();
         let mut keys = Vec::new();
-        for provider in providers {
-            let source = service.key_source(&provider).unwrap_or(KeySource::None);
+        for row in providers {
+            let source = service
+                .key_source(&row.id, row.env.as_deref())
+                .unwrap_or(KeySource::None);
             let key_input = cx.new(|cx| {
                 InputState::new(window, cx)
                     .masked(true)
                     .placeholder("粘贴新密钥（已存的不回显）")
             });
             keys.push(ProviderKeyRow {
-                provider,
+                row,
                 input: key_input,
                 source,
             });
@@ -294,7 +313,7 @@ impl SettingsView {
         for index in 0..self.keys.len() {
             let (provider, state) = {
                 let row = &self.keys[index];
-                (row.provider.clone(), row.input.clone())
+                (row.row.id.clone(), row.input.clone())
             };
             let raw = state.read(cx).value().trim().to_string();
             if raw.is_empty() {
@@ -349,7 +368,7 @@ impl SettingsView {
         for row in &mut self.keys {
             row.source = self
                 .service
-                .key_source(&row.provider)
+                .key_source(&row.row.id, row.row.env.as_deref())
                 .unwrap_or(KeySource::None);
         }
     }
@@ -535,9 +554,16 @@ impl Render for SettingsView {
                 .child("API Key（每行单独保存；留空 = 不动它现在那把）"),
         );
         for index in 0..self.keys.len() {
-            let (provider, state, source) = {
+            let (provider, name, env, required, state, source) = {
                 let row = &self.keys[index];
-                (row.provider.clone(), row.input.clone(), row.source)
+                (
+                    row.row.id.clone(),
+                    row.row.name.clone(),
+                    row.row.env.clone(),
+                    row.row.key_required,
+                    row.input.clone(),
+                    row.source,
+                )
             };
             form = form.child(
                 div()
@@ -551,8 +577,14 @@ impl Render for SettingsView {
                             .items_center()
                             .gap_2()
                             .text_xs()
-                            .child(div().text_color(dim).child(provider.clone()))
-                            .child(div().text_color(dim).child(key_hint(source)))
+                            // 展示名在前、id 在后：id 才是钥匙串账号与 `default_provider` 用的那个
+                            .child(div().text_color(dim).child(name))
+                            .child(div().text_color(dim).child(format!("({provider})")))
+                            .child(div().text_color(dim).child(key_hint(
+                                source,
+                                env.as_deref(),
+                                required,
+                            )))
                             .child(
                                 Button::new(ElementId::Name(
                                     format!("clear-key-{provider}").into(),
@@ -650,12 +682,13 @@ impl SettingsView {
     ) -> AnyElement {
         let current = self.provider.read(cx).value().trim().to_string();
         let mut chips = div().flex().flex_row().flex_wrap().items_center().gap_1();
-        for provider in self.providers.clone() {
-            let selected = provider == current;
-            let label = provider.clone();
+        for row in self.providers.clone() {
+            let selected = row.id == current;
+            let label = row.id.clone();
+            let shown = row.name.clone();
             chips = chips.child(
                 div()
-                    .id(ElementId::Name(format!("provider-{provider}").into()))
+                    .id(ElementId::Name(format!("provider-{}", row.id).into()))
                     .px_2()
                     .py_0p5()
                     .rounded_md()
@@ -668,7 +701,9 @@ impl SettingsView {
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.pick_provider(label.clone(), window, cx)
                     }))
-                    .child(provider),
+                    // chip 上写**展示名**，点下去写进输入框的是 id ——
+                    // 用户不用记 `openai-compatible` 这种内部名字。
+                    .child(shown),
             );
         }
 
@@ -694,10 +729,24 @@ fn field(label: &str, state: &Entity<InputState>, dim: Hsla) -> AnyElement {
         .into_any_element()
 }
 
-fn key_hint(source: KeySource) -> &'static str {
+/// 密钥来源提示。`env` / `required` 用来把"该不该填"讲清楚 ——
+/// 本地服务不该催用户填密钥，有约定变量名的则应当告诉他变量叫什么。
+fn key_hint(source: KeySource, env: Option<&str>, required: bool) -> String {
     match source {
-        KeySource::Env => "密钥来源：环境变量（优先级更高，会盖过钥匙串）",
-        KeySource::Keyring => "密钥来源：系统钥匙串（已配置，不回显）",
-        KeySource::None => "密钥来源：未配置",
+        KeySource::Env => format!(
+            "密钥来源：环境变量 {}（优先级更高，会盖过钥匙串）",
+            env.unwrap_or("(未知)")
+        ),
+        KeySource::Keyring => "密钥来源：系统钥匙串（已配置，不回显）".to_string(),
+        KeySource::None if !required => {
+            format!(
+                "密钥来源：未配置（{} 通常不需要密钥，留空即可）",
+                "本地服务"
+            )
+        }
+        KeySource::None => match env {
+            Some(env) => format!("密钥来源：未配置（可设环境变量 {env}，或在这里粘贴）"),
+            None => "密钥来源：未配置（没有约定环境变量名，只能存钥匙串）".to_string(),
+        },
     }
 }

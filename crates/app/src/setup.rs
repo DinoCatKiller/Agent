@@ -17,6 +17,10 @@ use agent_providers::{
 use agent_transport::{HttpConfig, RetryPolicy};
 use serde_json::{Value, json};
 
+// 设置页的供应商行（只随 `gui` 拉进来：`agent-settings` 本身是可选依赖）。
+#[cfg(feature = "gui")]
+use agent_settings::ui::ProviderRow;
+
 /// `chat` / `tui` 共用的供应商参数。
 #[derive(Debug, Clone)]
 pub struct ChatArgs {
@@ -161,10 +165,15 @@ pub fn build_provider(args: &ChatArgs) -> Option<Arc<dyn ErasedProvider>> {
         }
     };
     if api_key.is_none() {
-        println!(
-            "提示：未提供密钥（--api-key / 环境变量 {} / 系统钥匙串）。无鉴权端点（如本地服务）可忽略。",
-            agent_config::api_key_env(&args.provider)
-        );
+        match agent_providers::catalog::api_key_env_for(&args.provider) {
+            Some(env) => println!(
+                "提示：未提供密钥（--api-key / 环境变量 {env} / 系统钥匙串）。无鉴权端点（如本地服务）可忽略。"
+            ),
+            None => println!(
+                "提示：未提供密钥（--api-key / 系统钥匙串）。{} 没有约定环境变量名，无鉴权端点可忽略。",
+                args.provider
+            ),
+        }
     }
     // M6（`R2`）：请求统一经 Router 出——单候选时无感；`--model a,b` 时
     // a 遇可降级失败（429/5xx/超时/断网/Auth）自动落到 b。
@@ -222,7 +231,10 @@ fn resolve_key(args: &ChatArgs) -> Option<SecretString> {
     if let Some(raw) = &args.api_key {
         return Some(SecretString::from(raw.clone()));
     }
-    match agent_config::resolve_api_key(&args.provider) {
+    // 环境变量名由**目录**给（厂商知识归 `kernel/providers`，`D6`）：
+    // `config` 只负责「先环境变量、后钥匙串」这个顺序。
+    let env = agent_providers::catalog::api_key_env_for(&args.provider);
+    match agent_config::resolve_api_key(&args.provider, env) {
         Ok(secret) => secret,
         Err(error) => {
             eprintln!("读取密钥失败（{error}）。");
@@ -238,13 +250,6 @@ fn expose(key: &Option<SecretString>) -> Option<String> {
     key.as_ref()
         .map(|secret| secret.expose_secret().to_string())
 }
-
-/// 已知适配器 id —— `build_provider` 的 `match` 分支（`X2` §8.2）。
-///
-/// **单点定义**：候选清单与「按供应商配密钥」都从这里取，别各写一份。
-/// 改这里必须同步改 `build_provider` 的 `match`。
-#[cfg(feature = "gui")]
-pub const ADAPTERS: [&str; 2] = ["openai-compatible", "anthropic"];
 
 /// 模型选择器的候选清单：`(provider, model)`。
 ///
@@ -275,9 +280,10 @@ pub fn model_choices(args: &ChatArgs) -> Vec<(String, String)> {
     let config = load_config(args.config.as_deref());
     let mut out: Vec<(String, String)> = Vec::new();
 
+    let adapters = agent_providers::catalog::ADAPTERS;
     let catalogs = [
-        (ADAPTERS[0], agent_providers::openai_default_models()),
-        (ADAPTERS[1], agent_providers::anthropic_default_models()),
+        (adapters[0], agent_providers::openai_default_models()),
+        (adapters[1], agent_providers::anthropic_default_models()),
     ];
     for (adapter, builtin) in catalogs {
         // CLI 的 `--base-url` 只作用于**生效的那个**适配器，其余看配置。
@@ -297,10 +303,49 @@ pub fn model_choices(args: &ChatArgs) -> Vec<(String, String)> {
     out
 }
 
-/// 「按供应商配密钥」的分行 id —— 就是两个适配器（密钥按适配器存，`X1` §4）。
+/// 设置页要列出的供应商条目（id / 展示名 / 约定环境变量名 / 是否必须密钥）。
+///
+/// 来源 = 两个通用适配器 ∪ 配置里**已连接**的条目 ∪ `default_provider`。
+/// 不列整张目录：那是「连接提供商」页的活（切片 C1c），设置页只展示"已经在用的"。
+///
+/// 与「哪个条目用哪个适配器」一样，厂商知识归 `kernel/providers`（`D6`），
+/// 这里只做拼装。
 #[cfg(feature = "gui")]
-pub fn provider_ids() -> Vec<String> {
-    ADAPTERS.iter().map(|id| id.to_string()).collect()
+pub fn provider_rows(args: &ChatArgs) -> Vec<ProviderRow> {
+    let config = load_config(args.config.as_deref());
+    let mut ids: Vec<String> = agent_providers::catalog::ADAPTERS
+        .iter()
+        .map(|id| (*id).to_string())
+        .collect();
+    for id in config.providers.keys() {
+        if !ids.contains(id) {
+            ids.push(id.clone());
+        }
+    }
+    if !ids.contains(&args.provider) {
+        ids.push(args.provider.clone());
+    }
+
+    ids.into_iter()
+        .map(|id| {
+            let adapter = agent_providers::catalog::adapter_for(&id);
+            // 环境变量名：条目自己的（目录里有）> 它所用适配器的约定名 > 无。
+            // 后者是为了自定义条目：用户写 `adapter = "anthropic"` 时，
+            // `ANTHROPIC_API_KEY` 仍然该生效。
+            let env = agent_providers::catalog::api_key_env_for(&id)
+                .or_else(|| adapter.and_then(agent_providers::catalog::api_key_env_for));
+            let key_required = agent_providers::catalog::preset(&id)
+                .map(|preset| preset.key_required)
+                // 目录里没有的（自定义条目）：默认"要密钥"，宁可多提示一句
+                .unwrap_or(true);
+            ProviderRow {
+                name: agent_providers::catalog::display_name(&id).to_string(),
+                id,
+                env: env.map(str::to_string),
+                key_required,
+            }
+        })
+        .collect()
 }
 
 /// 读 UI 偏好（`models.toml`）。与 [`load_config`] 同样的容错：定位/读取失败都退回默认值
