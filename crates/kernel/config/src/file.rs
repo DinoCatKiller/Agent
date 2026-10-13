@@ -1,4 +1,4 @@
-//! 配置文件（TOML）读写（`X1` §4）。
+﻿//! 配置文件（TOML）读写（`X1` §4）。
 //!
 //! **这里只放非敏感项。** 任何形如 `api_key` 的字段都不该出现在本文件中——
 //! 密钥一律走 [`crate::SecretStore`]（系统钥匙串）。
@@ -47,10 +47,15 @@ impl AppConfig {
     }
 }
 
-/// 单个供应商的非敏感配置。
+/// 单个供应商条目的非敏感配置。
+///
+/// 条目 id 可以是**目录里的名字**（`ollama` / `openrouter`，见 `agent_providers::catalog`），
+/// 也可以是用户自己起的名字 —— 后者必须写 `adapter`，因为目录推断不出来。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ProviderConfig {
+    /// 用哪个适配器（`openai-compatible` / `anthropic`）。目录里有的 id 可省。
+    pub adapter: Option<String>,
     pub base_url: Option<String>,
     pub model: Option<String>,
 }
@@ -168,6 +173,7 @@ mod tests {
         config.providers.insert(
             "anthropic".into(),
             ProviderConfig {
+                adapter: None,
                 base_url: Some("https://api.anthropic.com".into()),
                 model: None,
             },
@@ -189,6 +195,7 @@ mod tests {
         config.providers.insert(
             "anthropic".into(),
             ProviderConfig {
+                adapter: None,
                 base_url: Some("https://api.anthropic.com".into()),
                 model: None,
             },

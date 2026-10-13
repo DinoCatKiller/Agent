@@ -120,58 +120,60 @@ pub fn build_provider(args: &ChatArgs) -> Option<Arc<dyn ErasedProvider>> {
     if let Some(secs) = config.stream_idle_timeout_secs {
         http.stream_idle_timeout = Duration::from_secs(secs);
     }
-    // 自定义端点（CLI 或配置）时不拦模型清单，交服务端报错（vLLM 等）。
-    let custom_base = args.base_url.is_some() || config.base_url_for(&args.provider).is_some();
-    // 端点优先级：CLI > 配置（供应商级 → 顶层） > 内置默认。
-    let base_url = |default: &str| -> String {
-        args.base_url
-            .clone()
-            .or_else(|| config.base_url_for(&args.provider).map(str::to_string))
-            .unwrap_or_else(|| default.to_string())
-    };
-
-    let provider: Arc<dyn ErasedProvider> = match args.provider.as_str() {
-        "openai-compatible" => Arc::new(
-            OpenAiCompatible::new(OpenAiConfig {
-                id: "openai-compatible",
-                base_url: base_url("https://api.openai.com/v1"),
-                api_key: expose(&api_key),
-                http: http.clone(),
-                models: if custom_base {
-                    Vec::new()
-                } else {
-                    agent_providers::openai_default_models()
-                },
-            })
-            .ok()?,
-        ),
-        "anthropic" => Arc::new(
-            AnthropicCompatible::new(AnthropicConfig {
-                id: "anthropic",
-                base_url: base_url("https://api.anthropic.com"),
-                api_key: expose(&api_key),
-                http,
-                models: if custom_base {
-                    Vec::new()
-                } else {
-                    agent_providers::anthropic_default_models()
-                },
-            })
-            .ok()?,
-        ),
-        other => {
-            eprintln!("未知 provider：{other}（可用：openai-compatible / anthropic）");
+    // 条目 → 生效配置（适配器 / 端点 / 模型清单要不要拦）全在 `kernel/providers` 的目录里算。
+    // `app` 只负责把三层来源（CLI / 配置 / 顶层兜底）摆进去 —— 与 `model_choices` /
+    // `provider_rows` 用的是**同一个**摆法（`declared_for`），不会出现"能列出来但连不上"。
+    let resolved = match agent_providers::catalog::resolve(
+        &args.provider,
+        declared_for(&config, &args.provider, args),
+    ) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            eprintln!("错误：{error}");
             return None;
         }
     };
+
+    let models = if resolved.custom_base {
+        // 自定义端点（vLLM / 本地服务 / 代理）：**不拦**模型清单，交服务端报错
+        Vec::new()
+    } else {
+        builtin_models(resolved.adapter)
+    };
+    let base_url = resolved.base_url.clone();
+
+    let provider: Arc<dyn ErasedProvider> = match resolved.adapter {
+        "openai-compatible" => Arc::new(
+            OpenAiCompatible::new(OpenAiConfig {
+                // 注意：这是**适配器**的 id，不是条目 id（`ollama` 也走这一支）。
+                // 它只进路由/观测的标签，不参与任何查找。
+                id: "openai-compatible",
+                base_url,
+                api_key: expose(&api_key),
+                http: http.clone(),
+                models,
+            })
+            .ok()?,
+        ),
+        _ => Arc::new(
+            AnthropicCompatible::new(AnthropicConfig {
+                id: "anthropic",
+                base_url,
+                api_key: expose(&api_key),
+                http,
+                models,
+            })
+            .ok()?,
+        ),
+    };
     if api_key.is_none() {
-        match agent_providers::catalog::api_key_env_for(&args.provider) {
+        match resolved.api_key_env {
             Some(env) => println!(
                 "提示：未提供密钥（--api-key / 环境变量 {env} / 系统钥匙串）。无鉴权端点（如本地服务）可忽略。"
             ),
             None => println!(
-                "提示：未提供密钥（--api-key / 系统钥匙串）。{} 没有约定环境变量名，无鉴权端点可忽略。",
-                args.provider
+                "提示：未提供密钥（--api-key / 系统钥匙串）。条目 {} 没有约定环境变量名，无鉴权端点可忽略。",
+                resolved.id
             ),
         }
     }
@@ -190,7 +192,7 @@ pub fn build_provider(args: &ChatArgs) -> Option<Arc<dyn ErasedProvider>> {
                 .map(|model| (provider_id.to_string(), model.clone())),
         );
         router = router.with_route(args.model.clone(), chain);
-    } else if custom_base {
+    } else if resolved.custom_base {
         // 自定义端点（vLLM / 本地服务 / 代理）：我们**故意**不拦截模型清单（上面 `models: Vec::new()`），
         // 但路由表也就没有可查的模型 → 必须显式登一条，否则请求死在
         // 「no route for model」（README 说的「不拦清单」在这里才真正成立）。
@@ -251,20 +253,68 @@ fn expose(key: &Option<SecretString>) -> Option<String> {
         .map(|secret| secret.expose_secret().to_string())
 }
 
-/// 模型选择器的候选清单：`(provider, model)`。
+/// 把三层来源摆成目录要的 [`agent_providers::catalog::Declared`]。
 ///
-/// **来源 = 内置目录 ∪ 配置里声明的模型 ∪ 当前生效的模型**：
+/// **CLI 的 `--base-url` 只作用于生效的那个条目**（`id == args.provider`）：切到别家还带着它，
+/// 等于把 A 家的端点发给 B 家 —— 跟 `--api-key` 是同一类串味（见 `worker::ProviderFactory`）。
 ///
-/// - 内置目录：出自 `R2` 的适配器（`openai_default_models` / `anthropic_default_models`）；
-/// - 配置声明：`providers.<adapter>.model` 与顶层 `default_model`（`R1`）—— 在此之前
-///   它们只被读来决定"启动用哪个"，进了界面就看不见了，等于配了等于没配；
+/// `build_provider` / `model_choices` / `provider_rows` 共用这一个摆法，
+/// 于是不会出现「界面里列得出来，但连不上」。
+fn declared_for<'a>(
+    config: &'a AppConfig,
+    id: &str,
+    args: &'a ChatArgs,
+) -> agent_providers::catalog::Declared<'a> {
+    let entry = config.providers.get(id);
+    agent_providers::catalog::Declared {
+        adapter: entry.and_then(|it| it.adapter.as_deref()),
+        base_url: entry.and_then(|it| it.base_url.as_deref()),
+        fallback_base_url: config.base_url.as_deref(),
+        cli_base_url: if id == args.provider {
+            args.base_url.as_deref()
+        } else {
+            None
+        },
+    }
+}
+
+/// 某个适配器的内置模型清单 —— 只在「用的就是它的官方端点」时才有意义（`R2`）。
+fn builtin_models(adapter: &str) -> Vec<agent_common::ModelSpec> {
+    match adapter {
+        "anthropic" => agent_providers::anthropic_default_models(),
+        _ => agent_providers::openai_default_models(),
+    }
+}
+
+/// 可切换的条目 id：两个通用适配器 ∪ 配置里**已连接**的 ∪ 当前生效的。
+fn entry_ids(config: &AppConfig, args: &ChatArgs) -> Vec<String> {
+    let mut ids: Vec<String> = agent_providers::catalog::ADAPTERS
+        .iter()
+        .map(|id| (*id).to_string())
+        .collect();
+    for id in config.providers.keys() {
+        if !ids.contains(id) {
+            ids.push(id.clone());
+        }
+    }
+    if !ids.contains(&args.provider) {
+        ids.push(args.provider.clone());
+    }
+    ids
+}
+
+/// 模型选择器的候选清单：`(条目 id, model)`。
+///
+/// **来源 = 每个可切换条目的内置清单 ∪ 配置里为它声明的模型 ∪ 当前生效的那一对**：
+///
+/// - 内置清单：只有「用的是该适配器官方端点」时才列 —— `gpt-4o` 对 Ollama / vLLM 没有意义，
+///   与服务端那边的口径一致（`build_provider` 的 `custom_base`）；
+/// - 配置声明：`providers.<条目>.model` 归该条目；顶层 `default_model` **只归生效的那个**
+///   （否则同一个模型名会被挂到每个条目上）；
 /// - 当前生效：解析出的那一对永远在列（否则切走之后选不回来）。
 ///
-/// **配了自定义端点的适配器不列内置目录**：`gpt-4o` 这类名字对 Ollama / vLLM 没有意义，
-/// 与服务端报错的口径一致（`build_provider` 的 `custom_base`）。
-///
-/// 放在 `app` 是因为「哪个适配器 id 对应哪份清单」是**装配层知识** —— `features/*`
-/// 不认识供应商名单（`D6`）。
+/// 放在 `app` 是因为「哪个条目用哪个适配器、哪份清单」是**装配层 + 目录**的知识 —
+/// `features/*` 不认识供应商名单（`D6`）。
 ///
 /// 只有 `gui` 用它（TUI 的模型由 `--model` / 配置决定），故随 feature 走。
 #[cfg(feature = "gui")]
@@ -280,22 +330,24 @@ pub fn model_choices(args: &ChatArgs) -> Vec<(String, String)> {
     let config = load_config(args.config.as_deref());
     let mut out: Vec<(String, String)> = Vec::new();
 
-    let adapters = agent_providers::catalog::ADAPTERS;
-    let catalogs = [
-        (adapters[0], agent_providers::openai_default_models()),
-        (adapters[1], agent_providers::anthropic_default_models()),
-    ];
-    for (adapter, builtin) in catalogs {
-        // CLI 的 `--base-url` 只作用于**生效的那个**适配器，其余看配置。
-        let custom_base = (adapter == args.provider && args.base_url.is_some())
-            || config.base_url_for(adapter).is_some();
-        if !custom_base {
-            for spec in builtin {
-                push(&mut out, adapter, &spec.id);
+    for id in entry_ids(&config, args) {
+        // 解析不了的条目不该挡界面：跳过（真正的原因在启动时那句错误里）
+        let Ok(resolved) = agent_providers::catalog::resolve(&id, declared_for(&config, &id, args))
+        else {
+            continue;
+        };
+        if !resolved.custom_base {
+            for spec in builtin_models(resolved.adapter) {
+                push(&mut out, &id, &spec.id);
             }
         }
-        if let Some(model) = config.model_for(adapter) {
-            push(&mut out, adapter, model);
+        if let Some(model) = config.providers.get(&id).and_then(|it| it.model.as_deref()) {
+            push(&mut out, &id, model);
+        }
+        if id == args.provider
+            && let Some(model) = config.default_model.as_deref()
+        {
+            push(&mut out, &id, model);
         }
     }
     push(&mut out, &args.provider, &args.model);
@@ -305,45 +357,26 @@ pub fn model_choices(args: &ChatArgs) -> Vec<(String, String)> {
 
 /// 设置页要列出的供应商条目（id / 展示名 / 约定环境变量名 / 是否必须密钥）。
 ///
-/// 来源 = 两个通用适配器 ∪ 配置里**已连接**的条目 ∪ `default_provider`。
-/// 不列整张目录：那是「连接提供商」页的活（切片 C1c），设置页只展示"已经在用的"。
+/// 来源与 [`entry_ids`] 一致。不列整张目录：那是「连接提供商」页的活（切片 C1c），
+/// 设置页只展示"已经在用的"。
 ///
-/// 与「哪个条目用哪个适配器」一样，厂商知识归 `kernel/providers`（`D6`），
-/// 这里只做拼装。
+/// 环境变量名与「要不要密钥」都由目录算（`catalog::resolve`）——
+/// 自定义条目写 `adapter = "anthropic"` 时，`ANTHROPIC_API_KEY` 仍然生效。
 #[cfg(feature = "gui")]
 pub fn provider_rows(args: &ChatArgs) -> Vec<ProviderRow> {
     let config = load_config(args.config.as_deref());
-    let mut ids: Vec<String> = agent_providers::catalog::ADAPTERS
-        .iter()
-        .map(|id| (*id).to_string())
-        .collect();
-    for id in config.providers.keys() {
-        if !ids.contains(id) {
-            ids.push(id.clone());
-        }
-    }
-    if !ids.contains(&args.provider) {
-        ids.push(args.provider.clone());
-    }
 
-    ids.into_iter()
-        .map(|id| {
-            let adapter = agent_providers::catalog::adapter_for(&id);
-            // 环境变量名：条目自己的（目录里有）> 它所用适配器的约定名 > 无。
-            // 后者是为了自定义条目：用户写 `adapter = "anthropic"` 时，
-            // `ANTHROPIC_API_KEY` 仍然该生效。
-            let env = agent_providers::catalog::api_key_env_for(&id)
-                .or_else(|| adapter.and_then(agent_providers::catalog::api_key_env_for));
-            let key_required = agent_providers::catalog::preset(&id)
-                .map(|preset| preset.key_required)
-                // 目录里没有的（自定义条目）：默认"要密钥"，宁可多提示一句
-                .unwrap_or(true);
-            ProviderRow {
+    entry_ids(&config, args)
+        .into_iter()
+        .filter_map(|id| {
+            let resolved =
+                agent_providers::catalog::resolve(&id, declared_for(&config, &id, args)).ok()?;
+            Some(ProviderRow {
                 name: agent_providers::catalog::display_name(&id).to_string(),
+                env: resolved.api_key_env.map(str::to_string),
+                key_required: resolved.key_required,
                 id,
-                env: env.map(str::to_string),
-                key_required,
-            }
+            })
         })
         .collect()
 }

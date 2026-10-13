@@ -20,6 +20,7 @@
 | `Provider` | `id` / `list_models` / `chat` / `stream` / `count_tokens`。`stream` **同步返回**流句柄，鉴权与参数错误在发请求前就暴露 |
 | `ErasedProvider` | 类型擦除视图。`Provider` 因 `impl Future` 返回值不是 object-safe，路由层要 `dyn` 就得靠它 |
 | `ProviderRegistry` | `register` / `get` / `ids` / `models` / `find_model` |
+| [`catalog`](src/catalog.rs) | **内置供应商目录**（`R5`）：厂商 → 适配器 + 端点 + 密钥变量名。`resolve(id, Declared)` 一次算清适配器 / 端点 / 密钥出处 / 要不要密钥，供装配层三处共用。用户只填厂商名（`ollama`），不必知道适配器这回事 |
 | `required_capabilities()` | 从 `ModelRequest` 推导所需能力，供路由阶段 fast-fail（4 个单测覆盖） |
 | `CallContext` | `request_id` + `cancel: CancellationToken` |
 | [`openai`](src/openai.rs) | OpenAI 兼容适配器：`OpenAiCompatible` + `OpenAiFramePolicy`（SSE→归一化、工具分片拼装、错误映射覆盖 `A2` §5），契约测试 12 用例全绿 |

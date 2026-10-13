@@ -192,6 +192,149 @@ pub fn ids() -> impl Iterator<Item = &'static str> {
     PRESETS.iter().map(|preset| preset.id)
 }
 
+/// 适配器的**官方端点** —— 用来判断「用户是不是用了自定义端点」。
+///
+/// 直接从目录里同名的条目取，不另写一份字面量（两个适配器 id 本身就在目录里，有测试钉着）。
+pub fn adapter_default_base_url(adapter: &str) -> Option<&'static str> {
+    preset(adapter).map(|preset| preset.base_url)
+}
+
+/// 是不是本地地址（`localhost` / `127.0.0.1` / `[::1]` / `0.0.0.0`）。
+///
+/// **只用于界面提示「要不要密钥」**：不进注册表、不进路由，不引入「本地/云端」维度
+/// （`D7` 方案 C 不变）。
+pub fn is_local(base_url: &str) -> bool {
+    let host = base_url.split("://").nth(1).unwrap_or(base_url);
+    let host = host.split('/').next().unwrap_or(host);
+    // IPv6 是 `[::1]:port`，先整体看一眼再去端口（免得把 `[::1]` 切成 `[`）
+    let host = if host.starts_with('[') {
+        host.split(']')
+            .next()
+            .map_or(host, |it| &host[..it.len() + 1])
+    } else {
+        host.split(':').next().unwrap_or(host)
+    };
+    matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "[::1]")
+}
+
+/// 配置里对某个条目的声明 —— 目录要的输入（`app` 把 CLI / 配置 / 顶层兜底摆进来）。
+///
+/// 生命周期同一个：调用方持有 `AppConfig` 与 `ChatArgs`，两者都活得比本结构久。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Declared<'a> {
+    /// 用哪个适配器。**目录里没有的 id 必填**；目录里有的可以省。
+    pub adapter: Option<&'a str>,
+    /// 条目自己的端点（覆盖目录默认）。
+    pub base_url: Option<&'a str>,
+    /// 顶层 `base_url` —— 老配置的兜底写法，对任何条目都生效（`R1` §1）。
+    pub fallback_base_url: Option<&'a str>,
+    /// CLI 的 `--base-url`。**只对生效的那个条目有意义**，由调用方自己把关：
+    /// 切换后的条目不该带着 CLI 的端点（跟 `--api-key` 是同一类串味）。
+    pub cli_base_url: Option<&'a str>,
+}
+
+/// 生效配置：CLI / 配置 / 目录三层合成之后的结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolved {
+    /// 条目 id（用户写的那个）。
+    pub id: String,
+    /// 用哪个适配器实现。
+    pub adapter: &'static str,
+    /// 生效端点。
+    pub base_url: String,
+    /// `true` = 用的**不是**该适配器的官方端点 → 模型清单不由我们提供，交服务端报错
+    /// （`R2` 的「不拦清单」）。
+    pub custom_base: bool,
+    /// 约定环境变量名（`None` = 没有约定名，只看钥匙串）。
+    pub api_key_env: Option<&'static str>,
+    /// 通常需要密钥吗。**只是界面提示**，不参与任何校验或路由。
+    pub key_required: bool,
+}
+
+/// 解析条目失败的原因。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolveError {
+    /// 显式写了 `adapter`，但那个适配器不存在。
+    UnknownAdapter { id: String, adapter: String },
+    /// 目录里没有这个 id，配置里也没写 `adapter`。
+    MissingAdapter { id: String },
+}
+
+impl std::fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownAdapter { id, adapter } => write!(
+                f,
+                "条目 `{id}` 写了未知适配器 `{adapter}`（可用：{}）",
+                ADAPTERS.join(" / ")
+            ),
+            Self::MissingAdapter { id } => write!(
+                f,
+                "未知供应商 `{id}`：它不在内置目录里，请为它写 `adapter`（可用：{}），\
+                 或直接用目录里的名字（如 ollama / openrouter / deepseek）",
+                ADAPTERS.join(" / ")
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ResolveError {}
+
+/// 解析一个条目的生效配置。
+///
+/// 三条规则：
+///
+/// | 项 | 顺序 |
+/// |----|------|
+/// | adapter | 配置里显式写的 > 目录推断（目录 id / 适配器 id）> **报错**（不猜） |
+/// | base_url | CLI > 条目 > 顶层兜底 > 目录 > 适配器官方端点 |
+/// | api_key_env | 条目自己的 > 它所用适配器的 |
+pub fn resolve(id: &str, declared: Declared<'_>) -> Result<Resolved, ResolveError> {
+    let adapter = match declared.adapter.map(str::trim).filter(|it| !it.is_empty()) {
+        Some(explicit) => ADAPTERS
+            .iter()
+            .copied()
+            .find(|it| *it == explicit)
+            .ok_or_else(|| ResolveError::UnknownAdapter {
+                id: id.to_string(),
+                adapter: explicit.to_string(),
+            })?,
+        // 目录里有的（含两个适配器 id 本身）才推断得出来；推断不出就报错，不自作主张
+        None => {
+            adapter_for(id).ok_or_else(|| ResolveError::MissingAdapter { id: id.to_string() })?
+        }
+    };
+
+    let adapter_default = adapter_default_base_url(adapter).unwrap_or_default();
+    let base_url = declared
+        .cli_base_url
+        .or(declared.base_url)
+        .or(declared.fallback_base_url)
+        .map(str::trim)
+        .filter(|it| !it.is_empty())
+        .or_else(|| preset(id).map(|preset| preset.base_url))
+        .unwrap_or(adapter_default)
+        .to_string();
+
+    Ok(Resolved {
+        id: id.to_string(),
+        adapter,
+        custom_base: base_url != adapter_default,
+        // 环境变量名：**目录里有的条目以目录为准** —— `api_key_env: None` 就是"没有约定名"
+        // （本地服务），这时**不能**拿适配器的名字兜底：Ollama 的密钥会变成 `OPENAI_API_KEY`，
+        // 等于把你的 OpenAI 密钥发给 ollama.com。回退只给"目录里没有的自定义条目"。
+        api_key_env: match preset(id) {
+            Some(preset) => preset.api_key_env,
+            None => api_key_env_for(adapter),
+        },
+        key_required: preset(id)
+            .map(|preset| preset.key_required)
+            // 自定义条目：按「是不是本地地址」猜 —— 本地通常不需要密钥
+            .unwrap_or(!is_local(&base_url)),
+        base_url,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,5 +419,152 @@ mod tests {
     fn ids_iterates_the_whole_catalog() {
         assert_eq!(ids().count(), PRESETS.len());
         assert!(ids().any(|id| id == "ollama"));
+    }
+
+    #[test]
+    fn is_local_recognises_the_usual_forms() {
+        assert!(is_local("http://localhost:11434/v1"));
+        assert!(is_local("http://127.0.0.1:1234/v1"));
+        assert!(is_local("http://0.0.0.0:8000/v1"));
+        assert!(is_local("http://[::1]:8000/v1"));
+        assert!(!is_local("https://api.openai.com/v1"));
+        // 主机名里带 localhost 的假阳性不值得防（提示位而已，不进路由）
+        assert!(!is_local("https://api.example.com/localhost/v1"));
+    }
+
+    #[test]
+    fn catalog_entry_resolves_to_its_adapter_and_endpoint() {
+        let resolved = resolve("ollama", Declared::default()).expect("目录里的条目");
+        assert_eq!(resolved.adapter, "openai-compatible");
+        assert_eq!(resolved.base_url, "http://localhost:11434/v1");
+        assert!(resolved.custom_base, "本地端点不是适配器的官方端点");
+        assert_eq!(resolved.api_key_env, None);
+        assert!(!resolved.key_required);
+    }
+
+    #[test]
+    fn adapter_entries_are_not_custom_base() {
+        // 两个通用适配器：端点就是各自的官方端点 → 不是自定义端点 → 用内置模型清单
+        for adapter in ADAPTERS {
+            let resolved = resolve(adapter, Declared::default()).expect("适配器条目");
+            assert_eq!(resolved.adapter, adapter);
+            assert!(!resolved.custom_base, "{adapter} 不该被当成自定义端点");
+            assert!(resolved.key_required);
+        }
+    }
+
+    #[test]
+    fn base_url_priority_is_cli_then_entry_then_fallback_then_catalog() {
+        let entry_only = resolve(
+            "deepseek",
+            Declared {
+                base_url: Some("https://entry.example/v1"),
+                ..Declared::default()
+            },
+        )
+        .expect("解析");
+        assert_eq!(entry_only.base_url, "https://entry.example/v1");
+
+        let with_fallback = resolve(
+            "deepseek",
+            Declared {
+                fallback_base_url: Some("https://fallback.example/v1"),
+                ..Declared::default()
+            },
+        )
+        .expect("解析");
+        assert_eq!(with_fallback.base_url, "https://fallback.example/v1");
+
+        let with_cli = resolve(
+            "deepseek",
+            Declared {
+                cli_base_url: Some("https://cli.example/v1"),
+                base_url: Some("https://entry.example/v1"),
+                fallback_base_url: Some("https://fallback.example/v1"),
+                ..Declared::default()
+            },
+        )
+        .expect("解析");
+        assert_eq!(with_cli.base_url, "https://cli.example/v1");
+
+        let catalog_only = resolve("deepseek", Declared::default()).expect("解析");
+        assert_eq!(catalog_only.base_url, preset("deepseek").unwrap().base_url);
+    }
+
+    /// 目录里**明确写了** `api_key_env: None` 的条目，不许回退到适配器的变量名 ——
+    /// 否则 Ollama 的密钥会读 `OPENAI_API_KEY`，把你的 OpenAI 密钥发给 ollama.com。
+    /// （这个 bug 是裸跑 `codingrocket gui` 时那条提示暴露出来的。）
+    #[test]
+    fn catalog_entry_does_not_borrow_the_adapter_env_name() {
+        for id in ["ollama", "lmstudio", "vllm"] {
+            let resolved = resolve(id, Declared::default()).expect("目录里的条目");
+            assert_eq!(resolved.adapter, "openai-compatible");
+            assert_eq!(resolved.api_key_env, None, "{id} 不该借 OPENAI_API_KEY");
+        }
+    }
+
+    #[test]
+    fn custom_entry_needs_an_adapter_and_borrows_its_env_name() {
+        // 没写 adapter 的自定义条目：报错，且文案要指路（说清可用的适配器）
+        let error = resolve("my-gateway", Declared::default()).expect_err("推断不出来");
+        let text = error.to_string();
+        assert!(text.contains("my-gateway"), "报错要带上 id：{text}");
+        assert!(text.contains("ollama"), "报错要指路到目录：{text}");
+
+        // 写了 adapter：照它走，环境变量名回退到**适配器**的约定名
+        let resolved = resolve(
+            "my-gateway",
+            Declared {
+                adapter: Some("anthropic"),
+                base_url: Some("https://my-gateway.example"),
+                ..Declared::default()
+            },
+        )
+        .expect("显式 adapter");
+        assert_eq!(resolved.adapter, "anthropic");
+        assert_eq!(resolved.api_key_env, Some("ANTHROPIC_API_KEY"));
+        assert!(resolved.key_required, "远程端点默认要密钥");
+
+        // 本地地址的自定义条目：提示位说"不需要密钥"
+        let local = resolve(
+            "my-box",
+            Declared {
+                adapter: Some("openai-compatible"),
+                base_url: Some("http://localhost:9000/v1"),
+                ..Declared::default()
+            },
+        )
+        .expect("显式 adapter");
+        assert!(!local.key_required);
+    }
+
+    #[test]
+    fn unknown_explicit_adapter_is_rejected() {
+        let error = resolve(
+            "my-gateway",
+            Declared {
+                adapter: Some("grpc"),
+                ..Declared::default()
+            },
+        )
+        .expect_err("未知适配器");
+        assert!(matches!(error, ResolveError::UnknownAdapter { .. }));
+        assert!(error.to_string().contains("grpc"));
+    }
+
+    #[test]
+    fn blank_declarations_are_ignored() {
+        // 空字符串等同于没写（设置界面清空输入框会写出空串）
+        let resolved = resolve(
+            "ollama",
+            Declared {
+                adapter: Some("   "),
+                base_url: Some(""),
+                ..Declared::default()
+            },
+        )
+        .expect("空值应当被忽略");
+        assert_eq!(resolved.adapter, "openai-compatible");
+        assert_eq!(resolved.base_url, preset("ollama").unwrap().base_url);
     }
 }

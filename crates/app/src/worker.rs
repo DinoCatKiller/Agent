@@ -61,13 +61,15 @@ impl Selection {
 
 /// 重建 provider 的上下文（切换 provider / model 时用）。
 ///
-/// 一个必须讲清楚的细节：**CLI 的 `--api-key` 只对启动时那个 provider 有效**。
-/// 换到别家还带着它，等于把 A 家的密钥送给 B 家 —— `R1` 的优先级里 CLI 最高，
-/// 会盖过钥匙串里 B 家正确的那把。所以只在 provider 相同时沿用。
+/// 一个必须讲清楚的细节：**CLI 的 `--api-key` / `--base-url` 只对启动时那个条目有效**。
+/// 换到别家还带着它，等于把 A 家的密钥与端点送给 B 家 —— `R1` 的优先级里 CLI 最高，
+/// 会盖过钥匙串里 B 家正确的那把。所以只在条目相同时沿用。
+/// （`setup::declared_for` 也是同一条规则，两处必须一致。）
 pub struct ProviderFactory {
     base_url: Option<String>,
     api_key: Option<String>,
-    api_key_provider: String,
+    /// CLI 参数属于哪个条目（启动时那个）。
+    cli_provider: String,
     config: Option<String>,
     tools: ToolSet,
 }
@@ -77,7 +79,7 @@ impl ProviderFactory {
         Self {
             base_url: cli.base_url.clone(),
             api_key: cli.api_key.clone(),
-            api_key_provider: cli.provider.clone(),
+            cli_provider: cli.provider.clone(),
             config: cli.config.clone(),
             tools,
         }
@@ -95,8 +97,13 @@ impl ProviderFactory {
             model: selection.model.clone(),
             // 切换后的组合只有这一个候选：降级链是 CLI 的概念（`R2`），界面不参与
             fallbacks: Vec::new(),
-            base_url: self.base_url.clone(),
-            api_key: if selection.provider == self.api_key_provider {
+            // CLI 的 `--base-url` / `--api-key` 都只属于启动时那个条目（见本结构体的文档）
+            base_url: if selection.provider == self.cli_provider {
+                self.base_url.clone()
+            } else {
+                None
+            },
+            api_key: if selection.provider == self.cli_provider {
                 self.api_key.clone()
             } else {
                 None

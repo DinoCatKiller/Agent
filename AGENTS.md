@@ -32,7 +32,7 @@
 | `S1` / `S2` | 状态概览 / 未决问题 | `P1–P6` / `PT` | 供应商文档 / 供应商模板 |
 | `G1` | 目标与技术路线 | `X1–X5` | 调研（一次性消费，会过时） |
 | `A1–A7` | 架构与契约（跨 crate 或归属某 crate） | `D0–D6` | 决策 ADR（只增不改） |
-| `R1–R4` | 运行时（配置 / 路由 / 观测 / 限流） | `RM` | 里程碑排期（**不含状态**） |
+| `R1–R5` | 运行时（配置 / 路由 / 观测 / 限流 / 供应商目录） | `RM` | 里程碑排期（**不含状态**） |
 | `Q1–Q3` | 质量（测试 / 评测 / 安全） | `GUI` | 二期 GUI 与 L3 计划 |
 | `M1` | 文档规范（归属 + 路由） | `T0` | 文档模板 |
 
@@ -83,6 +83,7 @@
 | PT | 供应商文档模板 | [`crates/kernel/providers/docs/providers/_template.md`](crates/kernel/providers/docs/providers/_template.md) | 新建某家供应商文档 | ~0.4k | ✅ |
 | P1 | OpenAI 兼容族差异 | [`crates/kernel/providers/docs/providers/openai.md`](crates/kernel/providers/docs/providers/openai.md) | 接 OpenAI / DeepSeek / vLLM 等兼容实现时 | ~1.5k | ✅ |
 | P2 | Anthropic 差异 | [`crates/kernel/providers/docs/providers/anthropic.md`](crates/kernel/providers/docs/providers/anthropic.md) | 接 Claude / Anthropic 兼容端点时 | ~1.6k | ✅ |
+| R5 | 内置供应商目录 | [`crates/kernel/providers/docs/catalog.md`](crates/kernel/providers/docs/catalog.md) | 加供应商、改端点、讨论「用户为什么还要填适配器名」 | ~1.5k | ✅ |
 | A2-V | 适配器边界图（`A2` 的可视化） | [`crates/kernel/providers/docs/adapter-map.html`](crates/kernel/providers/docs/adapter-map.html) | 想一眼看懂「插座」与两家差异 | 1 张图 | ✅ |
 | P3–P6 | 其余供应商差异 | `crates/kernel/providers/docs/providers/*.md` | 接对应一家模型时 | — | ⬜ |
 
