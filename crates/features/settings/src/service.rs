@@ -4,12 +4,12 @@
 //! 「不回显原文」都由 `agent-config` 兜住。本模块只负责**编排顺序**与**保住用户内容**。
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use agent_config::{
-    ConfigError, ConfigPaths, ExposeSecret, SecretStore, SecretString, account_for, api_key_env,
-    load, save,
+    ConfigError, ConfigPaths, ExposeSecret, Preferences, SecretStore, SecretString, account_for,
+    api_key_env, load, save,
 };
 
 use crate::settings::Settings;
@@ -167,6 +167,34 @@ impl SettingsService {
     /// 删除钥匙串里的密钥（幂等）。
     pub fn delete_key(&self, provider: &str) -> Result<(), ConfigError> {
         self.secrets.delete(provider)
+    }
+
+    /// 偏好文件路径（`models.toml`，与 `config.toml` 同目录）。
+    pub fn preferences_file(&self) -> PathBuf {
+        self.paths.preferences_file()
+    }
+
+    /// 读 UI 偏好（模型选择器里隐藏了哪些模型）。
+    ///
+    /// 与 [`Self::load`] **刻意相反**：这里降级不报错 —— 偏好坏了不该挡用，
+    /// 理由写在 `agent_config::prefs` 的模块文档里。
+    pub fn preferences(&self) -> Preferences {
+        Preferences::load(&self.paths)
+    }
+
+    /// 设置某模型在选择器里的显隐，并**立即落盘**（幂等）。
+    ///
+    /// 不像 [`Self::save`] 那样先全量读再写：偏好是"锦上添花"的数据，不存在把用户
+    /// 手写内容覆盖掉的风险，文件也小。
+    pub fn set_model_hidden(
+        &self,
+        provider: &str,
+        model: &str,
+        hidden: bool,
+    ) -> Result<(), ConfigError> {
+        let mut prefs = self.preferences();
+        prefs.set_hidden(provider, model, hidden);
+        prefs.save(&self.paths)
     }
 }
 

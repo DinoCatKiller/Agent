@@ -11,6 +11,7 @@
 //! 与 TUI 的关系：**同一份 worker、同一份 `ChatUi` 状态机、同一份 `Cmd`/`UiEvent`**，
 //! 差别只在渲染端（`features/chat/src/gpui.rs` vs `ui.rs`）。
 
+use std::rc::Rc;
 use std::sync::Arc;
 
 use agent_chat::{ChatView, Cmd, ModelChoice, StatusInfo, UiEvent};
@@ -101,7 +102,14 @@ pub fn run(args: GuiArgs) -> i32 {
         model: args.model.clone(),
     };
     // 选择器的候选清单：装配层给（`features/*` 不认识供应商名单）
-    let model_choices = setup::model_choices(&chat_args);
+    //
+    // 两份用途不同的清单：
+    // - `all_choices` 给设置页的「管理模型」——**全量**，否则关掉的模型没法再打开；
+    // - `visible` 给对话页的选择器 —— 已按偏好剔除，且当前生效的那对永远保留。
+    let all_choices = setup::model_choices(&chat_args);
+    let prefs = setup::load_preferences(chat_args.config.as_deref());
+    let visible =
+        setup::visible_choices(&all_choices, &prefs, &chat_args.provider, &chat_args.model);
 
     // 设置面板的数据入口。定位配置目录失败不该挡启动（`R1`：配置问题不挡「跑起来」），
     // 只是设置页不可用——所以这里降级为一句可读的提示。
@@ -120,12 +128,52 @@ pub fn run(args: GuiArgs) -> i32 {
         // 组件库 + 设计令牌主题（必须在开窗之前）
         agent_ui_kit::init(cx);
         open_window(window_options(), cx, |window, cx| {
+            // 顺序有讲究：设置页先建（它要**全量**清单），外壳次之，对话页最后 ——
+            // 对话页的「管理模型」回调要回指外壳，而外壳得先存在。
+            let settings = settings_service.as_ref().map(|service| {
+                cx.new(|cx| {
+                    SettingsView::new(
+                        window,
+                        cx,
+                        service.clone(),
+                        setup::provider_ids(),
+                        all_choices.clone(),
+                    )
+                })
+            });
+
+            let shell = cx.new(|_| Shell {
+                chat: None,
+                settings,
+                settings_error: settings_error.clone(),
+                tab: Tab::Chat,
+                open_models_page: false,
+            });
+
+            // 对话页那个胶囊底部的「管理模型」→ 切到设置页并落在模型分区。
+            //
+            // 跨功能的这条线**只能由宿主接**（`D6`：各功能不知道对方存在）。
+            // 这里只置旗标、不直接调设置页：设输入框的值要 `&mut Window`，回调里拿不到 ——
+            // 真正的切换发生在 `Shell::render`（那里有 window）。
+            let on_manage_models: Rc<dyn Fn(&mut App)> = {
+                let shell = shell.downgrade();
+                Rc::new(move |cx: &mut App| {
+                    if let Some(shell) = shell.upgrade() {
+                        shell.update(cx, |shell, cx| {
+                            shell.tab = Tab::Settings;
+                            shell.open_models_page = true;
+                            cx.notify();
+                        });
+                    }
+                })
+            };
+
             let chat = cx.new(|cx| {
                 ChatView::new(
                     window,
                     cx,
                     status.clone(),
-                    model_choices
+                    visible
                         .iter()
                         .map(|(provider, model)| ModelChoice {
                             provider: provider.clone(),
@@ -134,8 +182,11 @@ pub fn run(args: GuiArgs) -> i32 {
                         .collect(),
                     cmd_tx.clone(),
                     cancel_slot.clone(),
+                    on_manage_models,
                 )
             });
+            shell.update(cx, |shell, _cx| shell.chat = Some(chat.clone()));
+
             // 桥：worker 的事件流 → 视图。`rx.recv().await` 在 GPUI 的执行器里轮询
             // （`X2` §8 已验证过这个形态）。
             chat.update(cx, |_view, cx| {
@@ -149,16 +200,7 @@ pub fn run(args: GuiArgs) -> i32 {
                 .detach();
             });
 
-            let settings = settings_service.as_ref().map(|service| {
-                cx.new(|cx| SettingsView::new(window, cx, service.clone(), setup::provider_ids()))
-            });
-
-            cx.new(|_| Shell {
-                chat,
-                settings,
-                settings_error: settings_error.clone(),
-                tab: Tab::Chat,
-            })
+            shell
         })
         .expect("open window");
     });
@@ -195,15 +237,27 @@ enum Tab {
 }
 
 struct Shell {
-    chat: Entity<ChatView>,
+    /// `None` 只在构造的**那一瞬间**成立：外壳要先于对话页建出来（对话页的回调要回指它），
+    /// 建完对话页立刻填回来。渲染发生在构造之后，所以渲染期它一定在。
+    chat: Option<Entity<ChatView>>,
     /// `None` = 定位配置目录失败（原因在 `settings_error`）。
     settings: Option<Entity<SettingsView>>,
     settings_error: Option<String>,
     tab: Tab,
+    /// 对话页点了「管理模型」→ 下一帧切到设置页的模型分区（见 `on_manage_models`）。
+    open_models_page: bool,
 }
 
 impl Render for Shell {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 对话页刚点了「管理模型」：这里才切得到模型分区（`show_models` 要 `&mut Window`）。
+        if self.open_models_page {
+            self.open_models_page = false;
+            if let Some(settings) = &self.settings {
+                settings.update(cx, |view, cx| view.show_models(window, cx));
+            }
+        }
+
         let theme = UiTheme::global(cx);
         let (bg, fg, dim, border, surface, accent) = (
             theme.colors.background,
@@ -215,7 +269,13 @@ impl Render for Shell {
         );
 
         let body = match self.tab {
-            Tab::Chat => div().flex().flex_1().min_h(px(0.)).child(self.chat.clone()),
+            // `children` 而不是 `child`：`Option<Entity<_>>` 实现了 `IntoIterator`，
+            // `None` 时什么都不画（`Option` 本身没有 `IntoElement` 实现，`child` 收不了它）。
+            Tab::Chat => div()
+                .flex()
+                .flex_1()
+                .min_h(px(0.))
+                .children(self.chat.clone()),
             Tab::Settings => match &self.settings {
                 Some(view) => div().flex().flex_1().min_h(px(0.)).child(view.clone()),
                 None => div().p_4().text_color(dim).child(

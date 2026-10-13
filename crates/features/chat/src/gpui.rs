@@ -11,6 +11,7 @@
 //!
 //! 本模块只在 `gui` feature 下编译：GPUI 的依赖树与体积不进一期 TUI 产物。
 
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -106,6 +107,12 @@ pub struct ChatView {
     model_menu_open: bool,
     /// 弹层里模型列表的滚动句柄。
     model_scroll: ScrollHandle,
+    /// 弹层里「管理模型」被点时的回调 —— **由宿主接线**（切片 B：切到设置页的模型分区）。
+    ///
+    /// `features/chat` 不认识设置页、也读不了偏好文件（`D5`/`D6`），所以只留一个口子。
+    /// 用 `Rc<dyn Fn>` 而不是加一条通道：它只回传一个「用户想看设置」的信号，不是 `Cmd`
+    /// （那个是发给 worker 的，见 `channel.rs`）。
+    on_manage_models: Rc<dyn Fn(&mut App)>,
     sessions: Vec<SessionMeta>,
     session_id: Option<String>,
     session_title: Option<String>,
@@ -117,6 +124,9 @@ pub struct ChatView {
 
 impl ChatView {
     /// 建视图。`cmd_tx` / `cancel_slot` 与宿主 worker 共用（见 `app` 的宿主装配）。
+    ///
+    /// `candidates` 是**过滤后**的清单（被用户在「管理模型」里关掉的已剔除）——
+    /// 过滤在装配层做（`app::setup::visible_choices`），因为偏好文件是宿主的活。
     pub fn new(
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -124,6 +134,7 @@ impl ChatView {
         candidates: Vec<ModelChoice>,
         cmd_tx: tokio::sync::mpsc::Sender<Cmd>,
         cancel_slot: Arc<Mutex<Option<CancellationToken>>>,
+        on_manage_models: Rc<dyn Fn(&mut App)>,
     ) -> Self {
         let input = cx.new(|cx| {
             InputState::new(window, cx).placeholder("输入消息，Enter 发送（Shift+Enter 换行）")
@@ -167,6 +178,7 @@ impl ChatView {
             model_search,
             model_menu_open: false,
             model_scroll: ScrollHandle::new(),
+            on_manage_models,
             sessions: Vec::new(),
             session_id: None,
             session_title: None,
@@ -617,11 +629,14 @@ impl ChatView {
                     .on_click({
                         let entity = content_entity.clone();
                         move |_, _, cx| {
-                            entity.update(cx, |view, cx| {
+                            // 先把回调取出来再调：`update` 借 `view`，回调要 `&mut App`，
+                            // 借完再调才不会撞借用（`Rc` 是 `clone` 出来的，不带借用）。
+                            let callback = entity.update(cx, |view, cx| {
                                 view.model_menu_open = false;
-                                view.ui.set_notice("管理模型：下一步接入".to_string());
                                 cx.notify();
+                                view.on_manage_models.clone()
                             });
+                            callback(cx);
                         }
                     })
                     .child(

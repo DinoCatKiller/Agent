@@ -303,6 +303,40 @@ pub fn provider_ids() -> Vec<String> {
     ADAPTERS.iter().map(|id| id.to_string()).collect()
 }
 
+/// 读 UI 偏好（`models.toml`）。与 [`load_config`] 同样的容错：定位/读取失败都退回默认值
+/// （偏好不该挡启动，理由见 `agent_config::prefs`）。
+#[cfg(feature = "gui")]
+pub fn load_preferences(explicit: Option<&str>) -> agent_config::Preferences {
+    let paths = match explicit {
+        Some(path) => ConfigPaths::from_file(path),
+        None => match ConfigPaths::discover() {
+            Ok(paths) => paths,
+            Err(_) => return agent_config::Preferences::default(),
+        },
+    };
+    agent_config::Preferences::load(&paths)
+}
+
+/// 选择器里**可见**的候选 = 全量 − 用户在「管理模型」里关掉的。
+///
+/// **当前生效的那个永远可见**：否则它切走之后就再也选不回来了 ——
+/// 那比"菜单里多一项"糟得多。
+#[cfg(feature = "gui")]
+pub fn visible_choices(
+    all: &[(String, String)],
+    prefs: &agent_config::Preferences,
+    current_provider: &str,
+    current_model: &str,
+) -> Vec<(String, String)> {
+    all.iter()
+        .filter(|(provider, model)| {
+            (provider == current_provider && model == current_model)
+                || !prefs.is_hidden(provider, model)
+        })
+        .cloned()
+        .collect()
+}
+
 /// M4 的两个演示工具：证明工具循环端到端可用。真实工具集由配置层/宿主提供（M6）。
 pub fn demo_tools() -> ToolSet {
     ToolSet::new()

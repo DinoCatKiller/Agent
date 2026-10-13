@@ -9,18 +9,32 @@
 
 use std::sync::Arc;
 
-use agent_config::SecretString;
+use agent_config::{Preferences, SecretString};
 use agent_ui_kit::UiTheme;
-use agent_ui_kit::component::button::Button;
-use agent_ui_kit::component::input::{Input, InputState};
+use agent_ui_kit::component::button::{Button, ButtonVariants as _};
+use agent_ui_kit::component::input::{Input, InputEvent, InputState};
+use agent_ui_kit::component::switch::Switch;
+use agent_ui_kit::component::{Icon, IconName};
 use agent_ui_kit::kit::*;
 
 use crate::service::{KeySource, SettingsService};
 use crate::settings::Draft;
 
+/// 面板内的分区。
+///
+/// 默认「通用」；从对话页那个胶囊里的「管理模型」进来时直接落在「模型」
+/// （宿主调 [`SettingsView::show_models`]）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Page {
+    General,
+    Models,
+}
+
 /// 面板状态。
 pub struct SettingsView {
     service: Arc<SettingsService>,
+    /// 当前分区。
+    page: Page,
     provider: Entity<InputState>,
     model: Entity<InputState>,
     base_url: Entity<InputState>,
@@ -32,10 +46,19 @@ pub struct SettingsView {
     /// 已知供应商（宿主给的）——「默认供应商」用 chip 选，避免手滑写出未知名字：
     /// 它现在**真的生效**（`R1` §1.1），写错会让 `gui` 直接起不来。
     providers: Vec<String>,
+    /// 全部候选模型（宿主编排给的）——「模型」页要看到**全量**才能把关掉的再打开。
+    models: Vec<(String, String)>,
+    /// 「模型」页的搜索框。
+    model_search: Entity<InputState>,
+    /// 偏好快照（哪些模型被关掉了）。开关是**受控**的：点一下 → 落盘 → 更新这里。
+    hidden: Preferences,
     /// `Some` = 配置文件读不动（坏 TOML 等）：此时**禁止保存**。
     load_error: Option<String>,
     status: Option<Status>,
     config_file: String,
+    preferences_file: String,
+    /// 订阅必须持有，drop 即取消订阅。
+    _search_sub: Subscription,
 }
 
 /// 一个供应商的密钥行。
@@ -53,12 +76,15 @@ struct Status {
 }
 
 impl SettingsView {
-    /// `providers` 由宿主给（`features/*` 不认识供应商名单，`D6`）。
+    /// `providers` / `models` 都由宿主给（`features/*` 不认识供应商名单，`D6`）。
+    ///
+    /// `models` 是**全量**候选（含被关掉的）：关掉的也得列出来，否则用户没法再打开。
     pub fn new(
         window: &mut Window,
         cx: &mut Context<Self>,
         service: Arc<SettingsService>,
         providers: Vec<String>,
+        models: Vec<(String, String)>,
     ) -> Self {
         let (draft, load_error) = match service.load() {
             Ok(settings) => (Draft::from_settings(&settings), None),
@@ -95,9 +121,26 @@ impl SettingsView {
             });
         }
 
+        // 「模型」页的搜索框 + 其订阅（内容一变就重渲染 → 重新过滤）。
+        let model_search = cx.new(|cx| InputState::new(window, cx).placeholder("搜索模型…"));
+        let search_sub = cx.subscribe_in(
+            &model_search,
+            window,
+            |_this, _state, event: &InputEvent, _window, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            },
+        );
+
+        let config_file = service.config_file().display().to_string();
+        let preferences_file = service.preferences_file().display().to_string();
+        // 偏好**降级不报错**（`agent_config::prefs` 的口径）：坏了就当没关过任何模型。
+        let hidden = service.preferences();
+
         Self {
-            config_file: service.config_file().display().to_string(),
             service,
+            page: Page::General,
             provider: provider_input,
             model: model_input,
             base_url: base_url_input,
@@ -105,9 +148,65 @@ impl SettingsView {
             timeout: timeout_input,
             keys,
             providers: provider_options,
+            models,
+            model_search,
+            hidden,
             load_error,
             status: None,
+            config_file,
+            preferences_file,
+            _search_sub: search_sub,
         }
+    }
+
+    /// 切到「模型」页（宿主在对话页点「管理模型」时调）。
+    pub fn show_models(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.page = Page::Models;
+        self.status = None;
+        // 重新读一次：别的地方（手改文件）动过偏好，这里要跟上。
+        self.hidden = self.service.preferences();
+        self.model_search
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        cx.notify();
+    }
+
+    /// 切回「通用」页。
+    fn show_general(&mut self, cx: &mut Context<Self>) {
+        self.page = Page::General;
+        cx.notify();
+    }
+
+    /// 开关一个模型是否出现在选择器里。**立即落盘**（偏好文件很小，且不存在覆盖用户内容的风险）。
+    ///
+    /// 界面**不做乐观更新**：落盘成功才改本地快照，失败就保持原样并报错 ——
+    /// 否则"开关弹回去了但文件里已经写进去"这种状态最难查。
+    fn toggle_model(
+        &mut self,
+        provider: String,
+        model: String,
+        visible: bool,
+        cx: &mut Context<Self>,
+    ) {
+        match self.service.set_model_hidden(&provider, &model, !visible) {
+            Ok(()) => {
+                self.hidden = self.service.preferences();
+                self.status = Some(Status {
+                    message: if visible {
+                        format!("已显示 {model}")
+                    } else {
+                        format!("已隐藏 {model}（对话页的模型菜单里不再出现）")
+                    },
+                    error: false,
+                });
+            }
+            Err(error) => {
+                self.status = Some(Status {
+                    message: format!("写偏好失败：{error}"),
+                    error: true,
+                });
+            }
+        }
+        cx.notify();
     }
 
     /// 用 chip 选默认供应商（写进输入框，保存时随其余配置一起落盘）。
@@ -258,6 +357,150 @@ impl SettingsView {
 
 // —— 渲染 ——
 
+impl SettingsView {
+    /// 「模型」页：搜索 + 按供应商分组 + 每个模型一个开关（控制它是否出现在对话页的选择器里）。
+    ///
+    /// 关掉是**加法语义**：偏好文件里只记被隐藏的那些，新模型默认可见。
+    fn models_page(&self, cx: &mut Context<Self>, fg: Hsla, dim: Hsla, err: Hsla) -> AnyElement {
+        let query = self.model_search.read(cx).value().trim().to_lowercase();
+        let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+        for (provider, model) in &self.models {
+            let hit = query.is_empty()
+                || model.to_lowercase().contains(&query)
+                || provider.to_lowercase().contains(&query);
+            if !hit {
+                continue;
+            }
+            match groups.last_mut() {
+                Some((it, rows)) if it == provider && !rows.iter().any(|row| row == model) => {
+                    rows.push(model.clone());
+                }
+                Some(_) => {}
+                None => groups.push((provider.clone(), vec![model.clone()])),
+            }
+        }
+
+        let mut rows = div().flex().flex_col().gap_1();
+        for (provider, models) in &groups {
+            rows = rows.child(
+                div()
+                    .pt_2()
+                    .text_xs()
+                    .text_color(dim)
+                    .child(provider.clone()),
+            );
+            for model in models {
+                let visible = !self.hidden.is_hidden(provider, model);
+                let (row_provider, row_model) = (provider.clone(), model.clone());
+                rows = rows.child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_3()
+                        .child(div().flex_1().truncate().child(model.clone()))
+                        .child(
+                            Switch::new(ElementId::Name(
+                                format!("model-switch::{provider}::{model}").into(),
+                            ))
+                            .checked(visible)
+                            .on_change(cx.listener(
+                                move |this, wanted: &bool, _, cx| {
+                                    this.toggle_model(
+                                        row_provider.clone(),
+                                        row_model.clone(),
+                                        *wanted,
+                                        cx,
+                                    )
+                                },
+                            )),
+                        ),
+                );
+            }
+        }
+        if groups.is_empty() {
+            rows = rows.child(div().py_2().text_color(dim).child(if query.is_empty() {
+                "没有候选模型（宿主清单为空）"
+            } else {
+                "没有匹配的模型"
+            }));
+        }
+
+        let hidden_count: usize = self.hidden.hidden_models.values().map(Vec::len).sum();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .p_4()
+            .size_full()
+            .max_w(px(560.))
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Button::new("models-back")
+                            .ghost()
+                            .compact()
+                            .icon(IconName::ChevronLeft)
+                            .label("设置")
+                            .on_click(cx.listener(|this, _, _, cx| this.show_general(cx))),
+                    )
+                    .child(div().text_color(fg).child("管理模型"))
+                    .child(div().flex_1())
+                    .child(
+                        // 切片 C1 接：从预设供应商表里挑一个连上
+                        Button::new("connect-provider")
+                            .outline()
+                            .icon(IconName::Plus)
+                            .label("连接提供商")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.status = Some(Status {
+                                    message: "连接提供商：下一步接入（切片 C1）".to_string(),
+                                    error: false,
+                                });
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .text_xs()
+                    .text_color(dim)
+                    .child("自定义模型选择器中显示的模型。")
+                    .child(format!(
+                        "偏好文件：{}（已隐藏 {hidden_count} 个）",
+                        self.preferences_file
+                    )),
+            )
+            .child(div().border_b_1().border_color(theme_border(cx)))
+            .child(
+                Input::new(&self.model_search)
+                    .prefix(Icon::new(IconName::Search).text_color(dim))
+                    .cleanable(true),
+            )
+            .child(rows)
+            .children(self.status.as_ref().map(|status| {
+                div()
+                    .text_xs()
+                    .text_color(if status.error { err } else { fg })
+                    .child(status.message.clone())
+            }))
+            .into_any_element()
+    }
+}
+
+/// 分隔线颜色（`div()` 自己取不到主题，单开一个口子给它）。
+fn theme_border(cx: &App) -> Hsla {
+    UiTheme::global(cx).colors.border
+}
+
 impl Render for SettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = UiTheme::global(cx);
@@ -339,6 +582,14 @@ impl Render for SettingsView {
                     Button::new("reload-settings")
                         .label("重新载入")
                         .on_click(cx.listener(|this, _, window, cx| this.reload(window, cx))),
+                )
+                .child(
+                    // 模型分区也放个入口：不然它只能在对话页的胶囊弹层里找到
+                    Button::new("open-models")
+                        .ghost()
+                        .icon(IconName::Settings2)
+                        .label("管理模型")
+                        .on_click(cx.listener(|this, _, window, cx| this.show_models(window, cx))),
                 ),
         );
 
@@ -359,26 +610,29 @@ impl Render for SettingsView {
             );
         }
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .size_full()
-            .p_4()
-            .child(div().text_color(fg).child("设置"))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .text_xs()
-                    .text_color(dim)
-                    .child(format!("配置文件：{}", self.config_file))
-                    .child("保存只写盘，重启后生效（`S1` 切片 5：B 方案的热切换还没做）"),
-            )
-            .child(div().border_b_1().border_color(border))
-            .child(form)
-            .into_any_element()
+        match self.page {
+            Page::Models => self.models_page(cx, fg, dim, err),
+            Page::General => div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .size_full()
+                .p_4()
+                .child(div().text_color(fg).child("设置"))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .text_xs()
+                        .text_color(dim)
+                        .child(format!("配置文件：{}", self.config_file))
+                        .child("保存只写盘，重启后生效（`S1` 切片 5：B 方案的热切换还没做）"),
+                )
+                .child(div().border_b_1().border_color(border))
+                .child(form)
+                .into_any_element(),
+        }
     }
 }
 
