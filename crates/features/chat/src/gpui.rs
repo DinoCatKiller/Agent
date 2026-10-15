@@ -20,7 +20,8 @@ use agent_ui_kit::component::button::{Button, ButtonVariants as _};
 use agent_ui_kit::component::input::{Input, InputEvent, InputState};
 use agent_ui_kit::component::list::ListItem;
 use agent_ui_kit::component::popover::{Popover, PopoverState};
-use agent_ui_kit::component::{Icon, IconName};
+use agent_ui_kit::component::spinner::Spinner;
+use agent_ui_kit::component::{Icon, IconName, Sizable as _};
 use agent_ui_kit::kit::prelude::FluentBuilder as _;
 use agent_ui_kit::kit::*;
 use tokio_util::sync::CancellationToken;
@@ -45,10 +46,10 @@ struct Palette {
     bg: Hsla,
     fg: Hsla,
     dim: Hsla,
-    border: Hsla,
     surface: Hsla,
+    /// 比 surface 亮一档的台面色（选中 / 悬浮 / 用户气泡）。
+    secondary: Hsla,
     accent: Hsla,
-    user: Hsla,
     thinking: Hsla,
     tool: Hsla,
     ok: Hsla,
@@ -62,10 +63,9 @@ impl Palette {
             bg: t.colors.background,
             fg: t.colors.foreground,
             dim: t.colors.muted_foreground,
-            border: t.colors.border,
             surface: t.colors.surface,
+            secondary: t.colors.secondary,
             accent: t.colors.accent,
-            user: t.chat.user,
             thinking: t.chat.thinking,
             tool: t.chat.tool,
             ok: t.chat.ok,
@@ -350,12 +350,19 @@ impl ChatView {
             .id("session-list")
             .flex()
             .flex_col()
-            .gap_1()
+            .gap_0p5()
             .flex_1()
             .overflow_y_scroll();
 
         if self.sessions.is_empty() {
-            list = list.child(div().px_2().text_color(p.dim).child("还没有会话"));
+            list = list.child(
+                div()
+                    .px_2()
+                    .py_2()
+                    .text_xs()
+                    .text_color(p.dim)
+                    .child("还没有会话。发一条消息即新建。"),
+            );
         }
         for meta in self.sessions.clone() {
             let selected = current.as_deref() == Some(meta.id.as_str());
@@ -365,44 +372,69 @@ impl ChatView {
                     .id(ElementId::Name(id.clone().into()))
                     .flex()
                     .flex_col()
+                    .gap_0p5()
                     .px_2()
-                    .py_1()
+                    .py_1p5()
                     .rounded_md()
                     .cursor_pointer()
-                    .when(selected, |d| d.bg(p.surface))
-                    .hover(|d| d.bg(p.surface))
+                    // 选中用 accent 淡彩底（色相区分），悬浮用 secondary 实底（色阶区分）——
+                    // 两者不再是同一个色，状态可辨。
+                    .when(selected, |d| d.bg(p.accent.alpha(0.14)))
+                    .hover(|d| d.bg(p.secondary))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.pick_session(id.clone(), title.clone(), cx)
                     }))
-                    .child(div().truncate().child(meta.title.clone()))
-                    .child(div().text_xs().text_color(p.dim).child(format!(
-                        "{} · {}",
-                        meta.model,
-                        ago(meta.updated_at)
-                    ))),
+                    .child(
+                        div()
+                            .truncate()
+                            .when(selected, |d| d.font_weight(FontWeight::SEMIBOLD))
+                            .child(meta.title.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(p.dim)
+                            .truncate()
+                            .child(format!("{} · {}", meta.model, ago(meta.updated_at))),
+                    ),
             );
         }
 
+        // 侧栏与主区只靠 surface / bg 的色阶分层，不画分隔线。
         div()
             .flex()
             .flex_col()
             .gap_2()
-            .w(px(200.))
+            .w(px(220.))
             .h_full()
             .p_2()
-            .border_r_1()
-            .border_color(p.border)
             .bg(p.surface)
             .child(
                 div()
                     .flex()
                     .flex_row()
                     .items_center()
-                    .justify_between()
-                    .child(div().text_color(p.accent).child("会话"))
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(p.fg)
+                            .child("会话"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(p.dim)
+                            .child(self.sessions.len().to_string()),
+                    )
+                    .child(div().flex_1())
                     .child(
                         Button::new("new-session")
-                            .label("新建")
+                            .ghost()
+                            .compact()
+                            .icon(IconName::Plus)
+                            .tooltip("新建会话")
                             .on_click(cx.listener(|this, _, _, cx| this.new_session(cx))),
                     ),
             )
@@ -427,15 +459,36 @@ impl ChatView {
             .id("transcript")
             .flex()
             .flex_col()
-            .gap_1()
+            .gap_4()
             .flex_1()
             .min_h(px(0.))
-            .p_3()
+            .p_4()
             .overflow_y_scroll()
             .track_scroll(&self.scroll);
 
         if self.ui.entries().is_empty() {
-            rows = rows.child(div().text_color(p.dim).child("问我点什么吧。"));
+            // 空态说清「做什么」，不只说「空着」。
+            rows = rows.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .flex_1()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_lg()
+                            .text_color(p.fg)
+                            .child("问我点什么吧"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(p.dim)
+                            .child("Enter 发送，Shift+Enter 换行"),
+                    ),
+            );
         }
         // 克隆一份再渲染：构建 element 树时不再借 `self`，避免与 `cx` 的借用打架。
         // （G-3 上万条消息要换虚拟列表，那时这条克隆也得去掉。）
@@ -455,8 +508,10 @@ impl ChatView {
             (None, None) => ("新会话".to_string(), p.dim),
         };
 
+        // 生成中：取消用 outline（与发送的实心主按钮区分）。
         let action = if generating {
             Button::new("cancel")
+                .outline()
                 .label("取消")
                 .on_click(cx.listener(|this, _, _, cx| this.cancel(cx)))
                 .into_any_element()
@@ -467,14 +522,52 @@ impl ChatView {
                 .into_any_element()
         };
 
+        // 输入面板用 surface 底色从 bg 里浮起，不再画分隔线。
         div()
             .flex()
             .flex_col()
             .gap_2()
-            .p_2()
-            .border_t_1()
-            .border_color(p.border)
-            .child(self.model_capsule(cx, p))
+            .p_3()
+            .bg(p.surface)
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(self.model_capsule(cx, p))
+                    // provider 跟在胶囊旁（原来底部另有一行 provider/model，信息重复）
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(p.dim)
+                            .truncate()
+                            .child(self.status.provider.clone()),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(p.dim)
+                            .child(format!("{} tok", usage.total())),
+                    )
+                    .when(generating, |d| {
+                        d.child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap_1()
+                                .child(Spinner::new().color(p.thinking).with_size(px(14.)))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(p.thinking)
+                                        .child("生成中"),
+                                ),
+                        )
+                    }),
+            )
             .child(Input::new(&self.input))
             .child(
                 div()
@@ -482,22 +575,15 @@ impl ChatView {
                     .flex_row()
                     .items_center()
                     .gap_2()
-                    .text_xs()
                     .child(
                         div()
-                            .text_color(p.accent)
-                            .child(format!("{} / {}", self.status.provider, self.status.model)),
+                            .flex_1()
+                            .min_w(px(0.))
+                            .text_xs()
+                            .text_color(hint.1)
+                            .truncate()
+                            .child(hint.0),
                     )
-                    .child(div().text_color(hint.1).truncate().child(hint.0))
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .text_color(p.dim)
-                            .child(format!("{} tok", usage.total())),
-                    )
-                    .when(generating, |d| {
-                        d.child(div().text_color(p.thinking).child("生成中…"))
-                    })
                     .child(action),
             )
             .into_any_element()
@@ -541,7 +627,7 @@ impl ChatView {
 
         let current_provider = self.status.provider.clone();
         let current_model = self.status.model.clone();
-        let (border, dim, accent) = (p.border, p.dim, p.accent);
+        let (dim, accent) = (p.dim, p.accent);
 
         // `content` 是 `move` 闭包，会按值吃掉 `entity` —— 先留一份给 `on_open_change`。
         let content_entity = entity.clone();
@@ -623,8 +709,8 @@ impl ChatView {
                 }
             }
 
-            // 底部：管理模型（切片 B 接「开关 + 落盘」）
-            list = list.child(div().h(px(1.)).bg(border)).child(
+            // 底部：管理模型（切片 B 接「开关 + 落盘」）。用间距分组，不画分隔线。
+            list = list.child(div().mt_1().child(
                 ListItem::new("model-manage")
                     .on_click({
                         let entity = content_entity.clone();
@@ -648,7 +734,7 @@ impl ChatView {
                             .child(Icon::new(IconName::Settings2).text_color(dim))
                             .child("管理模型"),
                     ),
-            );
+            ));
 
             div()
                 .flex()
@@ -705,38 +791,142 @@ fn short_provider(provider: &str) -> &str {
     provider.strip_suffix("-compatible").unwrap_or(provider)
 }
 
-/// 一条转录条目 → 一行 element。前缀与配色与 ratatui 端保持一致（`ui.rs::entry_line`）。
+/// 一条转录条目 → 一个块。层级即信息：
+/// 用户 = 右对齐实底气泡；助理 = 左对齐全墨正文；思考 = 小字暗紫；工具 = 图标 + 状态签。
 fn entry_row(entry: Entry, p: Palette) -> AnyElement {
-    let (prefix, body, color) = match entry {
-        Entry::User(text) => ("› ", text, p.user),
-        Entry::Assistant(text) => ("", text, p.fg),
-        Entry::Thinking(text) => ("· ", text, p.thinking),
+    match entry {
+        // 用户消息：右对齐气泡，全墨正文（次要信息才用灰，正文不用）。
+        Entry::User(text) => div()
+            .flex()
+            .flex_row()
+            .justify_end()
+            .child(
+                div()
+                    .max_w(relative(0.72))
+                    .bg(p.secondary)
+                    .rounded_lg()
+                    .px_3()
+                    .py_2()
+                    .text_base()
+                    .text_color(p.fg)
+                    .child(text),
+            )
+            .into_any_element(),
+        // 助理消息：左对齐，Bot 图标作身份，正文用 base 字号（14px 的全局小字不适合长文）。
+        Entry::Assistant(text) => div()
+            .flex()
+            .flex_row()
+            .items_start()
+            .gap_2()
+            .child(
+                Icon::new(IconName::Bot)
+                    .text_color(p.dim)
+                    .flex_none()
+                    .mt_0p5()
+                    .with_size(px(16.)),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .text_base()
+                    .text_color(p.fg)
+                    .child(text),
+            )
+            .into_any_element(),
+        // 思考过程：小字、思考色，一个「思考」文字签（不用 glyph 图标）。
+        Entry::Thinking(text) => div()
+            .flex()
+            .flex_row()
+            .items_start()
+            .gap_2()
+            .child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .text_color(p.thinking)
+                    .mt_0p5()
+                    .child("思考"),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .text_xs()
+                    .text_color(p.thinking)
+                    .child(text),
+            )
+            .into_any_element(),
+        // 工具调用：终端图标（替代原来的 ⚙ emoji）+ 名称 + 状态签。
         Entry::Tool { name, status } => {
-            let (mark, color) = match status {
+            let (label, color) = match status {
                 Some(ToolStatus::Running) => ("运行中", p.tool),
                 Some(ToolStatus::Ok) => ("完成", p.ok),
                 Some(ToolStatus::Failed) => ("失败", p.err),
-                None => ("", p.tool),
+                None => ("", p.dim),
             };
-            ("⚙ ", format!("{name} {mark}"), color)
-        }
-        Entry::ToolResult(text) => ("↳ ", text, p.dim),
-        Entry::Note(text) => ("— ", text, p.dim),
-    };
-
-    div()
-        .flex()
-        .flex_row()
-        .items_start()
-        .gap_1()
-        .child(
             div()
-                .flex_none()
-                .text_color(color)
-                .child(prefix.to_string()),
-        )
-        .child(div().flex_1().min_w(px(0.)).text_color(color).child(body))
-        .into_any_element()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(
+                    Icon::new(IconName::SquareTerminal)
+                        .text_color(p.tool)
+                        .flex_none()
+                        .with_size(px(16.)),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_sm()
+                        .text_color(p.fg)
+                        .child(name),
+                )
+                .when(!label.is_empty(), |d| {
+                    d.child(
+                        div()
+                            .flex_none()
+                            .text_xs()
+                            .text_color(color)
+                            .child(label),
+                    )
+                })
+                .into_any_element()
+        }
+        // 工具结果：缩进一档的次要文字。
+        Entry::ToolResult(text) => div()
+            .flex()
+            .flex_row()
+            .items_start()
+            .gap_2()
+            .child(div().flex_none().text_color(p.dim).child("↳"))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .text_sm()
+                    .text_color(p.dim)
+                    .child(text),
+            )
+            .into_any_element(),
+        // 备注：最弱一档。
+        Entry::Note(text) => div()
+            .flex()
+            .flex_row()
+            .items_start()
+            .gap_2()
+            .child(div().flex_none().text_color(p.dim).child("—"))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .text_sm()
+                    .text_color(p.dim)
+                    .child(text),
+            )
+            .into_any_element(),
+    }
 }
 
 /// 毫秒时间戳 → 相对时间。列表只是提示「哪个新」，不追求精确。

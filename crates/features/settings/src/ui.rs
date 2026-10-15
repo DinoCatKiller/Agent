@@ -468,17 +468,24 @@ impl SettingsView {
                             .label("设置")
                             .on_click(cx.listener(|this, _, _, cx| this.show_general(cx))),
                     )
-                    .child(div().text_color(fg).child("管理模型"))
+                    .child(
+                        div()
+                            .text_lg()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(fg)
+                            .child("管理模型"),
+                    )
                     .child(div().flex_1())
                     .child(
-                        // 切片 C1 接：从预设供应商表里挑一个连上
                         Button::new("connect-provider")
                             .outline()
                             .icon(IconName::Plus)
                             .label("连接提供商")
+                            .tooltip("从内置目录连接；暂未推出，可先在设置页手输供应商 id")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.status = Some(Status {
-                                    message: "连接提供商：下一步接入（切片 C1）".to_string(),
+                                    message: "连接提供商即将推出；可先在「设置」页手输供应商 id。"
+                                        .to_string(),
                                     error: false,
                                 });
                                 cx.notify();
@@ -498,7 +505,6 @@ impl SettingsView {
                         self.preferences_file
                     )),
             )
-            .child(div().border_b_1().border_color(theme_border(cx)))
             .child(
                 Input::new(&self.model_search)
                     .prefix(Icon::new(IconName::Search).text_color(dim))
@@ -513,11 +519,6 @@ impl SettingsView {
             }))
             .into_any_element()
     }
-}
-
-/// 分隔线颜色（`div()` 自己取不到主题，单开一个口子给它）。
-fn theme_border(cx: &App) -> Hsla {
-    UiTheme::global(cx).colors.border
 }
 
 impl Render for SettingsView {
@@ -570,32 +571,40 @@ impl Render for SettingsView {
                     .flex()
                     .flex_col()
                     .gap_1()
+                    // 第一行：展示名 + id + 清除。hint 一句话太长，独占第三行。
                     .child(
                         div()
                             .flex()
                             .flex_row()
                             .items_center()
                             .gap_2()
-                            .text_xs()
-                            // 展示名在前、id 在后：id 才是钥匙串账号与 `default_provider` 用的那个
-                            .child(div().text_color(dim).child(name))
-                            .child(div().text_color(dim).child(format!("({provider})")))
-                            .child(div().text_color(dim).child(key_hint(
-                                source,
-                                env.as_deref(),
-                                required,
-                            )))
+                            .child(div().text_sm().text_color(fg).child(name))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(dim)
+                                    .child(format!("({provider})")),
+                            )
+                            .child(div().flex_1())
                             .child(
                                 Button::new(ElementId::Name(
                                     format!("clear-key-{provider}").into(),
                                 ))
+                                .ghost()
+                                .compact()
                                 .label("清除")
                                 .on_click(cx.listener(
                                     move |this, _, _, cx| this.clear_key(provider.clone(), cx),
                                 )),
                             ),
                     )
-                    .child(Input::new(&state)),
+                    .child(Input::new(&state))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(dim)
+                            .child(key_hint(source, env.as_deref(), required)),
+                    ),
             );
         }
 
@@ -650,7 +659,13 @@ impl Render for SettingsView {
                 .gap_3()
                 .size_full()
                 .p_4()
-                .child(div().text_color(fg).child("设置"))
+                .child(
+                    div()
+                        .text_lg()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(fg)
+                        .child("设置"),
+                )
                 .child(
                     div()
                         .flex()
@@ -659,9 +674,8 @@ impl Render for SettingsView {
                         .text_xs()
                         .text_color(dim)
                         .child(format!("配置文件：{}", self.config_file))
-                        .child("保存只写盘，重启后生效（`S1` 切片 5：B 方案的热切换还没做）"),
+                        .child("保存只写盘，重启后生效"),
                 )
-                .child(div().border_b_1().border_color(border))
                 .child(form)
                 .into_any_element(),
         }

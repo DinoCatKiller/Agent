@@ -28,6 +28,23 @@
 
 本轮不做：`C2`（联网拉模型清单 `GET /models`）；`GUI` §3 的 L3 CSS 兼容层。
 
+### 并行任务：GPUI 界面重构（美观度 + 不合理处清理，2026-10-15 首轮）
+
+按 impeccable / design-taste-frontend 两个 skill 的 GPUI 适配层走查三个界面
+（Shell 顶栏 / 对话页 / 设置页）。首轮做完静态层，验证到 L0（check + clippy + test 全绿）。
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | `mutedFg` #6b7280 → #9aa3b5：灰字在 surface 上从 ≈2.9:1 提到 ≈5.7:1（过 4.5:1） | `design/tokens.json` |
+| 2 | 删全部 1px 分隔线（顶栏 / 侧栏 / 输入区 / 设置页 ×2 / 弹层），改 surface↔bg 色阶分层 | `app/gui.rs`、`features/chat/gpui.rs`、`features/settings/ui.rs` |
+| 3 | 转录条目分层：用户右对齐气泡、助理 Bot 图标 + base 字号全墨正文、思考小字暗紫、工具用 SquareTerminal 图标（删 ⚙ emoji）+ 状态签 | `features/chat/gpui.rs` |
+| 4 | 状态栏去重（provider/model 原来出现两次）、生成中 Spinner、取消按钮改 outline | 同上 |
+| 5 | 会话选中态改 accent 淡彩底（原来与 hover 同色、不可辨）；侧栏空态改可操作文案 | 同上 |
+| 6 | 顶栏品牌词标 + tab 选中 2px accent 底条；设置页标题升级、密钥行三行结构、连接提供商文案用户化 | `app/gui.rs`、`features/settings/ui.rs` |
+
+剩：**人工目检一轮**（远程会话截屏取不到真实桌面，老问题）——重点看转录密度、气泡宽度、
+Spinner 节奏。动效只做了 Spinner 一处（"one authored moment"），其余动效待确认后再加。
+
 顺带修掉两个真问题（都是「不裸跑就发现不了」那类）：
 
 1. **GPUI 起窗口时没注册 asset source** → 所有 SVG 图标原本**都是空白**（勾 / 放大镜 / 下拉箭头）。

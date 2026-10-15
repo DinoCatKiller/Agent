@@ -19,6 +19,7 @@ use agent_settings::SettingsService;
 use agent_settings::ui::SettingsView;
 use agent_ui_kit::UiTheme;
 use agent_ui_kit::kit::assets::Assets;
+use agent_ui_kit::kit::prelude::FluentBuilder as _;
 use agent_ui_kit::kit::*;
 use tokio::sync::mpsc;
 
@@ -261,11 +262,10 @@ impl Render for Shell {
         }
 
         let theme = UiTheme::global(cx);
-        let (bg, fg, dim, border, surface, accent) = (
+        let (bg, fg, dim, surface, accent) = (
             theme.colors.background,
             theme.colors.foreground,
             theme.colors.muted_foreground,
-            theme.colors.border,
             theme.colors.surface,
             theme.colors.accent,
         );
@@ -300,28 +300,51 @@ impl Render for Shell {
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap_2()
-                    .px_3()
-                    .py_2()
+                    .gap_4()
+                    .px_4()
+                    .h(px(40.))
                     .bg(surface)
-                    .border_b_1()
-                    .border_color(border)
-                    .child(tab_button(
-                        "tab-chat",
-                        "对话",
-                        self.tab == Tab::Chat,
-                        accent,
-                        dim,
-                        cx.listener(|this, _, _, cx| this.select(Tab::Chat, cx)),
-                    ))
-                    .child(tab_button(
-                        "tab-settings",
-                        "设置",
-                        self.tab == Tab::Settings,
-                        accent,
-                        dim,
-                        cx.listener(|this, _, window, cx| this.select_settings(window, cx)),
-                    )),
+                    // 词标：accent 圆点 + 产品名。系统标题栏只带标题，应用身份在这一行。
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(div().size(px(8.)).rounded_full().bg(accent))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(fg)
+                                    .child("CodingRocket"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_1()
+                            .child(tab_button(
+                                "tab-chat",
+                                "对话",
+                                self.tab == Tab::Chat,
+                                accent,
+                                fg,
+                                dim,
+                                cx.listener(|this, _, _, cx| this.select(Tab::Chat, cx)),
+                            ))
+                            .child(tab_button(
+                                "tab-settings",
+                                "设置",
+                                self.tab == Tab::Settings,
+                                accent,
+                                fg,
+                                dim,
+                                cx.listener(|this, _, window, cx| this.select_settings(window, cx)),
+                            )),
+                    ),
             )
             .child(body)
     }
@@ -348,17 +371,22 @@ fn tab_button(
     label: &'static str,
     active: bool,
     accent: Hsla,
+    fg: Hsla,
     dim: Hsla,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
     div()
         .id(ElementId::Name(id.into()))
-        .px_2()
-        .py_1()
-        .rounded_md()
+        .flex()
+        .flex_row()
+        .items_center()
+        .px_3()
+        .py_2()
         .cursor_pointer()
-        .text_color(if active { accent } else { dim })
-        .hover(|d| d.text_color(accent))
+        .text_color(if active { fg } else { dim })
+        // 选中态：2px accent 实心底条 + 文字转亮（原来是纯变色，弱得几乎看不见）
+        .when(active, |d| d.border_b_2().border_color(accent))
+        .hover(|d| d.text_color(fg))
         .on_click(on_click)
         .child(label)
         .into_any_element()
