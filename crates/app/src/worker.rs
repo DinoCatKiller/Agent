@@ -12,7 +12,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use agent_chat::channel::{Cmd, UiEvent};
 use agent_chat::{Chat, ChatService, SessionMeta, SessionRepo, ToolSet};
-use agent_providers::ErasedProvider;
 use agent_sessions::session::derive_title;
 use agent_store::Store;
 use futures::StreamExt;
@@ -90,8 +89,11 @@ impl ProviderFactory {
         self.tools.clone()
     }
 
-    /// 为某个选择构造 provider。`None` = 未知供应商（`build_provider` 已打印原因）。
-    pub fn build(&self, selection: &Selection) -> Option<Arc<dyn ErasedProvider>> {
+    /// 为某个选择构造 provider + 刷新句柄。
+    ///
+    /// `None` = 未知供应商（`build_provider` 已打印原因）。返回的 [`setup::BuiltProvider`]
+    /// 里 `provider` 与 `refresh` 共享同一实例（C2a），刷新即改同一份缓存。
+    pub fn build(&self, selection: &Selection) -> Option<setup::BuiltProvider> {
         let args = ChatArgs {
             provider: selection.provider.clone(),
             model: selection.model.clone(),
@@ -112,24 +114,36 @@ impl ProviderFactory {
         };
         setup::build_provider(&args)
     }
+
+    /// 配置文件路径（`--config`）；供把拉取到的模型清单写回（C2）。
+    pub fn config_path(&self) -> Option<&str> {
+        self.config.as_deref()
+    }
 }
 
 /// worker 主循环。宿主自己决定怎么起它：
 /// TUI 走 `tokio::spawn`，GPUI 走后台 runtime 的 `runtime.spawn`。
 ///
-/// `initial_provider` 由宿主先构造并校验（未知供应商能在开窗口之前退出），
+/// `initial` 由宿主先构造并校验（未知供应商能在开窗口之前退出），
 /// 之后的切换一律走 `factory` 重建 —— 因为换 provider 意味着换密钥。
+/// 它的 `refresh` 与 `provider` 共享同一实例，刷新即改同一份缓存（C2a）。
 pub async fn run_worker(
     selection: Selection,
-    initial_provider: Arc<dyn ErasedProvider>,
+    initial: setup::BuiltProvider,
     factory: ProviderFactory,
     repo: SessionRepo,
     cancel_slot: CancelSlot,
     mut cmd_rx: mpsc::Receiver<Cmd>,
     ui_tx: mpsc::UnboundedSender<UiEvent>,
 ) {
+    let setup::BuiltProvider {
+        provider: initial_provider,
+        refresh: initial_refresh,
+    } = initial;
     let mut current = selection.clone();
     let mut service = ChatService::new(initial_provider, factory.tools());
+    // 当前条目的刷新句柄（切换 provider 时跟着换）。`None` = 该适配器不支持联网刷新。
+    let mut current_refresh = initial_refresh;
     let mut chat = Chat::new(current.model.clone());
     // (session_id, title)；首次落盘时创建。
     let mut session: Option<(String, String)> = None;
@@ -252,10 +266,12 @@ pub async fn run_worker(
                     continue;
                 }
                 match factory.build(&next) {
-                    Some(provider) => {
+                    Some(built) => {
+                        let setup::BuiltProvider { provider, refresh } = built;
                         // 同一会话换模型：历史保留，**下一轮**用新模型
                         // （`Chat::request` 读的就是 `chat.model`）。
                         service = ChatService::new(provider, factory.tools());
+                        current_refresh = refresh;
                         chat.model = next.model.clone();
                         current = next;
                         let _ = ui_tx.send(UiEvent::ModelChanged {
@@ -269,6 +285,64 @@ pub async fn run_worker(
                             "切到 {} 失败：供应商未知或构造 provider 失败",
                             next.label()
                         )));
+                    }
+                }
+            }
+            Cmd::RefreshModels { provider } => {
+                if busy() {
+                    let _ = ui_tx.send(UiEvent::ModelsRefreshFailed {
+                        provider: provider.clone(),
+                        message: "生成中，先取消再刷新模型".into(),
+                    });
+                    continue;
+                }
+                // 刷新句柄：当前条目直接复用（与生效的 provider 共享同一份缓存，C2a）；
+                // 其它条目临时构造一个 —— 只为拉取，构造不出来按「不支持」处理。
+                // 传**空模型**：拉取与模型 id 无关，用 `current.model` 会把当前条目的模型
+                // 混进该条目的清单（`build_provider` 会把它并入 `models` 并写回配置）。
+                let handle = if provider == current.provider {
+                    current_refresh.clone()
+                } else {
+                    factory
+                        .build(&Selection::new(provider.clone(), String::new()))
+                        .and_then(|built| built.refresh)
+                };
+                let Some(handle) = handle else {
+                    let _ = ui_tx.send(UiEvent::ModelsRefreshFailed {
+                        provider: provider.clone(),
+                        message: "不支持联网刷新模型（或该条目未配置）".into(),
+                    });
+                    continue;
+                };
+                match handle.refresh_models().await {
+                    Ok(specs) => {
+                        let ids: Vec<String> = specs.into_iter().map(|spec| spec.id).collect();
+                        // 写回配置（只改该条目的 models）：候选清单由宿主重算（`D6`）。
+                        match setup::persist_provider_models(factory.config_path(), &provider, &ids)
+                        {
+                            Ok(()) => {
+                                let _ = ui_tx.send(UiEvent::ModelsRefreshed {
+                                    provider,
+                                    models: ids,
+                                });
+                            }
+                            Err(error) => {
+                                let _ = ui_tx.send(UiEvent::ModelsRefreshFailed {
+                                    provider: provider.clone(),
+                                    message: format!(
+                                        "已拉到 {} 个模型，但写回配置失败：{error}",
+                                        ids.len()
+                                    ),
+                                });
+                            }
+                        }
+                    }
+                    // 拉取失败**不动**任何现有清单（C2a 契约：失败不清空）。
+                    Err(error) => {
+                        let _ = ui_tx.send(UiEvent::ModelsRefreshFailed {
+                            provider: provider.clone(),
+                            message: format!("刷新失败：{error}"),
+                        });
                     }
                 }
             }

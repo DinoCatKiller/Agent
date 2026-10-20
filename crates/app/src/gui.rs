@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use agent_chat::{ChatView, Cmd, ModelChoice, StatusInfo, UiEvent};
 use agent_settings::SettingsService;
-use agent_settings::ui::SettingsView;
+use agent_settings::ui::{RefreshModelsCallback, SettingsView};
 use agent_ui_kit::UiTheme;
 use agent_ui_kit::kit::assets::Assets;
 use agent_ui_kit::kit::prelude::FluentBuilder as _;
@@ -53,7 +53,7 @@ pub fn run(args: GuiArgs) -> i32 {
         api_key: args.api_key.clone(),
         config: args.config.clone(),
     };
-    let Some(provider) = setup::build_provider(&chat_args) else {
+    let Some(built) = setup::build_provider(&chat_args) else {
         return 2;
     };
     let db_path = args
@@ -90,7 +90,7 @@ pub fn run(args: GuiArgs) -> i32 {
     let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<UiEvent>();
     runtime.spawn(worker::run_worker(
         selection,
-        provider,
+        built,
         factory,
         repo,
         cancel_slot.clone(),
@@ -141,9 +141,28 @@ pub fn run(args: GuiArgs) -> i32 {
                         service.clone(),
                         provider_rows.clone(),
                         all_choices.clone(),
+                        setup::catalog_rows(),
+                        // 真正的回调要回指对话页，而对话页还没建出来 —— 先给空回调，随后注入。
+                        Rc::new(|_: &mut App| {}),
                     )
                 })
             });
+            let settings_handle = settings.clone();
+
+            // 「刷新模型」按钮（`C2d`）：设置页只发起，宿主把它转成 `Cmd::RefreshModels` 发回 worker。
+            // 跨功能的线只由宿主接（`D6`）；结果由下面的事件桥回灌（`set_models` / `set_status`）。
+            let on_refresh_models: RefreshModelsCallback = {
+                let cmd_tx = cmd_tx.clone();
+                Rc::new(move |provider: &str, _cx: &mut App| {
+                    // GPUI 主线程上不能 await，用 try_send；队列满（罕见）时静默丢弃。
+                    let _ = cmd_tx.try_send(Cmd::RefreshModels {
+                        provider: provider.to_string(),
+                    });
+                })
+            };
+            if let Some(settings) = settings.as_ref() {
+                settings.update(cx, |view, _cx| view.set_on_refresh_models(on_refresh_models));
+            }
 
             let shell = cx.new(|_| Shell {
                 chat: None,
@@ -190,11 +209,111 @@ pub fn run(args: GuiArgs) -> i32 {
             });
             shell.update(cx, |shell, _cx| shell.chat = Some(chat.clone()));
 
+            // 「连接提供商」成功后：重算可见候选并推给对话页（**无需重启**，切片 C1c A 方案）。
+            // 与 `on_manage_models` 同一条规矩：跨功能的线只由宿主接（`D6`）。
+            if let Some(settings) = settings_handle.as_ref() {
+                let shell = shell.downgrade();
+                let args = chat_args.clone();
+                // 注意：这里是**同步**回调（`set_on_connected` 的契约是 `Fn(&mut App)`），
+                // 会就地读配置 + 偏好。可接受：连接是低频的用户动作、读的是两个小文件；
+                // 高频路径（刷新模型）已放到后台执行器，见下方事件泵。
+                let on_connected: Rc<dyn Fn(&mut App)> = Rc::new(move |cx: &mut App| {
+                    let Some(shell) = shell.upgrade() else {
+                        return;
+                    };
+                    shell.update(cx, |shell, cx| {
+                        let Some(chat) = shell.chat.clone() else {
+                            return;
+                        };
+                        let all = setup::model_choices(&args);
+                        let prefs = setup::load_preferences(args.config.as_deref());
+                        let visible =
+                            setup::visible_choices(&all, &prefs, &args.provider, &args.model);
+                        chat.update(cx, |view, cx| {
+                            view.set_candidates(
+                                visible
+                                    .into_iter()
+                                    .map(|(provider, model)| ModelChoice { provider, model })
+                                    .collect(),
+                                cx,
+                            );
+                        });
+                    });
+                });
+                settings.update(cx, |view, _cx| view.set_on_connected(on_connected));
+            }
+
             // 桥：worker 的事件流 → 视图。`rx.recv().await` 在 GPUI 的执行器里轮询
             // （`X2` §8 已验证过这个形态）。
+            //
+            // 除对话页外，联网刷新的结果还要回灌**设置页**（`C2d`）：按钮在那边，
+            // 成功 / 失败得就地看到。成功还要重算候选（新拉到的模型并进选择器）——
+            // 这两条跨功能的线只由宿主接（`D6`）。
+            let settings_for_events = settings_handle.clone();
+            let args_for_events = chat_args.clone();
             chat.update(cx, |_view, cx| {
                 cx.spawn(async move |this, cx| {
                     while let Some(event) = ui_rx.recv().await {
+                        match &event {
+                            UiEvent::ModelsRefreshed { provider, models } => {
+                                let (provider, count) = (provider.clone(), models.len());
+                                // 重算候选 = 读配置 + 读偏好（两次文件读，硬约束 5：UI 线程禁阻塞）。
+                                // 放到**后台执行器**算，算完再回 UI 线程写视图。
+                                // worker 已把拉到的 id 写回配置，这里读得到。
+                                let args_bg = args_for_events.clone();
+                                let (all, visible) = cx
+                                    .background_executor()
+                                    .spawn(async move {
+                                        let all = setup::model_choices(&args_bg);
+                                        let prefs =
+                                            setup::load_preferences(args_bg.config.as_deref());
+                                        let visible = setup::visible_choices(
+                                            &all,
+                                            &prefs,
+                                            &args_bg.provider,
+                                            &args_bg.model,
+                                        );
+                                        (all, visible)
+                                    })
+                                    .await;
+                                let all_for_settings = all;
+                                if let Some(settings) = settings_for_events.as_ref() {
+                                    settings.update(cx, |view, cx| {
+                                        view.set_models(all_for_settings);
+                                        view.set_status(
+                                            format!(
+                                                "已刷新 {provider}：拉到 {count} 个模型（新模型默认显示）"
+                                            ),
+                                            false,
+                                        );
+                                        cx.notify();
+                                    });
+                                }
+                                let choices = visible
+                                    .into_iter()
+                                    .map(|(provider, model)| ModelChoice { provider, model })
+                                    .collect();
+                                if this
+                                    .update(cx, |view, cx| view.set_candidates(choices, cx))
+                                    .is_err()
+                                {
+                                    break; // 视图已销毁
+                                }
+                            }
+                            UiEvent::ModelsRefreshFailed { provider, message } => {
+                                let (provider, message) = (provider.clone(), message.clone());
+                                if let Some(settings) = settings_for_events.as_ref() {
+                                    settings.update(cx, |view, cx| {
+                                        view.set_status(
+                                            format!("刷新 {provider} 失败：{message}"),
+                                            true,
+                                        );
+                                        cx.notify();
+                                    });
+                                }
+                            }
+                            _ => {}
+                        }
                         if this.update(cx, |view, cx| view.apply(event, cx)).is_err() {
                             break; // 视图已销毁
                         }

@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use agent_config::{
-    ConfigError, ConfigPaths, ExposeSecret, Preferences, SecretStore, SecretString, account_for,
-    load, save,
+    ConfigError, ConfigPaths, ExposeSecret, Preferences, ProviderConfig, SecretStore, SecretString,
+    account_for, load, update,
 };
 
 use crate::settings::Settings;
@@ -141,11 +141,41 @@ impl SettingsService {
     /// 写回设置。
     ///
     /// 先读全量、只改本切片管的字段、再写回 —— `[providers.*]` 等本界面不管的内容原样保留。
+    /// 走 [`update`]（持进程内写锁）：避免与 worker 写回模型清单并发时相互覆盖。
     /// 校验请用 [`crate::settings::Draft::to_settings`]，这里只管写。
     pub fn save(&self, settings: &Settings) -> Result<(), ConfigError> {
-        let mut config = load(&self.paths)?;
-        settings.apply_to(&mut config);
-        save(&self.paths, &config)
+        update(&self.paths, |config| settings.apply_to(config))
+    }
+
+    /// 「连接提供商」：新增 / 覆盖 `[providers.<id>]` 这一个条目。
+    ///
+    /// 与 [`Self::save`] 同一条约定：**先读全量再写回**（持进程内写锁），其余内容
+    /// （含用户手写的条目）原样保留。只写非敏感项；密钥走 [`Self::save_key`]（钥匙串），
+    /// 这里**不碰**。
+    pub fn connect_provider(
+        &self,
+        id: &str,
+        adapter: &str,
+        base_url: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<(), ConfigError> {
+        update(&self.paths, |config| {
+            // 重连同一条目时**保住已拉取的模型清单**（C2）：否则用户每连一次就把模型列表清空。
+            let models = config
+                .providers
+                .get(id)
+                .map(|entry| entry.models.clone())
+                .unwrap_or_default();
+            config.providers.insert(
+                id.to_string(),
+                ProviderConfig {
+                    adapter: Some(adapter.to_string()),
+                    base_url: base_url.map(str::to_string),
+                    model: model.map(str::to_string),
+                    models,
+                },
+            );
+        })
     }
 
     /// 该条目的密钥来源（只回来源，**不回明文**）。

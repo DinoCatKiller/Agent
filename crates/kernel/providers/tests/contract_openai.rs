@@ -14,7 +14,7 @@ use agent_common::{
     ModelSpec, Role, StreamEvent, Usage,
 };
 use agent_providers::{
-    OpenAiCompatible, OpenAiConfig, OpenAiFramePolicy, Provider, map_http_error,
+    OpenAiCompatible, OpenAiConfig, OpenAiFramePolicy, Provider, RefreshableModels, map_http_error,
     openai_default_models, parse_chat_response,
 };
 use agent_transport::{TransportError, finalize, parse_sse};
@@ -79,6 +79,7 @@ fn text_model() -> ModelSpec {
         capabilities: vec![Capability::Text],
         pricing: None,
         deprecated: false,
+        capabilities_known: true,
     }
 }
 
@@ -274,6 +275,45 @@ fn case12_capability_mismatch_is_rejected_before_request() {
     assert!(!err.retryable);
 }
 
+// 用例 13（C2 / `R1`）：未知模型的**保守规格不拦能力** —— 带工具的请求放行
+// （`P1`：别误杀本地模型；`capabilities_known = false` 只免「能力」检查，不免「在不在清单」）
+#[test]
+fn case13_conservative_spec_does_not_block_tool_requests() {
+    let unknown = agent_providers::conservative_spec("test", "local-llama");
+    assert!(
+        !unknown.capabilities_known,
+        "conservative_spec 不是权威规格"
+    );
+    let provider = provider_with(vec![unknown], "https://example.com/v1".into());
+    let mut req = chat_request();
+    req.model = "local-llama".into();
+    req.tools = vec![agent_common::ToolDefinition {
+        name: "now".into(),
+        description: "current time".into(),
+        parameters: serde_json::json!({"type": "object"}),
+    }];
+    assert!(
+        provider.stream(req, Default::default()).is_ok(),
+        "保守规格（capabilities_known=false）不得在本地拦截 Tools 请求"
+    );
+}
+
+// 用例 14（C2）：id **不在清单里**仍然 fast-fail —— 保守规格只免「能力」检查
+#[test]
+fn case14_unlisted_model_still_rejected() {
+    let provider = provider_with(
+        vec![agent_providers::conservative_spec("test", "local-llama")],
+        "https://example.com/v1".into(),
+    );
+    let mut req = chat_request();
+    req.model = "not-declared".into();
+    let err = match provider.stream(req, Default::default()) {
+        Err(err) => err,
+        Ok(_) => panic!("未在清单里的模型仍必须 fast-fail"),
+    };
+    assert_eq!(err.category, ErrorCategory::InvalidRequest);
+}
+
 // —— wiremock 端到端（本地假服务器，断网可测）——
 
 mod e2e {
@@ -321,5 +361,113 @@ mod e2e {
         assert_eq!(err.category, ErrorCategory::Auth);
         assert!(!err.retryable);
         assert!(err.raw.is_some(), "原始错误体保留用于排错");
+    }
+
+    // —— C2a：联网拉取模型清单（`GET /models` 端到端）——
+
+    #[tokio::test]
+    async fn fetch_models_merges_dictionary_unknowns() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"{"object":"list","data":[
+                    {"id":"gpt-4o","object":"model"},
+                    {"id":"custom-local-model","object":"model"}
+                ]}"#,
+                "application/json",
+            ))
+            .mount(&server)
+            .await;
+
+        let provider = provider_with(Vec::new(), format!("{}/v1", server.uri()));
+        let fetched = provider.fetch_models().await.expect("fetch succeeds");
+        let gpt4o = fetched
+            .iter()
+            .find(|m| m.id == "gpt-4o")
+            .expect("字典命中的模型被保留");
+        assert_eq!(gpt4o.context_window, 128_000, "命中字典沿用官方规格");
+        assert!(gpt4o.capabilities.contains(&Capability::Vision));
+        assert_eq!(gpt4o.provider, "test", "归属当前适配器");
+        let unknown = fetched
+            .iter()
+            .find(|m| m.id == "custom-local-model")
+            .expect("未知模型不被丢弃");
+        assert_eq!(unknown.context_window, 128_000, "未知模型回落保守默认");
+        assert_eq!(unknown.max_output, 4096);
+        assert_eq!(unknown.capabilities, vec![Capability::Text]);
+    }
+
+    #[tokio::test]
+    async fn fetch_models_error_keeps_cache() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(
+                ResponseTemplate::new(500)
+                    .set_body_raw(read_fixture("errors", "500.json"), "application/json"),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_with(vec![text_model()], format!("{}/v1", server.uri()));
+        let err = provider.fetch_models().await.expect_err("500 必须失败");
+        assert_eq!(err.category, ErrorCategory::Server);
+        // C2a 契约：拉取失败不清空现有缓存
+        assert_eq!(provider.list_models().len(), 1);
+        assert_eq!(provider.list_models()[0].id, "text-only");
+    }
+
+    // C2（`R2`）：200 但 `data` 缺失 / 为空 —— 按失败处理，**不清空缓存**
+    #[tokio::test]
+    async fn refresh_models_empty_data_keeps_cache() {
+        for body in [
+            r#"{"object":"list","data":[]}"#,
+            r#"{"object":"list"}"#,
+            r#"{"data":[{"object":"model"}]}"#,
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/v1/models"))
+                .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+                .mount(&server)
+                .await;
+
+            let provider = provider_with(vec![text_model()], format!("{}/v1", server.uri()));
+            assert!(
+                provider.refresh_models().await.is_err(),
+                "空 / 畸形清单必须按失败处理：{body}"
+            );
+            assert_eq!(provider.list_models().len(), 1, "缓存不能被清空：{body}");
+            assert_eq!(provider.list_models()[0].id, "text-only");
+        }
+    }
+
+    // C2（`R2`）：刷新与已有缓存**取并集** —— 端点没回的模型（用户手写 / 当前选中）不被丢掉
+    #[tokio::test]
+    async fn refresh_models_unions_with_existing_cache() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"{"object":"list","data":[{"id":"gpt-4o","object":"model"}]}"#,
+                "application/json",
+            ))
+            .mount(&server)
+            .await;
+
+        let provider = provider_with(vec![text_model()], format!("{}/v1", server.uri()));
+        let merged = provider.refresh_models().await.expect("refresh succeeds");
+        let ids: Vec<&str> = merged.iter().map(|m| m.id.as_str()).collect();
+        assert!(ids.contains(&"gpt-4o"), "拉到的模型进入清单：{ids:?}");
+        assert!(
+            ids.contains(&"text-only"),
+            "已有缓存（当前选中 / 手写）不被覆盖丢掉：{ids:?}"
+        );
+        assert_eq!(
+            provider.list_models().len(),
+            merged.len(),
+            "缓存与返回值一致"
+        );
     }
 }

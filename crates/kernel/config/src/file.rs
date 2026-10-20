@@ -1,10 +1,11 @@
-﻿//! 配置文件（TOML）读写（`X1` §4）。
+//! 配置文件（TOML）读写（`X1` §4）。
 //!
 //! **这里只放非敏感项。** 任何形如 `api_key` 的字段都不该出现在本文件中——
 //! 密钥一律走 [`crate::SecretStore`]（系统钥匙串）。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -58,6 +59,10 @@ pub struct ProviderConfig {
     pub adapter: Option<String>,
     pub base_url: Option<String>,
     pub model: Option<String>,
+    /// 该端点已知的**模型 id 清单**（C2）：联网拉取 `GET /models` 的结果写这里，
+    /// 也允许用户手写。选择器的候选与本地能力协商都读它 —— 于是「拉到的模型」
+    /// 复用**已有的逐模型显隐偏好**（`models.toml`），不引入额外状态。
+    pub models: Vec<String>,
 }
 
 /// 配置文件位置。
@@ -138,6 +143,28 @@ pub fn save(paths: &ConfigPaths, config: &AppConfig) -> Result<(), ConfigError> 
     })
 }
 
+/// 进程内的配置文件写锁（C2）。
+///
+/// **为什么需要**：配置的修改一律是「读全量 → 改本切片管的字段 → 写回」，`AppConfig` 用的是
+/// `BTreeMap` 而非原地更新。若两个写者并发（同一进程内：worker 写回拉取的模型清单 vs
+/// 设置界面保存设置 / 连接条目），后写者基于**过期快照**写回，会把先写者的改动整段抹掉。
+/// 进程内的 `Mutex` 串行化所有「读改写」即可消除这类丢失更新（跨进程不在范围：
+/// 同一份配置只会有一个 `CodingRocket` 在跑）。
+static FILE_LOCK: Mutex<()> = Mutex::new(());
+
+/// 「读全量 → 改 → 写回」的**唯一**入口：全程持进程内锁，杜绝并发写相互覆盖。
+///
+/// 所有需要修改配置的调用方（设置保存、连接条目、写回模型清单）都应走这里，
+/// 而不是各自 `load` + `save`。`edit` 里只改自己管的字段，其余原样保留。
+pub fn update(paths: &ConfigPaths, edit: impl FnOnce(&mut AppConfig)) -> Result<(), ConfigError> {
+    let _guard = FILE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut config = load(paths)?;
+    edit(&mut config);
+    save(paths, &config)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,6 +203,7 @@ mod tests {
                 adapter: None,
                 base_url: Some("https://api.anthropic.com".into()),
                 model: None,
+                models: vec!["claude-3-5-sonnet".into()],
             },
         );
 
@@ -198,6 +226,7 @@ mod tests {
                 adapter: None,
                 base_url: Some("https://api.anthropic.com".into()),
                 model: None,
+                models: Vec::new(),
             },
         );
 

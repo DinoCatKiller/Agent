@@ -54,6 +54,13 @@ UI 的接入约定（`D3`「事件流 + 命令通道」）：`ChatUi::on_event` 
 
 候选清单由宿主给（[`ModelChoice`]）：`features/*` 不认识供应商名单，那是装配层的知识（`D6`）。
 
+**联网刷新模型清单**（`channel.rs` 的 `Cmd::RefreshModels` / `UiEvent::ModelsRefreshed`，`C2`）：
+宿主 worker 拿到 `RefreshableModels` 句柄去拉 `GET /models`，成功后把新的候选重算并推给对话页。
+失败走单独的 `UiEvent::ModelsRefreshFailed`（`C2d`）——与泛化的 `Notice` 分开，好让**发起刷新的设置页**
+能就地报错；**失败不清空现有清单**。
+本模块只负责**报提示**（`Notice` / 状态栏文案）——「刷新怎么拉、写回哪里、候选怎么算」都是装配层的
+知识（`D6`：跨功能的线与供应商细节不进 `features/*`）。
+
 两条铁律（改这里之前必读）：
 
 1. **只在 `End` 后入史**：增量攒在 `TurnDraft`，取消 / 出错丢弃即回滚（截断是 `End{Truncated}`，照常入史——那是用户看到的输出）。`ui.rs` 的显示回滚与它对齐：`ModelTurnEnded` 是提交边界。

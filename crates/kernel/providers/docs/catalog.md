@@ -4,8 +4,8 @@
 |---|---|
 | ID | `R5` |
 | 类型 | 规格（归属 `agent-providers`） |
-| 状态 | ✅ 已落地（2026-10-13，切片 `C1a` / `C1b`） |
-| 更新 | 2026-10-13 |
+| 状态 | ✅ 已落地（2026-10-13 `C1a` / `C1b`，2026-10-16 `C1c` 接上界面） |
+| 更新 | 2026-10-16 |
 | 何时读 | 加供应商、改端点、讨论「用户为什么还要填适配器名」时 |
 | 规模 | ~1.5k token |
 
@@ -58,9 +58,11 @@ pub struct ProviderPreset {
 
 ### `custom_base` 的含义
 
-`base_url != 该适配器的官方端点` 为真时，我们**不提供模型清单**（`models: Vec::new()`），
-交服务端报错 —— 这就是 `R2` 的「不拦清单」。于是 `ollama`（`localhost:11434`）与
-`openai-compatible`（`api.openai.com`）行为天然不同，不需要额外的「本地/云端」维度。
+`base_url != 该适配器的官方端点` 为真时，我们**不列官方内置清单**（`gpt-4o` 对 vLLM 没有意义），
+也**不做能力 fast-fail** —— `models` 只由配置里为该条目声明的 id（`models` / `model` /
+顶层 `default_model` / 本次选中）组成，且未知 id 一律是 `capabilities_known = false` 的保守占位，
+不拦能力。其余交给服务端报错 —— 这就是 `R2` 的「不拦清单」。于是 `ollama`（`localhost:11434`）
+与 `openai-compatible`（`api.openai.com`）行为天然不同，不需要额外的「本地/云端」维度。
 
 ## 3. 与 `D7` 的关系
 
@@ -90,7 +92,11 @@ model = "qwen3-32b"
 - **`provider.id()` 仍返回适配器 id**（`ollama` 的 provider 实例 id 是 `openai-compatible`）：
   它是 `&'static str`，而条目 id 是运行期字符串。只影响路由/观测的标签，不参与查找。
 - 设置页只列「已在用的条目」（两个适配器 ∪ 配置里连接过的 ∪ 当前生效的），
-  不列整张目录 —— 那是「连接提供商」页（`C1c`）的入口。
+  不列整张目录 —— 整张目录由「连接提供商」页列（`C1c`，2026-10-16 落地）。
+- **目录 → 界面的映射在 `app`**（`setup::catalog_rows`，`D6`）：`features/settings` 只认
+  `CatalogRow` 这个结构，不认识 `PRESETS`。连接动作 = `SettingsService::connect_provider`
+  写**一个** `[providers.<id>]` 条目（先读全量再写回，其余内容原样保留）+ `save_key` 写钥匙串；
+  写成功后宿主重算候选并推给对话页（`ChatView::set_candidates`），**不用重启**。
 - 目录写进 `config.toml` 的 `providers.<id>` 时用了 `deny_unknown_fields` 的老规矩：
   `adapter` 字段是**新键**，旧版本二进制读到会解析失败（`R1` §2 的单向兼容取舍，
   与 `models.toml` 相反 —— 那个选择容忍未知键）。

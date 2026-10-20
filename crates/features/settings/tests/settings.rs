@@ -128,6 +128,116 @@ fn broken_config_is_reported_and_never_overwritten() {
 }
 
 #[test]
+fn connect_writes_one_provider_entry_and_keeps_the_rest() {
+    let paths = paths("connect");
+    // 用户手写的内容 + 另一条已连接条目：连接新厂商时都不能被动到
+    std::fs::write(
+        paths.file(),
+        "default_model = \"gpt-4o\"\nproxy = \"http://127.0.0.1:7890\"\n\n[providers.vllm]\nbase_url = \"http://127.0.0.1:8000/v1\"\n",
+    )
+    .expect("写临时配置");
+    let service = SettingsService::with_parts(paths.clone(), Arc::new(MemoryBackend::new()));
+
+    service
+        .connect_provider(
+            "openrouter",
+            "openai-compatible",
+            Some("https://openrouter.ai/api/v1"),
+            Some("qwen/qwen3-235b"),
+        )
+        .expect("连接");
+
+    let written = load(&paths).expect("读回");
+    assert_eq!(written.default_model.as_deref(), Some("gpt-4o"));
+    assert_eq!(
+        written.proxy.as_deref(),
+        Some("http://127.0.0.1:7890"),
+        "顶层手写项必须原样保留"
+    );
+    assert_eq!(
+        written
+            .providers
+            .get("vllm")
+            .and_then(|p| p.base_url.as_deref()),
+        Some("http://127.0.0.1:8000/v1"),
+        "别的 [providers.*] 条目必须原样保留"
+    );
+    let entry = written.providers.get("openrouter").expect("新条目");
+    assert_eq!(entry.adapter.as_deref(), Some("openai-compatible"));
+    assert_eq!(
+        entry.base_url.as_deref(),
+        Some("https://openrouter.ai/api/v1")
+    );
+    assert_eq!(entry.model.as_deref(), Some("qwen/qwen3-235b"));
+}
+
+#[test]
+fn connect_overwrites_only_the_targeted_entry() {
+    let paths = paths("connect-overwrite");
+    let service = SettingsService::with_parts(paths.clone(), Arc::new(MemoryBackend::new()));
+    service
+        .connect_provider("ollama", "openai-compatible", None, None)
+        .expect("首次连接");
+    service
+        .connect_provider(
+            "ollama",
+            "openai-compatible",
+            Some("http://127.0.0.1:11434/v1"),
+            Some("llama3"),
+        )
+        .expect("覆盖连接");
+
+    let written = load(&paths).expect("读回");
+    assert_eq!(written.providers.len(), 1, "同一个 id 只应有一条");
+    let entry = written.providers.get("ollama").expect("条目");
+    assert_eq!(entry.base_url.as_deref(), Some("http://127.0.0.1:11434/v1"));
+    assert_eq!(entry.model.as_deref(), Some("llama3"));
+}
+
+#[test]
+fn connect_never_writes_the_key_into_the_file() {
+    let paths = paths("connect-secret");
+    let backend = Arc::new(MemoryBackend::new());
+    let service = SettingsService::with_parts(paths.clone(), backend.clone());
+
+    service
+        .connect_provider("openrouter", "openai-compatible", None, None)
+        .expect("连接");
+    service
+        .save_key("openrouter", &SecretString::from("sk-do-not-leak"))
+        .expect("写密钥");
+
+    let file = std::fs::read_to_string(paths.file()).expect("读配置文件");
+    assert!(
+        !file.contains("sk-do-not-leak"),
+        "明文密钥不得落进配置文件（`R1` / 硬约束 5）"
+    );
+    assert_eq!(
+        service.key_source("openrouter", None).expect("查来源"),
+        KeySource::Keyring
+    );
+}
+
+#[test]
+fn connect_refuses_to_overwrite_a_broken_config() {
+    let paths = paths("connect-broken");
+    std::fs::write(paths.file(), "这不是 TOML = = =\n").expect("写坏文件");
+    let service = SettingsService::with_parts(paths.clone(), Arc::new(MemoryBackend::new()));
+
+    assert!(
+        service
+            .connect_provider("openrouter", "openai-compatible", None, None)
+            .is_err(),
+        "读不动就不许写，避免覆盖用户文件"
+    );
+    assert_eq!(
+        std::fs::read_to_string(paths.file()).expect("读回原文件"),
+        "这不是 TOML = = =\n",
+        "失败时不得改动原文件"
+    );
+}
+
+#[test]
 fn api_key_goes_to_backend_and_never_into_the_file() {
     let paths = paths("secrets");
     let backend = Arc::new(MemoryBackend::new());

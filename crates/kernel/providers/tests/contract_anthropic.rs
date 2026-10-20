@@ -81,6 +81,7 @@ fn text_model() -> ModelSpec {
         capabilities: vec![Capability::Text],
         pricing: None,
         deprecated: false,
+        capabilities_known: true,
     }
 }
 

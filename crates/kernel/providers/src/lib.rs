@@ -18,7 +18,7 @@ pub use catalog::{
 };
 pub use openai::{
     OpenAiCompatible, OpenAiConfig, OpenAiFramePolicy, map_finish_reason, map_http_error,
-    openai_default_models, parse_chat_response,
+    model_spec_for, openai_default_models, parse_chat_response,
 };
 
 use std::collections::HashMap;
@@ -124,6 +124,39 @@ impl<P: Provider> ErasedProvider for P {
     }
 }
 
+/// 联网刷新模型清单的契约（C2a）。
+///
+/// Object-safe 设计：`refresh_models` 返回 [`BoxFuture`] 擦除 owned future，
+/// 不引入 `async-trait` 第三方依赖。这是一个**可选能力**：不支持的适配器
+/// **不实现本 trait**，宿主据此判断「该条目能不能联网刷新」。
+///
+/// 契约：`refresh_models` **成功**时返回新清单并更新内部缓存；
+/// **失败**返回 `Err`，**不允许**破坏现有缓存（拉取失败不清空）。
+pub trait RefreshableModels: Send + Sync + 'static {
+    /// 拉取最新模型清单并更新内部缓存。
+    fn refresh_models(&self) -> BoxFuture<'static, Result<Vec<ModelSpec>, ProviderError>>;
+}
+
+/// 未知模型的**保守默认**规格（C2，各适配器共用）。
+///
+/// 仅声明 `Text`、128k 上下文、4096 最大输出 —— 保守不等于拦截：它只是不去声明
+/// 用不到的能力，避免把请求打到不支持的端点（`P1`：别误杀本地模型）。
+///
+/// `capabilities_known = false`：这是占位，不是权威规格 —— 路由层只据此确认
+/// 「模型在清单里」，不据此做能力 fast-fail（否则 `Tools` / `Vision` 请求会被误拦）。
+pub fn conservative_spec(provider_id: &str, id: &str) -> ModelSpec {
+    ModelSpec {
+        id: id.to_string(),
+        provider: provider_id.to_string(),
+        context_window: 128_000,
+        max_output: 4096,
+        capabilities: vec![Capability::Text],
+        pricing: None,
+        deprecated: false,
+        capabilities_known: false,
+    }
+}
+
 /// 运行时注册表。Core 只与它打交道，不认识任何具体供应商。
 #[derive(Default)]
 pub struct ProviderRegistry {
@@ -205,8 +238,12 @@ fn has_part(req: &ModelRequest, pred: impl Fn(&ContentPart) -> bool) -> bool {
 
 /// 能力协商 fast-fail（`A2` §1 / `Q1` 用例 12）：发请求**之前**拒绝不支持的组合。
 ///
-/// `models` 非空时做本地协商（模型不在清单或能力不足即 `InvalidRequest`）；
+/// `models` 非空时做本地协商（模型不在清单即 `InvalidRequest`）；
 /// 为空时不拦截，交给供应商报错（用于尚未登记清单的兼容实现）。各适配器共用。
+///
+/// **保守规格不拦能力**（C2）：命中项的 `capabilities_known == false`（未知 / 本地模型的
+/// 占位）时只要求「id 在清单里」，不按 `capabilities` 做 fast-fail —— 否则 `Tools` 等
+/// 请求会被误拦（`P1`：别误杀本地模型）。
 pub(crate) fn check_model_capabilities(
     provider_id: &str,
     models: &[ModelSpec],
@@ -224,6 +261,9 @@ pub(crate) fn check_model_capabilities(
             )),
         );
     };
+    if !spec.capabilities_known {
+        return Ok(());
+    }
     let missing = spec.missing(&required);
     if !missing.is_empty() {
         return Err(

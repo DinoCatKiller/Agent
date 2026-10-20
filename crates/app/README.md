@@ -41,6 +41,13 @@ cargo run -p agent-app --features gui -- gui --provider openai-compatible --mode
 #   （自定义端点用）。点 chip = 切 (provider, model)，**生成中不可切**，切换即时生效。
 # 设置页每行是**一个供应商的 API Key**（钥匙串按 `<provider>:api_key` 存）；
 #   配置项（默认供应商 / 模型 / 端点 / 代理 / 超时）按 `A` 语义**重启后生效**。
+# 设置页的「连接提供商」：从内置目录挑厂商 → 写 `[providers.<id>]` + 存钥匙串
+#   → **立刻**出现在模型选择器里（不用重启；落点是 `features/settings`，映射在 `setup::catalog_rows`）。
+# 联网刷新模型清单（C2）：设置页「管理模型」里每个条目一个「刷新」按钮 →
+#   宿主注入的 `on_refresh_models` 回调用 `Cmd::RefreshModels` 打给 worker →
+#   经适配器的 `RefreshableModels` 拉 `GET /models` → 成功写回 `providers.<id>.models`；
+#   宿主在事件桥里收到 `ModelsRefreshed` 后重算候选（推给对话页 `set_candidates` + 回灌设置页），
+#   失败走 `ModelsRefreshFailed`，**不清空**现有清单（`anthropic` 暂无该能力）。
 ```
 
 > **终端要求（Windows）**：crossterm 的 raw mode 走 Win32 控制台 API，请在 **Windows Terminal / PowerShell / cmd** 里运行。
@@ -84,6 +91,7 @@ REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、�
 ## 它不能做什么
 
 - ❌ 设置**保存后立即生效**：`A` 语义 = 重启生效（`S1` 切片 5），B 方案的热切换未做。
+  （唯一例外：「连接提供商」只**新增**条目、不动生效中的那对 `(provider, model)`，故宿主会立刻刷新选择器。）
 - ❌ 无钥匙串服务时的加密文件降级（`R1` 已识别该降级路径，未实现）。
 - ❌ 密钥永不入库、不打日志（硬约束 5）。
 
@@ -92,7 +100,9 @@ REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、�
 ```
 src/main.rs     clap 命令定义 + 分发（self-check 保留在 main 内）
 src/setup.rs    装配共用：配置 / 密钥 / 供应商构造 / demo 工具（所有命令共用）
+                —— `build_provider` 返回 `BuiltProvider`（`ErasedProvider` + 可选 `RefreshableModels` 刷新句柄，同一 `Arc`；C2）
 src/worker.rs   会话宿主：唯一拥有 `Chat` + `SessionRepo`（TUI 与 GUI **共用**，语义只有一份）
+                —— 处理 `Cmd::SelectModel`（切 (provider, model)）与 `Cmd::RefreshModels`（联网刷新清单，C2）
 src/repl.rs     chat 命令：rustyline 输入 + 消费 LoopEvent 打印（事件消费的参考实现）
 src/tui.rs      tui 命令：终端生命周期 + 事件泵（键鼠）
 src/gui.rs      gui 命令（`gui` feature）：窗口 + 后台 tokio runtime + 事件桥

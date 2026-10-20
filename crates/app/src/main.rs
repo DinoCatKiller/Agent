@@ -196,6 +196,7 @@ fn self_check() {
             currency: "USD".into(),
         }),
         deprecated: false,
+        capabilities_known: true,
     };
     let required = required_capabilities(&req);
     let missing = spec.missing(&required);

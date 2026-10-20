@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | ID | —（功能切片，非索引文档） |
-| 状态 | ✅ **A 语义落地**（2026-10-12）：设置模型 + 校验 + 读写编排 + 密钥录入 + GPUI 面板（`gui` feature）；⏳ 运行中热切换（B 方案）未做 |
+| 状态 | ✅ **A 语义落地**（2026-10-12）：设置模型 + 校验 + 读写编排 + 密钥录入 + GPUI 面板（`gui` feature）；✅ 「连接提供商」页（2026-10-16，切片 `C1c`）；✅ 「管理模型」页的「刷新模型」按钮（2026-10-19，切片 `C2d`）；⏳ 运行中热切换（B 方案）未做 |
 | 边界 | **语义**：有哪些设置项、怎么校验、怎么呈现；密钥的录入体验 |
 | 依赖 | `agent-config`（**机制**：文件与钥匙串的读写）｜`agent-ui-kit`（仅 `gui` feature，设置面板） |
 | 不允许 | 直接读写钥匙串 / 配置文件；依赖 `app`；被 `kernel/*` 依赖 |
@@ -17,9 +17,9 @@
 | 文件 | 职责 |
 |------|------|
 | [`src/settings.rs`](src/settings.rs) | `Settings`（5 个设置项）+ `Draft`（界面草稿）+ `validate()` |
-| [`src/service.rs`](src/service.rs) | `SettingsService`：读取 / 写回 / 密钥增删查；`SecretBackend` 抽象 |
-| [`src/ui.rs`](src/ui.rs) | GPUI 设置面板（**仅 `gui` feature**） |
-| [`tests/settings.rs`](tests/settings.rs) | 6 例：校验、归一化、保住用户手写内容、坏文件不覆盖、密钥不落文件 |
+| [`src/service.rs`](src/service.rs) | `SettingsService`：读取 / 写回 / 连接条目 / 密钥增删查；`SecretBackend` 抽象 |
+| [`src/ui.rs`](src/ui.rs) | GPUI 设置面板 + 「连接提供商」页 + 「管理模型」页（含「刷新模型」按钮；**仅 `gui` feature**） |
+| [`tests/settings.rs`](tests/settings.rs) | 10 例：校验、归一化、保住用户手写内容、坏文件不覆盖、密钥不落文件、连接只改目标条目 |
 
 ## 四个必须知道的约束
 
@@ -39,6 +39,18 @@
    一行（`ProviderKeyRow`），保存时只写**填了值的那几行**，其余不动。供应商名单由宿主给
    （`app::setup::provider_ids`）——`features/*` 不认识供应商名单。
    `Draft` 里**不含密钥**：它是「一次性输入」，不是设置项。
+6. **「连接提供商」是「下次启动生效」的唯一例外**（切片 `C1c`，2026-10-16）：连接一个厂商会**立刻**
+   出现在模型选择器里。理由是它只**新增**条目、不动已生效的那对 `(provider, model)`：
+   `SettingsService::connect_provider` 写一个 `[providers.<id>]`（先读全量再写回）+ `save_key` 写钥匙串，
+   再调宿主注入的 `on_connected` 回调，由 `app` 重算候选并推给对话页（`ChatView::set_candidates`）。
+   改**已生效**的端点 / 默认模型仍然要重启（那是 `B` 方案，仍未做）。
+   目录由宿主映射成 `CatalogRow`（`app::setup::catalog_rows`）——本切片不认识 `PRESETS`（`D6`）。
+7. **「刷新模型」由宿主闭环**（切片 `C2d`，2026-10-19）：本切片的「管理模型」页每个条目一个
+   「刷新」按钮，但**只发起、不拉取**——按钮回调用宿主注入的 `on_refresh_models`（`RefreshModelsCallback`），
+   `app` 把它转成 `Cmd::RefreshModels` 发给 worker；拉取 / 写回 / 重算全在 worker 与装配层。
+   结果也不由本切片猜：宿主收到 `UiEvent::ModelsRefreshed` / `ModelsRefreshFailed` 后回灌
+   `set_models`（全量候选）+ `set_status`（成功 / 失败提示）。**失败不清空现有清单**（`C2a` 契约）。
+   分组按**已连接条目**（`ProviderRow`）而非候选清单——刚连上、还没拉到模型时也要能点刷新。
 
 ## 用法
 

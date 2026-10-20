@@ -187,6 +187,14 @@ impl ChatView {
         }
     }
 
+    /// 换掉模型选择器的候选清单（宿主在「连接提供商」成功后调，无需重启）。
+    ///
+    /// 清单由宿主编排（`app::setup::visible_choices`）—— 本视图不认识供应商目录（`D6`）。
+    pub fn set_candidates(&mut self, candidates: Vec<ModelChoice>, cx: &mut Context<Self>) {
+        self.candidates = candidates;
+        cx.notify();
+    }
+
     /// 消费一个宿主事件（与 TUI 的 `apply` 一一对应）。
     pub fn apply(&mut self, event: UiEvent, cx: &mut Context<Self>) {
         match event {
@@ -209,6 +217,16 @@ impl ChatView {
             }
             UiEvent::Rejected(message) => self.ui.rejected(message),
             UiEvent::Notice(message) => self.ui.set_notice(message),
+            // 联网刷新（C2）由设置页发起；对话视图只报个提示 ——
+            // 候选清单的重算在宿主侧（`setup::model_choices` 已把拉到的模型纳入）。
+            UiEvent::ModelsRefreshed { provider, models } => self
+                .ui
+                .set_notice(format!("{provider} 模型清单已刷新（{} 个）", models.len())),
+            // 失败：宿主会**另外**把它灌回设置页的状态栏（发起刷新的那一页，`C2d`）。
+            // 这里报提示是给对话页兜底 —— 两个渲染端消费同一套事件，都得穷尽。
+            UiEvent::ModelsRefreshFailed { provider, message } => self
+                .ui
+                .set_notice(format!("刷新 {provider} 模型失败：{message}")),
         }
         self.follow_bottom();
         cx.notify();
@@ -390,13 +408,11 @@ impl ChatView {
                             .when(selected, |d| d.font_weight(FontWeight::SEMIBOLD))
                             .child(meta.title.clone()),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(p.dim)
-                            .truncate()
-                            .child(format!("{} · {}", meta.model, ago(meta.updated_at))),
-                    ),
+                    .child(div().text_xs().text_color(p.dim).truncate().child(format!(
+                        "{} · {}",
+                        meta.model,
+                        ago(meta.updated_at)
+                    ))),
             );
         }
 
@@ -476,12 +492,7 @@ impl ChatView {
                     .justify_center()
                     .flex_1()
                     .gap_2()
-                    .child(
-                        div()
-                            .text_lg()
-                            .text_color(p.fg)
-                            .child("问我点什么吧"),
-                    )
+                    .child(div().text_lg().text_color(p.fg).child("问我点什么吧"))
                     .child(
                         div()
                             .text_sm()
@@ -559,12 +570,7 @@ impl ChatView {
                                 .items_center()
                                 .gap_1()
                                 .child(Spinner::new().color(p.thinking).with_size(px(14.)))
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(p.thinking)
-                                        .child("生成中"),
-                                ),
+                                .child(div().text_xs().text_color(p.thinking).child("生成中")),
                         )
                     }),
             )
@@ -710,31 +716,33 @@ impl ChatView {
             }
 
             // 底部：管理模型（切片 B 接「开关 + 落盘」）。用间距分组，不画分隔线。
-            list = list.child(div().mt_1().child(
-                ListItem::new("model-manage")
-                    .on_click({
-                        let entity = content_entity.clone();
-                        move |_, _, cx| {
-                            // 先把回调取出来再调：`update` 借 `view`，回调要 `&mut App`，
-                            // 借完再调才不会撞借用（`Rc` 是 `clone` 出来的，不带借用）。
-                            let callback = entity.update(cx, |view, cx| {
-                                view.model_menu_open = false;
-                                cx.notify();
-                                view.on_manage_models.clone()
-                            });
-                            callback(cx);
-                        }
-                    })
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap_2()
-                            .child(Icon::new(IconName::Settings2).text_color(dim))
-                            .child("管理模型"),
-                    ),
-            ));
+            list = list.child(
+                div().mt_1().child(
+                    ListItem::new("model-manage")
+                        .on_click({
+                            let entity = content_entity.clone();
+                            move |_, _, cx| {
+                                // 先把回调取出来再调：`update` 借 `view`，回调要 `&mut App`，
+                                // 借完再调才不会撞借用（`Rc` 是 `clone` 出来的，不带借用）。
+                                let callback = entity.update(cx, |view, cx| {
+                                    view.model_menu_open = false;
+                                    cx.notify();
+                                    view.on_manage_models.clone()
+                                });
+                                callback(cx);
+                            }
+                        })
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap_2()
+                                .child(Icon::new(IconName::Settings2).text_color(dim))
+                                .child("管理模型"),
+                        ),
+                ),
+            );
 
             div()
                 .flex()
@@ -876,21 +884,9 @@ fn entry_row(entry: Entry, p: Palette) -> AnyElement {
                         .flex_none()
                         .with_size(px(16.)),
                 )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_sm()
-                        .text_color(p.fg)
-                        .child(name),
-                )
+                .child(div().flex_none().text_sm().text_color(p.fg).child(name))
                 .when(!label.is_empty(), |d| {
-                    d.child(
-                        div()
-                            .flex_none()
-                            .text_xs()
-                            .text_color(color)
-                            .child(label),
-                    )
+                    d.child(div().flex_none().text_xs().text_color(color).child(label))
                 })
                 .into_any_element()
         }

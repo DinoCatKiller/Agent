@@ -368,6 +368,7 @@ mod tests {
             capabilities: caps.to_vec(),
             pricing: None,
             deprecated: false,
+            capabilities_known: true,
         }
     }
 

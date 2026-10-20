@@ -86,6 +86,7 @@ impl Provider for FakeProvider {
             capabilities: vec![Capability::Text, Capability::Tools],
             pricing: None,
             deprecated: false,
+            capabilities_known: true,
         }]
     }
 

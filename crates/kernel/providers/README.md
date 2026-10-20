@@ -23,9 +23,11 @@
 | [`catalog`](src/catalog.rs) | **内置供应商目录**（`R5`）：厂商 → 适配器 + 端点 + 密钥变量名。`resolve(id, Declared)` 一次算清适配器 / 端点 / 密钥出处 / 要不要密钥，供装配层三处共用。用户只填厂商名（`ollama`），不必知道适配器这回事 |
 | `required_capabilities()` | 从 `ModelRequest` 推导所需能力，供路由阶段 fast-fail（4 个单测覆盖） |
 | `CallContext` | `request_id` + `cancel: CancellationToken` |
-| [`openai`](src/openai.rs) | OpenAI 兼容适配器：`OpenAiCompatible` + `OpenAiFramePolicy`（SSE→归一化、工具分片拼装、错误映射覆盖 `A2` §5），契约测试 12 用例全绿 |
-| [`anthropic`](src/anthropic.rs) | Anthropic Messages 适配器：`AnthropicCompatible` + `AnthropicFramePolicy`（命名事件 SSE→归一化、`tool_use` 拼装、role 交替合并、错误映射覆盖 `A2` §5），契约测试 12 用例全绿（`P2`） |
+| [`openai`](src/openai.rs) | OpenAI 兼容适配器：`OpenAiCompatible` + `OpenAiFramePolicy`（SSE→归一化、工具分片拼装、错误映射覆盖 `A2` §5），契约测试全绿（`Q1` 12 用例 + `C2` 拉取 / 保守规格用例） |
+| [`anthropic`](src/anthropic.rs) | Anthropic Messages 适配器：`AnthropicCompatible` + `AnthropicFramePolicy`（命名事件 SSE→归一化、`tool_use` 拼装、role 交替合并、错误映射覆盖 `A2` §5），契约测试全绿（`P2`） |
 | `check_model_capabilities()` / `map_transport_error()` | 各适配器共用的能力协商 fast-fail 与传输错误映射（`lib.rs`，crate 私有） |
+| `RefreshableModels` | **联网刷新模型清单**契约（`C2a`）：`refresh_models() -> BoxFuture<..>`（object-safe，不引入 `async-trait`）。实现本 trait = 支持联网刷新；不实现的适配器宿主按「不支持」处理。`openai` 适配器实现之——`GET /models` 拉取后**成功才**并入内部缓存，失败保留原状 |
+| `model_spec_for()` / `conservative_spec()` | id → `ModelSpec` 的**字典合并口径**（`C2a`）：命中内置字典沿用官方规格（`capabilities_known = true`），未命中回落保守默认（仅 `Text`、128k 上下文、4096 最大输出，`capabilities_known = false`，路由层不据此拦能力）。`model_spec_for` 供 `openai` 拉取时用，`conservative_spec` 供各适配器与装配层共用 |
 
 ## 两个必须知道的设计决定
 

@@ -71,7 +71,7 @@ proxy = "http://127.0.0.1:7890"
 stream_idle_timeout_secs = 60
 
 [providers.ollama]                     # 目录里的条目：只需覆盖想改的字段
-models = []                            # （将来 C2 用它存"这个端点有哪些模型"）
+models = []                            # 该端点已知的模型 id 清单（C2：联网拉取 GET /models 写回，也可手写）
 base_url = "https://ollama.com/v1"
 
 [providers.my-vllm]                    # 目录里没有的条目：**必须写 adapter**
@@ -87,9 +87,12 @@ model = "qwen3-32b"
 | `adapter` | `openai-compatible` / `anthropic`。**目录里没有的 id 必填**；目录里有的可省（由目录推断） |
 | `base_url` | 覆盖目录默认端点 |
 | `model` | 该条目的默认模型（优先于顶层 `default_model`） |
+| `models` | 该端点已知的模型 id 清单（`C2`）：联网刷新 `GET /models` 的结果写这里，也允许手写。选择器候选与本地能力协商都读它 —— 拉到的模型因此复用**已有的逐模型显隐偏好**（`models.toml`），不引入额外状态。**声明过的 id 才算「已知」**；未知 id 的能力是按保守占位（`capabilities_known = false`）处理的，不据此拦截 |
 
 - 路径：`--config <path>`，或平台标准目录（`directories::ProjectDirs("dev", "", "CodingRocket")`）。
-- 读写 API：`ConfigPaths` / `load` / `save`；**不存在返回默认**，无配置即可运行。
+- 读写 API：`ConfigPaths` / `load` / `save` / **`update`**；**不存在返回默认**，无配置即可运行。
+  - 任何「读全量 → 改自己管的字段 → 写回」都必须走 `update`（持**进程内写锁**）：worker 写回
+    拉取的模型清单与设置界面保存 / 连接条目若并发，后写者会基于过期快照把先写者的改动整段抹掉（`C2`）。
 - 条目解析：`agent_providers::catalog::resolve(id, Declared{..})` —— 适配器 / 端点 / 密钥变量名
   一次算清，`build_provider`、模型清单、设置页三处共用同一套（不会出现"列得出来但连不上"）。
 - 老的 `AppConfig::base_url_for` / `model_for` 仍在（`app` 已改用 `resolve`，保留给只读场景）。

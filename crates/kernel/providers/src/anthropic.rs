@@ -12,6 +12,7 @@
 //!   input、`message_delta` 给累计 output）；工具参数是结构化 `input`（非字符串）。
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::Arc;
 
 use agent_common::{
@@ -39,7 +40,7 @@ pub const DEFAULT_MAX_TOKENS: u32 = 4096;
 ///
 /// `models` 非空时做本地能力协商（模型不在清单或能力不足即 fast-fail，`A2` §1）；
 /// 为空时不拦截，交给供应商报错（用于尚未登记清单的兼容实现）。
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AnthropicConfig {
     /// 供应商 id（如 `"anthropic"`）。
     pub id: &'static str,
@@ -50,6 +51,19 @@ pub struct AnthropicConfig {
     pub api_key: Option<String>,
     pub http: HttpConfig,
     pub models: Vec<ModelSpec>,
+}
+
+/// 手写 `Debug`：`api_key` **绝不**进日志 / 错误 / 快照（`Q3` / 硬约束 5），只显示是否设置。
+impl fmt::Debug for AnthropicConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AnthropicConfig")
+            .field("id", &self.id)
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key.as_deref().map(|_| "***"))
+            .field("http", &self.http)
+            .field("models", &self.models)
+            .finish()
+    }
 }
 
 impl Default for AnthropicConfig {
@@ -75,6 +89,7 @@ pub fn anthropic_default_models() -> Vec<ModelSpec> {
             capabilities: caps.to_vec(),
             pricing: None,
             deprecated: false,
+            capabilities_known: true,
         }
     }
     // 3.7 起支持扩展思考；无 JsonMode/JsonSchema（协议无 response_format，见 `P2` §3）。
@@ -96,13 +111,25 @@ pub fn anthropic_default_models() -> Vec<ModelSpec> {
 }
 
 /// Anthropic 适配器。`Arc<HttpClient>` 保证 `Clone` 只是引用计数（`A2` §2 硬要求）。
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AnthropicCompatible {
     id: &'static str,
     client: Arc<HttpClient>,
     base_url: String,
     api_key: Option<String>,
     models: Vec<ModelSpec>,
+}
+
+/// 手写 `Debug`：`api_key` 脱敏（同 [`AnthropicConfig`]）。
+impl fmt::Debug for AnthropicCompatible {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AnthropicCompatible")
+            .field("id", &self.id)
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key.as_deref().map(|_| "***"))
+            .field("models", &self.models)
+            .finish()
+    }
 }
 
 impl AnthropicCompatible {

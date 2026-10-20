@@ -15,7 +15,7 @@ mod prefs;
 mod secret;
 
 pub use error::ConfigError;
-pub use file::{AppConfig, ConfigPaths, ProviderConfig, load, save};
+pub use file::{AppConfig, ConfigPaths, ProviderConfig, load, save, update};
 // UI 偏好走**独立文件**（`models.toml`），理由见 [`prefs`] 的模块文档。
 pub use prefs::Preferences;
 // `account_for`：钥匙串账号名的**唯一**来源（`<provider>:api_key`）。

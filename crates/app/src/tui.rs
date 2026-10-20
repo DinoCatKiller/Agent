@@ -68,7 +68,7 @@ pub async fn run(args: TuiArgs) -> i32 {
         api_key: args.api_key,
         config: args.config.clone(),
     };
-    let Some(provider) = setup::build_provider(&chat_args) else {
+    let Some(built) = setup::build_provider(&chat_args) else {
         return 2;
     };
     let db_path = args
@@ -94,7 +94,7 @@ pub async fn run(args: TuiArgs) -> i32 {
     let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<UiEvent>();
     tokio::spawn(worker::run_worker(
         selection.clone(),
-        provider,
+        built,
         factory,
         repo,
         cancel_slot.clone(),
@@ -238,6 +238,13 @@ fn apply(
         }
         UiEvent::Rejected(message) => chat_ui.rejected(message),
         UiEvent::Notice(message) => chat_ui.set_notice(message),
+        // 联网刷新（C2）是设置页的功能；TUI 不发起，收到就报个提示。
+        UiEvent::ModelsRefreshed { provider, models } => {
+            chat_ui.set_notice(format!("{provider} 模型清单已刷新（{} 个）", models.len()))
+        }
+        UiEvent::ModelsRefreshFailed { provider, message } => {
+            chat_ui.set_notice(format!("刷新 {provider} 模型失败：{message}"))
+        }
     }
 }
 
@@ -568,13 +575,13 @@ mod tests {
         };
         let factory = worker::ProviderFactory::new(&chat_args, ToolSet::new());
         let selection = worker::Selection::new(&chat_args.provider, &chat_args.model);
-        let provider = factory.build(&selection).expect("provider builds");
+        let built = factory.build(&selection).expect("provider builds");
         let slot: Slot = Arc::new(Mutex::new(None));
         let (cmd_tx, cmd_rx) = mpsc::channel(32);
         let (ui_tx, ui_rx) = mpsc::unbounded_channel();
         tokio::spawn(worker::run_worker(
             selection,
-            provider,
+            built,
             factory,
             repo.clone(),
             slot.clone(),

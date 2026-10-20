@@ -26,6 +26,12 @@ pub enum Cmd {
     /// （`R1`：钥匙串账号 `<provider>:api_key`），换 provider 必须连带重建 provider 实例
     /// 以重新取密钥。
     SelectModel { provider: String, model: String },
+    /// 联网拉取某条目的模型清单并写回配置（C2）。
+    ///
+    /// 结果走 [`UiEvent::ModelsRefreshed`]；失败走 [`UiEvent::ModelsRefreshFailed`]
+    /// （拉取出错 / 写回失败 / 该条目不支持刷新，`C2d`）——
+    /// **拉取失败不清空现有清单**（`C2a` 的契约）。
+    RefreshModels { provider: String },
 }
 
 /// worker → UI 的事件通道。
@@ -48,4 +54,17 @@ pub enum UiEvent {
     Rejected(String),
     /// 杂项提示（生成中不可切换、落盘失败…）。
     Notice(String),
+    /// 某条目的模型清单已刷新并写回配置（C2）。
+    ///
+    /// 宿主据此**重算候选**（`setup::model_choices`）并落到界面上 ——
+    /// worker 不认识供应商目录，重算只能在宿主侧做（`D6`）。
+    ModelsRefreshed {
+        provider: String,
+        models: Vec<String>,
+    },
+    /// 联网刷新失败（C2d）：拉取出错、写回失败、或该条目不支持刷新。
+    ///
+    /// 与 [`UiEvent::Notice`] 分开，是为了让**发起刷新的设置页**能就地显示失败 ——
+    /// 泛化的 `Notice` 分不清「是不是刷新失败」。**现有清单原样不动**（失败不清空，`C2a`）。
+    ModelsRefreshFailed { provider: String, message: String },
 }

@@ -33,13 +33,17 @@ pub struct ModelSpec {
     pub provider: String,
     pub context_window: u32,
     pub max_output: u32,
-    pub capabilities: EnumSet<Capability>,
+    pub capabilities: Vec<Capability>,
     pub pricing: Option<Pricing>,   // input/output 每百万 token
     pub deprecated: bool,
+    pub capabilities_known: bool,   // C2：能力清单是否权威；false = 未知模型的保守占位
 }
 ```
 
 规则：请求所需能力必须是模型能力的子集，否则在**路由阶段 fast-fail**，不要发到供应商再报错。
+**例外（`C2`）**：`capabilities_known == false` 的规格是「未知模型」的**保守占位**
+（适配器的 `conservative_spec`），它**只**用来确认「id 在清单里」，**不**参与能力 fast-fail ——
+否则 `Tools` / `Vision` 请求会在本地被误拦，误杀本地 / 兼容端点（`P1`）。
 注意 `JsonMode`（只保证合法 JSON）与严格 schema 输出是**两种能力**，见 §3。
 
 ## 2. 统一接口
