@@ -3,10 +3,17 @@
 //! - `self-check`：契约层冒烟（M1）。
 //! - `chat`：对话 REPL（M4）——`agent-chat` 的事件消费参考实现。
 //! - `tui`：一期终端界面（M5，`D3`）——侧栏会话 + 流式转录 + 轮末落盘。
+//! - `gui`：二期图形界面（`D3` 方案 A）——需 `--features gui` 构建。
+//!
+//! [`worker`] 是 TUI 与 GPUI **共用**的会话宿主（`Cmd` / `UiEvent` 通道那一侧）。
 
 mod repl;
 mod setup;
 mod tui;
+mod worker;
+
+#[cfg(feature = "gui")]
+mod gui;
 
 use clap::{Args, Parser, Subcommand};
 use setup::ChatArgs;
@@ -32,17 +39,22 @@ enum Command {
     /// 对话 REPL（M4）。
     Chat(SessionArgs),
     /// 一期终端界面（M5，`D3`）。
-    Tui(TuiCliArgs),
+    Tui(SessionCliArgs),
+    /// 二期图形界面（`D3` 方案 A；需以 `--features gui` 构建）。
+    #[cfg(feature = "gui")]
+    Gui(SessionCliArgs),
 }
 
-/// `chat` / `tui` 共用参数。
+/// `chat` / `tui` / `gui` 共用参数。
 #[derive(Args, Debug)]
 struct SessionArgs {
     /// 供应商标识：openai-compatible | anthropic。
+    /// 省略时取配置文件 `default_provider`（`R1`）。
     #[arg(long)]
-    provider: String,
+    provider: Option<String>,
     /// 主模型；逗号分隔（或重复传入）时，`b…` 为降级链（`R2`）。
-    #[arg(long, value_delimiter = ',', required = true)]
+    /// 省略时取 `providers.<provider>.model`，再回退到 `default_model`（`R1`）。
+    #[arg(long, value_delimiter = ',')]
     model: Vec<String>,
     /// 自定义端点（vLLM / 代理等）。
     #[arg(long)]
@@ -55,8 +67,9 @@ struct SessionArgs {
     config: Option<String>,
 }
 
+/// `tui` / `gui` 共用参数（都是「带会话库的完整界面」）。
 #[derive(Args, Debug)]
-struct TuiCliArgs {
+struct SessionCliArgs {
     #[command(flatten)]
     session: SessionArgs,
     /// SQLite 路径（缺省 `./agent-sessions.db`）。
@@ -95,28 +108,46 @@ fn main() {
                 }));
             std::process::exit(code);
         }
+        #[cfg(feature = "gui")]
+        Command::Gui(args) => {
+            let Some(chat_args) = session_args_into_chat(args.session) else {
+                std::process::exit(2);
+            };
+            // `gui::run` 是同步的：GPUI 的 `application().run` 自己占住主线程，不能 block_on
+            let code = gui::run(gui::GuiArgs {
+                provider: chat_args.provider,
+                model: chat_args.model,
+                fallbacks: chat_args.fallbacks,
+                base_url: chat_args.base_url,
+                api_key: chat_args.api_key,
+                config: chat_args.config,
+                db: args.db,
+            });
+            std::process::exit(code);
+        }
     }
 }
 
-/// `--model a,b` → 主模型 + 降级链；全为空串视为用法错误（clap 已保证至少一项）。
+/// CLI 参数 → **生效的** `ChatArgs`。
+///
+/// 解析策略只有一处（[`setup::resolve`]）：`--provider` / `--model` 都可省，
+/// 省了就从配置文件的 `default_provider` / `providers.<p>.model` / `default_model` 取（`R1`）；
+/// 两边都没有 → 报错退出（模型选错是真花钱的事，不能猜）。
 fn session_args_into_chat(args: SessionArgs) -> Option<ChatArgs> {
-    let mut models = args
-        .model
-        .into_iter()
-        .map(|m| m.trim().to_string())
-        .filter(|m| !m.is_empty());
-    let Some(model) = models.next() else {
-        eprintln!("错误：--model 不能为空");
-        return None;
-    };
-    Some(ChatArgs {
+    let cli = setup::ChatCli {
         provider: args.provider,
-        model,
-        fallbacks: models.collect(),
+        model: args.model,
         base_url: args.base_url,
         api_key: args.api_key,
         config: args.config,
-    })
+    };
+    match setup::resolve(&cli) {
+        Ok(chat_args) => Some(chat_args),
+        Err(message) => {
+            eprintln!("错误：{message}");
+            None
+        }
+    }
 }
 
 use agent_common::{
@@ -165,6 +196,7 @@ fn self_check() {
             currency: "USD".into(),
         }),
         deprecated: false,
+        capabilities_known: true,
     };
     let required = required_capabilities(&req);
     let missing = spec.missing(&required);

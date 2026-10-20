@@ -33,13 +33,17 @@ pub struct ModelSpec {
     pub provider: String,
     pub context_window: u32,
     pub max_output: u32,
-    pub capabilities: EnumSet<Capability>,
+    pub capabilities: Vec<Capability>,
     pub pricing: Option<Pricing>,   // input/output 每百万 token
     pub deprecated: bool,
+    pub capabilities_known: bool,   // C2：能力清单是否权威；false = 未知模型的保守占位
 }
 ```
 
 规则：请求所需能力必须是模型能力的子集，否则在**路由阶段 fast-fail**，不要发到供应商再报错。
+**例外（`C2`）**：`capabilities_known == false` 的规格是「未知模型」的**保守占位**
+（适配器的 `conservative_spec`），它**只**用来确认「id 在清单里」，**不**参与能力 fast-fail ——
+否则 `Tools` / `Vision` 请求会在本地被误拦，误杀本地 / 兼容端点（`P1`）。
 注意 `JsonMode`（只保证合法 JSON）与严格 schema 输出是**两种能力**，见 §3。
 
 ## 2. 统一接口
@@ -183,6 +187,8 @@ pub struct ProviderError {
 ```
 
 **注意**：这里刻意**不用** `Box<dyn Error>` 作为 `source`。错误对象要能进 `StreamEvent`、日志与 fixtures 回放，因此必须 `Clone + Serialize`；原始原因以字符串保留在 `source_message`。
+
+**关于本类型的尺寸**：二期引入 GPUI 后，`gpui-pre` 会打开 `serde_json/preserve_order`（feature 全图合一），`Value` 32B → 72B，本类型随之 112B → 152B，越过 clippy `result_large_err` 的默认门槛 128B。**我们不改变类型形状**（不装箱），而是在 `clippy.toml` 把门槛显式设为 160 —— 这是对外部依赖带来的尺寸变化的显式承认。实测与对照见 `X2` §8.1。
 
 每个 adapter 必须提供「HTTP 状态 / 错误体 → `ErrorCategory`」的映射表。
 

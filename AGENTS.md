@@ -32,7 +32,7 @@
 | `S1` / `S2` | 状态概览 / 未决问题 | `P1–P6` / `PT` | 供应商文档 / 供应商模板 |
 | `G1` | 目标与技术路线 | `X1–X5` | 调研（一次性消费，会过时） |
 | `A1–A7` | 架构与契约（跨 crate 或归属某 crate） | `D0–D6` | 决策 ADR（只增不改） |
-| `R1–R4` | 运行时（配置 / 路由 / 观测 / 限流） | `RM` | 里程碑排期（**不含状态**） |
+| `R1–R5` | 运行时（配置 / 路由 / 观测 / 限流 / 供应商目录） | `RM` | 里程碑排期（**不含状态**） |
 | `Q1–Q3` | 质量（测试 / 评测 / 安全） | `GUI` | 二期 GUI 与 L3 计划 |
 | `M1` | 文档规范（归属 + 路由） | `T0` | 文档模板 |
 
@@ -83,6 +83,7 @@
 | PT | 供应商文档模板 | [`crates/kernel/providers/docs/providers/_template.md`](crates/kernel/providers/docs/providers/_template.md) | 新建某家供应商文档 | ~0.4k | ✅ |
 | P1 | OpenAI 兼容族差异 | [`crates/kernel/providers/docs/providers/openai.md`](crates/kernel/providers/docs/providers/openai.md) | 接 OpenAI / DeepSeek / vLLM 等兼容实现时 | ~1.5k | ✅ |
 | P2 | Anthropic 差异 | [`crates/kernel/providers/docs/providers/anthropic.md`](crates/kernel/providers/docs/providers/anthropic.md) | 接 Claude / Anthropic 兼容端点时 | ~1.6k | ✅ |
+| R5 | 内置供应商目录 | [`crates/kernel/providers/docs/catalog.md`](crates/kernel/providers/docs/catalog.md) | 加供应商、改端点、讨论「用户为什么还要填适配器名」 | ~1.5k | ✅ |
 | A2-V | 适配器边界图（`A2` 的可视化） | [`crates/kernel/providers/docs/adapter-map.html`](crates/kernel/providers/docs/adapter-map.html) | 想一眼看懂「插座」与两家差异 | 1 张图 | ✅ |
 | P3–P6 | 其余供应商差异 | `crates/kernel/providers/docs/providers/*.md` | 接对应一家模型时 | — | ⬜ |
 
@@ -102,7 +103,7 @@
 |----|------|------|--------|------|------|
 | — | 对话功能门面 | [`crates/features/chat/README.md`](crates/features/chat/README.md) | 改对话逻辑 / 界面时 | ~0.7k | ✅ M4–M5 |
 | — | 会话功能门面 | [`crates/features/sessions/README.md`](crates/features/sessions/README.md) | 改会话列表 / 切换时 | ~0.6k | ✅ M5 |
-| — | 设置功能门面 | [`crates/features/settings/README.md`](crates/features/settings/README.md) | 加设置项 / 改密钥录入时 | ~0.5k | ✅ 骨架 |
+| — | 设置功能门面 | [`crates/features/settings/README.md`](crates/features/settings/README.md) | 加设置项 / 改密钥录入时 | ~1.4k | ✅ A 语义 |
 | A5 | 工具调用 | [`crates/features/chat/docs/tool-calling.md`](crates/features/chat/docs/tool-calling.md) | 工具定义、并行调用、结果回填 | ~1.3k | ✅ M4 |
 | A7 | 上下文与 Token | [`crates/features/chat/docs/context-and-tokens.md`](crates/features/chat/docs/context-and-tokens.md) | 裁剪、摘要、计费 | ~1.2k | ✅ M4 |
 | A5-V | 轮次循环图（`A5`/`A7` 的可视化） | [`crates/features/chat/docs/round-map.html`](crates/features/chat/docs/round-map.html) | 想一眼看懂 run_round 与工具循环 | 1 张图 | ✅ |
@@ -133,6 +134,12 @@
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
 | — | 存储门面 | [`crates/kernel/store/README.md`](crates/kernel/store/README.md) | 动持久化 / 建表 / 事务前 | ~0.6k | ✅ M5 |
+
+### `crates/kernel/ui-kit`
+
+| ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
+|----|------|------|--------|------|------|
+| — | crate 门面 | [`crates/kernel/ui-kit/README.md`](crates/kernel/ui-kit/README.md) | 加组件、改配色 / 圆角 / 间距 / 字号、升 GPUI 时 | ~1.3k | ✅ 骨架 |
 
 ### `crates/app`
 
@@ -165,14 +172,14 @@
 | X5 | TS 样式资产移植可行性 | [`docs/research/styling-portability.md`](docs/research/styling-portability.md) | 想复用 Web 样式 / 设计系统 | ~2.5k | ✅ |
 | X6 | 可复用框架评估（哪些自研可换现成库） | [`docs/research/reusable-frameworks.md`](docs/research/reusable-frameworks.md) | 想减少自研、评估引入新依赖 | ~2k | ✅ |
 
-> **迁移预告**：`X2` / `X4` / `X5` 与 `D3` / `D4` / `GUI` 都属于 UI 领域；按 `D5`，界面代码**跟功能走**——`features/*` 各自持有 `ui.rs`（`gpui` 仅出现在 `features/*` 与 `app`），不再有独立 `agent-ui` crate。因为引用只写 ID，迁移不需要改其它文档。
+> **迁移预告**：`X2` / `X4` / `X5` 与 `D3` / `D4` / `GUI` 都属于 UI 领域；按 `D5`，界面代码**跟功能走**——`features/*` 各自持有 `ui.rs`，不再有独立 `agent-ui` crate（界面按功能切）。**共用的组件层是 `crates/kernel/ui-kit`**（`D4` 的 `agent-ui-kit`，属机制），`gpui` 依赖只出现在 `kernel/ui-kit`、`features/*` 与 `app`。因为引用只写 ID，迁移不需要改其它文档。
 
 ## 3. 任务路由（按需读）
 全文见 `M1`。只在**开新任务、不确定该读哪些文档**时读。
 
 ## 4. 硬约束（始终生效）
 
-1. **技术栈已定**：Rust（edition 2024）+ tokio 后端。UI 形态未定（D3）前**不写 UI 代码**，不引入 Electron / Tauri 等替代方案。
+1. **技术栈已定**：Rust（edition 2024）+ tokio 后端。UI 形态按 `D3` 分期已定：一期 Ratatui TUI（已落地）→ 二期 **GPUI**（进行中）。不引入 Electron / Tauri 等替代方案；`D3` 的逃生通道（切 Tauri）只在 `GUI` §3.4 的停止条件触发时才重开。
 2. 供应商差异**不得泄漏**到编排核心（落在 `features/chat`）；`features/*` 只依赖 `A2` 的契约。
 3. **一个结论只有一个家**：其它文档只许用 ID 引用，不许复制内容。
 4. 未决问题只写在 `S2`；ADR 只增不改。

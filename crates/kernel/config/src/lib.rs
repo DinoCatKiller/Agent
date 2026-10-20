@@ -11,10 +11,15 @@
 
 mod error;
 mod file;
+mod prefs;
 mod secret;
 
 pub use error::ConfigError;
-pub use file::{AppConfig, ConfigPaths, ProviderConfig, load, save};
-pub use secret::{SecretStore, api_key_env, resolve_api_key};
+pub use file::{AppConfig, ConfigPaths, ProviderConfig, load, save, update};
+// UI 偏好走**独立文件**（`models.toml`），理由见 [`prefs`] 的模块文档。
+pub use prefs::Preferences;
+// `account_for`：钥匙串账号名的**唯一**来源（`<provider>:api_key`）。
+// 必须出口——否则使用方（`features/settings` 写密钥）会自己拼一份，约定就有了两个家。
+pub use secret::{SecretStore, account_for, resolve_api_key};
 // 密钥载体由本 crate 统一出口，使用方不必再直接依赖 `secrecy`。
 pub use secrecy::{ExposeSecret, SecretString};

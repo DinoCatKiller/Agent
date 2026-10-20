@@ -1,0 +1,15 @@
+# clippy 配置（工作区根；从仓库根跑 `cargo clippy` 即生效）
+
+# `result_large_err` 的阈值，单位字节，默认 128。
+#
+# 为什么调高：`common::ProviderError` 里内联了 `raw: Option<serde_json::Value>`，
+# 而 `Value` 的大小随 `serde_json/preserve_order` 特征变化 —— `gpui-pre`（GPUI 的
+# 官方预发布快照线）会打开该特征，把 object 容器从 `BTreeMap` 换成 `IndexMap`，
+# `Value` 32B → 72B，于是 `ProviderError` 从 112B 涨到 152B，越过默认门槛。
+#
+# 这是**外部依赖的特征合一**带来的尺寸变化，不是我们的错误类型失控；
+# 实测数据与完整对照表见 `X2` §8.1。阈值设为 160 是对当前 152B 的显式承认。
+#
+# 注意：这是全局设置。若某天 `ProviderError` 再胖过 160B，lint 会重新出现 ——
+# 那时要判断的是「又加了什么字段」，而不是继续抬阈值。
+large-error-threshold = 160

@@ -1,0 +1,14 @@
+[package]
+name = "agent-ui-kit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "UI 组件层：设计令牌 → GPUI 主题桥（D4 方案 B）"
+
+[dependencies]
+# GPUI 只经 gpui-kit 一个口子引入（X2 §4：它 pin 配套的 gpui-pre 版本并重导出）
+gpui-kit = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

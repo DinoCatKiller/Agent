@@ -73,9 +73,19 @@ crates/kernel/providers/tests/fixtures/
 | 命令 | 用途 |
 |------|------|
 | `cargo test --workspace` | 全部测试 |
-| `cargo clippy --workspace --all-targets -- -D warnings` | 静态检查（CI 必过） |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 静态检查（CI 必过）。**`--all-features` 不能省**：`gui` 那条分支（GPUI 渲染端）默认不编译，少了它就不会被检查 |
 | `cargo fmt --check` | 格式 |
 | `cargo run -p agent-app -- self-check` | 契约冒烟 |
+
+> **`clippy.toml` 的两个坑**（2026-10-12 实测，详见 `X2` §8.1）：
+> 1. **门禁必须用 `--workspace`。** 有些 lint 只在**整图 feature 合一**后才出现 ——
+>    例如 `result_large_err`：`gpui-pre` 打开 `serde_json/preserve_order` 后 `Value` 变胖，
+>    `ProviderError` 才越过门槛。单包跑 `cargo clippy -p <crate>` 时 GPUI 不在子图里，
+>    这个 lint **不会出现**，会漏掉跨依赖的尺寸问题。
+> 2. **改 `clippy.toml` 不会让 cargo 判定过期**（它不在指纹里），会重放上一次的缓存诊断。
+>    改完要 `cargo clean -p <crate>`（或改一次源码内容）才能确认新门槛真生效。
+>
+> 当前 `large-error-threshold = 160`（默认 128），理由写在 `clippy.toml` 的注释里。
 
 ## 相关
 

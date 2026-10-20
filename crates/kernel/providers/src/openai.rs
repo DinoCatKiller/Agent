@@ -11,7 +11,9 @@
 //!   `Value`（`A2` §3：Core 只看到结构化结果）。
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::fmt;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use agent_common::{
     Capability, ContentPart, DeltaKind, ErrorCategory, FinishReason, ModelRequest, ModelResponse,
@@ -24,16 +26,21 @@ use agent_transport::{
 };
 use async_stream::stream;
 use futures::StreamExt;
+use futures::future::BoxFuture;
 use reqwest::RequestBuilder;
 use serde_json::{Map, Value, json};
 
 use crate::{CallContext, EventStream, Provider};
 
+/// 单次 `GET /models` 拉取的超时（C2）：传输层的 `HttpConfig` 默认不带请求超时，
+/// 若不设，一个不响应的端点会让 worker 的刷新循环永久挂起。
+const MODELS_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// OpenAI 兼容适配器配置。
 ///
 /// `models` 非空时做本地能力协商（模型不在清单或能力不足即 fast-fail，`A2` §1）；
 /// 为空时不拦截，交给供应商报错（用于尚未登记清单的兼容实现）。
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenAiConfig {
     /// 供应商 id（如 `"openai"` / `"deepseek"`）。
     pub id: &'static str,
@@ -43,6 +50,19 @@ pub struct OpenAiConfig {
     pub api_key: Option<String>,
     pub http: HttpConfig,
     pub models: Vec<ModelSpec>,
+}
+
+/// 手写 `Debug`：`api_key` **绝不**进日志 / 错误 / 快照（`Q3` / 硬约束 5），只显示是否设置。
+impl fmt::Debug for OpenAiConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenAiConfig")
+            .field("id", &self.id)
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key.as_deref().map(|_| "***"))
+            .field("http", &self.http)
+            .field("models", &self.models)
+            .finish()
+    }
 }
 
 impl Default for OpenAiConfig {
@@ -68,6 +88,7 @@ pub fn openai_default_models() -> Vec<ModelSpec> {
             capabilities: caps.to_vec(),
             pricing: None,
             deprecated: false,
+            capabilities_known: true,
         }
     }
     let chat = [
@@ -99,14 +120,49 @@ pub fn openai_default_models() -> Vec<ModelSpec> {
     ]
 }
 
+/// 由一个模型 id 得出 `ModelSpec`（C2 的**唯一**字典合并口径，装配层与拉取共用）。
+///
+/// - 命中 [`openai_default_models`] → 沿用官方规格（窗口 / 能力），只把 `provider` 改成
+///   `provider_id`（官方条目默认写 `openai`，而 `ollama` 等也走本适配器）；
+///   官方规格 `capabilities_known = true`，可据此 fast-fail。
+/// - 未命中（未知 / 本地模型）→ **保守默认**（[`crate::conservative_spec`]）：
+///   仅 `Text`、128k 上下文、4096 最大输出，且 `capabilities_known = false` ——
+///   保守不等于拦截：路由层只确认「id 在清单里」，不据此拒绝能力请求，避免误杀本地模型。
+pub fn model_spec_for(provider_id: &str, id: &str) -> ModelSpec {
+    match openai_default_models()
+        .into_iter()
+        .find(|spec| spec.id == id)
+    {
+        Some(mut spec) => {
+            spec.provider = provider_id.to_string();
+            spec
+        }
+        None => crate::conservative_spec(provider_id, id),
+    }
+}
+
 /// OpenAI 兼容适配器。`Arc<HttpClient>` 保证 `Clone` 只是引用计数（`A2` §2 硬要求）。
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenAiCompatible {
     id: &'static str,
     client: Arc<HttpClient>,
     base_url: String,
     api_key: Option<String>,
-    models: Vec<ModelSpec>,
+    /// 模型缓存（C2a）：`Arc<RwLock<..>>` 让刷新句柄与主实例**共享同一份**，
+    /// 刷新成功后 `list_models()` 自动读到最新值；失败时缓存保持原状。
+    models: Arc<RwLock<Vec<ModelSpec>>>,
+}
+
+/// 手写 `Debug`：`api_key` 脱敏（同 [`OpenAiConfig`]）。
+impl fmt::Debug for OpenAiCompatible {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenAiCompatible")
+            .field("id", &self.id)
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key.as_deref().map(|_| "***"))
+            .field("models", &self.models)
+            .finish()
+    }
 }
 
 impl OpenAiCompatible {
@@ -119,7 +175,7 @@ impl OpenAiCompatible {
             client: Arc::new(client),
             base_url: config.base_url,
             api_key: config.api_key,
-            models: config.models,
+            models: Arc::new(RwLock::new(config.models)),
         })
     }
 
@@ -136,7 +192,70 @@ impl OpenAiCompatible {
 
     /// 能力协商 fast-fail（`A2` §1 / `Q1` 用例 12）：发请求**之前**拒绝不支持的组合。
     pub fn check_capabilities(&self, req: &ModelRequest) -> Result<(), ProviderError> {
-        crate::check_model_capabilities(self.id, &self.models, req)
+        let models = self.models.read().unwrap_or_else(|e| e.into_inner());
+        crate::check_model_capabilities(self.id, &models, req)
+    }
+
+    /// `GET {base_url}/models`（C2a 联网拉取）。
+    fn models_url(&self) -> String {
+        format!("{}/models", self.base_url.trim_end_matches('/'))
+    }
+
+    /// 联网拉取模型清单（C2a）：`GET /models` → 与内置字典合并后返回。
+    ///
+    /// 合并策略：拉到的 id 命中内置字典沿用官方规格；未命中的未知模型回落保守默认
+    /// （仅 Text、128k 上下文、4096 最大输出，`capabilities_known = false`），放行不拦截
+    /// （`P1`：别误杀本地模型）。
+    /// **只拉取、不写缓存**：写缓存由 [`crate::RefreshableModels::refresh_models`] 负责，
+    /// 由它保证「失败不清空」的契约。
+    ///
+    /// **健壮性（C2）**：单次请求自带 [`MODELS_FETCH_TIMEOUT`] 超时（传输层默认无请求超时，
+    /// 否则一个不响应的端点会永久占住 worker 的刷新循环）；响应体**必须**含非空 `data`
+    /// 数组，否则按失败处理 —— 宁可保留旧缓存，也不要用空清单把候选与协商一起清掉。
+    pub async fn fetch_models(&self) -> Result<Vec<ModelSpec>, ProviderError> {
+        use tokio_util::sync::CancellationToken;
+        let request = self
+            .with_auth(self.client.client().get(self.models_url()))
+            .timeout(MODELS_FETCH_TIMEOUT);
+        let response = self
+            .client
+            .send(request, &CancellationToken::new())
+            .await
+            .map_err(|e| self.map_transport_error(&e))?;
+        let status = response.status();
+        if !status.is_success() {
+            let raw = response.json::<Value>().await.unwrap_or(Value::Null);
+            return Err(map_http_error(self.id, status.as_u16(), raw));
+        }
+        let raw: Value = response.json().await.map_err(|e| {
+            ProviderError::new(self.id, ErrorCategory::Unknown).with_message(e.to_string())
+        })?;
+        let ids: Vec<String> = match raw.get("data").and_then(Value::as_array) {
+            Some(arr) => arr
+                .iter()
+                .filter_map(|m| m.get("id").and_then(Value::as_str).map(str::to_string))
+                .collect(),
+            None => {
+                return Err(ProviderError::new(self.id, ErrorCategory::Unknown)
+                    .with_message("GET /models 响应缺少 `data` 数组（保留已有模型清单）"));
+            }
+        };
+        if ids.is_empty() {
+            return Err(ProviderError::new(self.id, ErrorCategory::Unknown)
+                .with_message("GET /models 返回空清单（保留已有模型清单）"));
+        }
+        Ok(self.merge_with_dictionary(ids))
+    }
+
+    /// 拉到的 id 与内置字典合并（C2a）：命中沿用官方规格（`capabilities_known = true`），
+    /// 未知回落保守默认（`capabilities_known = false`，不据此拦截能力）。
+    fn merge_with_dictionary(&self, ids: Vec<String>) -> Vec<ModelSpec> {
+        let mut merged: Vec<ModelSpec> = ids
+            .into_iter()
+            .map(|id| model_spec_for(self.id, &id))
+            .collect();
+        merged.sort_by(|a, b| a.id.cmp(&b.id));
+        merged
     }
 
     /// 归一化 `ModelRequest` → OpenAI `chat/completions` 请求体。`pub` 供契约测试断言（`Q1` 用例 4）。
@@ -317,7 +436,10 @@ impl Provider for OpenAiCompatible {
     }
 
     fn list_models(&self) -> Vec<ModelSpec> {
-        self.models.clone()
+        self.models
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     async fn chat(
@@ -390,6 +512,31 @@ impl Provider for OpenAiCompatible {
     fn count_tokens(&self, req: &ModelRequest) -> Option<u32> {
         let chars: usize = req.messages.iter().map(|m| m.text().chars().count()).sum();
         Some((chars / 4) as u32)
+    }
+}
+
+/// C2a：联网刷新模型清单。刷新句柄与主实例共享同一缓存 `Arc<RwLock<..>>`，
+/// 成功时与已有缓存**取并集**、失败不动 —— 保证拉取失败不清空现有可用清单。
+impl crate::RefreshableModels for OpenAiCompatible {
+    fn refresh_models(&self) -> BoxFuture<'static, Result<Vec<ModelSpec>, ProviderError>> {
+        let this = self.clone();
+        Box::pin(async move {
+            let fetched = this.fetch_models().await?;
+            // 走到这里说明拉取成功：与已有缓存取并集再写回。
+            // **取并集而非覆盖**（C2）：部分端点 `/models` 只回自己认识的一批，覆盖会让
+            // 用户手写 / 当前选中的模型「突然不在清单里」而被路由层拦下；拉到的同 id 覆盖旧的。
+            let mut cache = this.models.write().unwrap_or_else(|e| e.into_inner());
+            let mut merged: BTreeMap<String, ModelSpec> = cache
+                .iter()
+                .map(|spec| (spec.id.clone(), spec.clone()))
+                .collect();
+            for spec in fetched {
+                merged.insert(spec.id.clone(), spec);
+            }
+            let merged: Vec<ModelSpec> = merged.into_values().collect();
+            *cache = merged.clone();
+            Ok(merged)
+        })
     }
 }
 

@@ -1,10 +1,17 @@
 [package]
 name = "agent-settings"
-description = "功能切片 settings：设置项与密钥配置界面"
+description = "功能切片 settings：设置项与密钥录入（读写机制在 kernel/config）"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+# 二期 GUI（`D3` 方案 A）：GPUI 设置面板 `ui.rs`。默认关闭，理由同 `agent-chat` 的同名 feature。
+gui = ["dep:agent-ui-kit"]
+
 [dependencies]
-agent-common = { workspace = true }
+# 机制（文件 + 钥匙串）全在这里；本切片**不碰** fs / keyring（`R1`）
+agent-config = { workspace = true }
+# 二期 GUI 的组件层（可选）
+agent-ui-kit = { workspace = true, optional = true }

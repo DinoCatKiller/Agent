@@ -4,7 +4,7 @@
 |---|---|
 | ID | `S1` |
 | 类型 | 状态 · **概览** |
-| 更新 | 2026-10-11 |
+| 更新 | 2026-10-17 |
 | 何时读 | **每次开工第一眼**，5 秒确认「现在做什么」 |
 | 规模 | ~0.5k token |
 
@@ -13,25 +13,78 @@
 
 ## 当前任务
 
-**（待定）** ｜ 状态：⏸ 等你拍板
+**模型选择器改造（对齐 opencode 的交互）** ｜ 状态：✅ 完成（切片 `A` → `C1c` + `C2a`/`C2c`/`C2d` 落地；`C2b` 可选）
 
-本轮四项已全部完成：`A6` ✅ ｜ `R1` ✅ ｜ 定名落地 ✅ ｜ 补规格文档（`R3` / `Q2` / `Q3`）✅。
+把对话页的「一排 chip + 手输框」换成「胶囊 + 搜索弹层 + 管理模型页」，
+并把供应商从「用户得填适配器名」改成「填厂商名」；随后补「联网拉模型清单」。
 
-地图上剩余未落地的条目只有 `R4`（缓存 / 限流与并发）与 `P3–P6`（其余供应商差异），外加**已暂缓**的 `M7`（MCP）。
+| # | 切片 | 落点 | 状态 |
+|---|------|------|------|
+| A | 胶囊 + 搜索弹层（搜索 / 按供应商分组 / 当前项打勾 / 底部入口）；清单改为「配置声明 ∪ 内置目录 ∪ 当前生效」 | `features/chat` `/` `app` | ✅ 2026-10-13 |
+| B | 「管理模型」页（搜索 + 每模型开关）+ **独立偏好文件** `models.toml` | `features/settings` `/` `kernel/config` | ✅ 2026-10-13 |
+| C1a | 内置供应商目录（`R5`）+ 密钥寻址改由目录给 | `kernel/providers` `/` `kernel/config` | ✅ 2026-10-13 |
+| C1b | 条目化：`ProviderConfig.adapter`、`build_provider` 读表、`R1` §1/§2 改写 | `app` `/` `kernel/config` | ✅ 2026-10-13 |
+| C1c | 「连接提供商」页：从目录里挑 → 写条目 + 存密钥 → 立刻出现在选择器里 | `features/settings` `/` `app` | ✅ 2026-10-16 |
+| C2a | 适配器联网拉取：`GET /models` + 能力字典合并 + 共享缓存 + `RefreshableModels` 契约 | `kernel/providers` | ✅ 2026-10-17 |
+| C2c | worker 命令通道新增 `Cmd::RefreshModels` + 候选重算 + 写回 `providers.<id>.models` | `app` / `features/chat` | ✅ 2026-10-17 |
+| C2d | 「管理模型」页每个条目一个「刷新」按钮 + 失败降级提示（`ModelsRefreshFailed` → 回灌设置页） | `features/settings` / `app` | ✅ 2026-10-19 |
+
+本轮仍不做：`GUI` §3 的 L3 CSS 兼容层。
+`C2` 剩余：**`C2b`**（Anthropic 适配器镜像实现，可选）。
+
+### 并行任务：GPUI 界面重构（美观度 + 不合理处清理，2026-10-15 首轮）
+
+按 impeccable / design-taste-frontend 两个 skill 的 GPUI 适配层走查三个界面
+（Shell 顶栏 / 对话页 / 设置页）。首轮做完静态层，验证到 L0（check + clippy + test 全绿）。
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | `mutedFg` #6b7280 → #9aa3b5：灰字在 surface 上从 ≈2.9:1 提到 ≈5.7:1（过 4.5:1） | `design/tokens.json` |
+| 2 | 删全部 1px 分隔线（顶栏 / 侧栏 / 输入区 / 设置页 ×2 / 弹层），改 surface↔bg 色阶分层 | `app/gui.rs`、`features/chat/gpui.rs`、`features/settings/ui.rs` |
+| 3 | 转录条目分层：用户右对齐气泡、助理 Bot 图标 + base 字号全墨正文、思考小字暗紫、工具用 SquareTerminal 图标（删 ⚙ emoji）+ 状态签 | `features/chat/gpui.rs` |
+| 4 | 状态栏去重（provider/model 原来出现两次）、生成中 Spinner、取消按钮改 outline | 同上 |
+| 5 | 会话选中态改 accent 淡彩底（原来与 hover 同色、不可辨）；侧栏空态改可操作文案 | 同上 |
+| 6 | 顶栏品牌词标 + tab 选中 2px accent 底条；设置页标题升级、密钥行三行结构、连接提供商文案用户化 | `app/gui.rs`、`features/settings/ui.rs` |
+
+剩：**人工目检一轮**（远程会话截屏取不到真实桌面，老问题）——重点看转录密度、气泡宽度、
+Spinner 节奏。动效只做了 Spinner 一处（"one authored moment"），其余动效待确认后再加。
+
+顺带修掉两个真问题（都是「不裸跑就发现不了」那类）：
+
+1. **GPUI 起窗口时没注册 asset source** → 所有 SVG 图标原本**都是空白**（勾 / 放大镜 / 下拉箭头）。
+2. **`api_key_env` 把非 anthropic 一律映射到 `OPENAI_API_KEY`** → 接了 Ollama 会**拿你的 OpenAI 密钥去发**。
+   现在变量名由目录按条目给出，`ollama` 这类没有约定名的条目只看钥匙串（有单测钉住）。
+
+## 待办池（本轮之后）
 
 | 候选 | 一句话 | 备注 |
 |------|--------|------|
-| `M7` MCP 客户端 | 自研或引 `rmcp`（`X6` §3 的实测结论已存档，随时可开工） | 曾按「使用频率不高」暂缓 |
-| `R4` 缓存、限流与并发 | 重复请求去重、QPS 控制 | transport 最后一个 ⬜ |
-| 新供应商 | `P3–P6`：再添若干适配器 | 有真实接入需求时再做 |
-| 二期 GUI | `D3` 二期 / `GUI`（GPUI） | 体量大，属独立阶段 |
+| `C2b` | Anthropic 适配器联网刷新镜像实现（可选） | `C2` 剩余切片 |
+| `B` 方案 | 设置保存后**立即生效**，不再要求重启 | 需先定「生成中不许保存」的交互 |
+| `GUI` §3 · L3 CSS 层 | CSS 运行时语义子集，吃现成样式资产 | 体量大，四级递进、每级有停止条件 |
+| `G-3` 长会话虚拟列表 | 上万条消息不卡 | 现有渲染端每帧克隆转录，得先换虚拟列表 |
+| `G-5` 打包分发 | MSI（`cargo-wix`）+ 体积核对 | 卡在 GPUI 体积，先量再决定（`S2` Q6） |
+| `M7` MCP 客户端 | 自研最小 stdio 客户端，列工具 + 调工具 | `RM` 最后一个里程碑，曾按「使用频率不高」暂缓 |
 
 ## 阻塞
 
 无。
 
+> **两件待人工**：① `tmp/gpui-spike` 的中文 IME 实测（`X2` §7 最后一条）；
+> ② GUI 窗口的观感 —— 截屏在远程会话下取不到真实桌面，只能肉眼看。
+> 另：**本地有 5 个未推送的提交**（`A` → `C1a`），`gh` token 失效后一直没推（`gh auth login -h github.com` 即可恢复）。
+
 ## 上一阶段
 
+- **运行中切模型 + 多份密钥（2026-10-12）**：补齐「配置多个密钥、随手切模型」。
+  ①`channel.rs` 加 `Cmd::SelectModel` / `UiEvent::ModelChanged`——按 **(provider, model) 组合**切
+  （密钥按 provider 存，换家必须重建 provider），生成中拒绝、界面不做乐观更新（以 worker 播报为准）；
+  ②worker 持有 `ProviderFactory`，切换时重建；`--api-key` **只对启动时那个 provider 有效**
+  （否则会把 A 家的密钥送给 B 家）；③GPUI 加模型选择器（内置清单 chip + 手输模型名）；
+  ④设置界面改为**每供应商一行密钥**；`Draft` 去掉密钥字段。
+  顺带修两处：测试夹具读了开发者本机真实配置（治本：测试用空配置，`config` 显式指向临时文件）；
+  文档里的配置路径少写一层（真实是 `%APPDATA%\CodingRocket\config\config.toml`）。
+- **二期 GUI 启动轮（2026-10-12）**：`D3` 方案 A 落地 —— ①可行性探针（编译 / 起窗口 / tokio 桥全通，`X2` §8）；②新建 `kernel/ui-kit`（令牌 → GPUI 主题桥）；③`features/chat` 的 GPUI 渲染端（`gpui.rs` + `channel.rs`，通道契约上移到切片）；④`app` 的 `gui` 子命令（`gui.rs` + 抽出的 `worker.rs`，`gui` feature 默认关）；⑤设置界面（`features/settings` 三件套，`A` 语义）。顺带修掉两处「只写不读」：`default_provider` / `default_model` 现在真生效（`R1` §1.1），自定义端点不再死在 `no route for model`。
 - **补规格文档（2026-10-11）**：`R3`（可观测性与成本 —— 结论是新建 `kernel/telemetry` 骨架）、`Q2`（效果评测与回归）、`Q3`（安全与合规）。均先立约定，实现随各自触发条件。
 - **定名落地（2026-10-11）**：只改用户可见那一层 —— 可执行文件名 `agent-app` → **`codingrocket`**；crate 包名维持 `agent-*`（内部技术名）。
 - **`R1` 完成（2026-10-11）**：新建 `kernel/config`（TOML 配置文件 + 系统钥匙串）；`app` 接入 `--config` 与密钥三级优先级。

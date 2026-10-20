@@ -18,23 +18,34 @@
 //! - [`ui`]：对话界面——[`ChatUi`] 状态机（吃 [`LoopEvent`]，纯数据可离线测）+
 //!   ratatui 渲染端 + [`Theme`]（`design/tokens.json` 令牌，`D4` 一期）。
 //!
+//! # 二期 GPUI（`gui` feature）
+//!
+//! - [`channel`]：UI 无关的[`Cmd`] / [`UiEvent`] 契约，两个渲染端共用；
+//! - [`gpui`]：GPUI 渲染端（[`ChatView`]）——复用同一个 [`ChatUi`] 状态机，只换渲染端。
+//!
 //! # 边界
 //!
 //! - 依赖：`agent-common`（契约）、`agent-providers`（`Provider` / `CallContext`）、
-//!   `agent-store`（连接与迁移机制）。
+//!   `agent-store`（连接与迁移机制）、`agent-ui-kit`（**仅 `gui` feature**，组件层）。
 //! - 禁止：依赖 `app`；被 `kernel/*` 依赖；**自己打开 / 管理连接**（HTTP 客户端与
 //!   SQLite 连接归 `kernel`）。业务表结构与 SQL 可以写在这里——那是语义（`D6` §1）。
 //! - 允许：依赖其它 feature（如 `sessions`），但不允许成环 —— crate 依赖图天生无环。
 
+pub mod channel;
 pub mod chat;
 pub mod context;
+#[cfg(feature = "gui")]
+pub mod gpui;
 pub mod repo;
 pub mod service;
 pub mod tools;
 pub mod ui;
 
+pub use channel::{Cmd, UiEvent};
 pub use chat::{Chat, ChatSettings, TurnDraft};
 pub use context::trim_to_fit;
+#[cfg(feature = "gui")]
+pub use gpui::{ChatView, ModelChoice, StatusInfo};
 pub use repo::{RepoError, SessionMeta, SessionRepo};
 pub use service::{ChatService, LoopEvent, RoundStop, ServiceConfig};
 pub use tools::{Tool, ToolOutput, ToolSet};

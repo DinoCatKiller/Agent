@@ -37,6 +37,7 @@ pub fn simple_spec(model: &str, provider: &str) -> ModelSpec {
         capabilities: vec![agent_common::Capability::Text],
         pricing: None,
         deprecated: false,
+        capabilities_known: true,
     }
 }
 

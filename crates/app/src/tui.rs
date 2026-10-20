@@ -13,13 +13,10 @@
 
 use std::io::{self, stdout};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use agent_chat::channel::{Cmd, UiEvent};
 use agent_chat::ui::{ChatUi, StatusInfo, Theme, render_input, render_status, render_transcript};
-use agent_chat::{Chat, ChatService, LoopEvent, SessionMeta, SessionRepo};
-use agent_sessions::session::derive_title;
 use agent_sessions::ui::SessionPane;
-use agent_store::Store;
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEvent, KeyEventKind,
     KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -33,6 +30,8 @@ use ratatui::{
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+
+use crate::worker;
 
 use crate::setup::{self, ChatArgs};
 
@@ -51,29 +50,8 @@ pub struct TuiArgs {
     pub db: Option<String>,
 }
 
-/// UI → worker 的命令通道。
-#[derive(Debug)]
-enum Cmd {
-    Submit(String),
-    Load { id: String, title: String },
-    New,
-}
-
-/// worker → UI 的事件通道（`D3`：UI 无关——二期 GPUI 消费同一套）。
-enum UiEvent {
-    /// 会话列表整体刷新（启动、每次落盘后）。
-    Sessions(Vec<SessionMeta>),
-    /// 会话已加载（worker 侧 `Chat` 已替换）。
-    SessionLoaded { title: String, chat: Chat },
-    /// 新会话（worker 侧已重置）。
-    Cleared,
-    /// 编排事件原样转发。
-    Loop(LoopEvent),
-    /// `run_round` 同步 fast-fail。
-    Rejected(String),
-    /// 杂项提示（生成中不可切换、落盘失败…）。
-    Notice(String),
-}
+// `Cmd` / `UiEvent` 已上移到 `agent_chat::channel`：二期 GPUI 渲染端消费的是同一套契约，
+// 放在切片里两边才不会各写一份（`D3`「UI 无关的事件流 + 命令通道」）。
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -90,14 +68,14 @@ pub async fn run(args: TuiArgs) -> i32 {
         api_key: args.api_key,
         config: args.config.clone(),
     };
-    let Some(provider) = setup::build_provider(&chat_args) else {
+    let Some(built) = setup::build_provider(&chat_args) else {
         return 2;
     };
     let db_path = args
         .db
         .clone()
         .unwrap_or_else(|| "agent-sessions.db".into());
-    let repo = match open_repo(&db_path) {
+    let repo = match worker::open_repo(&db_path) {
         Ok(repo) => repo,
         Err(error) => {
             eprintln!("打开会话库失败（{db_path}）：{error}");
@@ -105,17 +83,19 @@ pub async fn run(args: TuiArgs) -> i32 {
         }
     };
 
-    let model = args.model.clone();
-    let service = ChatService::new(provider, setup::demo_tools());
+    // 生效组合（provider + model）与「重建 provider 的上下文」——切换模型时 worker 用它。
+    // `chat_args` 已由 `setup::resolve` 定好（CLI > 配置文件默认，`R1`）。
+    let mut selection = worker::Selection::new(chat_args.provider.clone(), chat_args.model.clone());
+    let factory = worker::ProviderFactory::new(&chat_args, setup::demo_tools());
     // 取消令牌的共享槽位：worker 轮内不接收命令，所以取消不能走命令通道——
     // UI 直接把令牌塞进槽位并 cancel（worker 轮末清空）。
-    let cancel_slot: Arc<std::sync::Mutex<Option<CancellationToken>>> =
-        Arc::new(std::sync::Mutex::new(None));
+    let cancel_slot: Arc<std::sync::Mutex<Option<CancellationToken>>> = worker::cancel_slot();
     let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(32);
     let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<UiEvent>();
-    tokio::spawn(worker(
-        model,
-        service,
+    tokio::spawn(worker::run_worker(
+        selection.clone(),
+        built,
+        factory,
         repo,
         cancel_slot.clone(),
         cmd_rx,
@@ -151,14 +131,20 @@ pub async fn run(args: TuiArgs) -> i32 {
             if matches!(event, UiEvent::Sessions(_)) {
                 pending_save = false;
             }
-            apply(&mut chat_ui, &mut pane, &mut current_title, event);
+            apply(
+                &mut chat_ui,
+                &mut pane,
+                &mut current_title,
+                &mut selection,
+                event,
+            );
         }
         if quit_wait && !chat_ui.generating() && !pending_save {
             break;
         }
         let status = StatusInfo {
-            provider: &args.provider,
-            model: &args.model,
+            provider: &selection.provider,
+            model: &selection.model,
             session: current_title.as_deref(),
         };
         if let Err(error) =
@@ -204,7 +190,13 @@ pub async fn run(args: TuiArgs) -> i32 {
                     if matches!(event, UiEvent::Sessions(_)) {
                         pending_save = false;
                     }
-                    apply(&mut chat_ui, &mut pane, &mut current_title, event);
+                    apply(
+                        &mut chat_ui,
+                        &mut pane,
+                        &mut current_title,
+                        &mut selection,
+                        event,
+                    );
                 }
             }
         }
@@ -222,15 +214,11 @@ enum Intent {
     Quit,
 }
 
-fn open_repo(path: &str) -> Result<SessionRepo, Box<dyn std::error::Error>> {
-    let store = Store::open(path)?;
-    Ok(SessionRepo::open(store)?)
-}
-
 fn apply(
     chat_ui: &mut ChatUi,
     pane: &mut SessionPane,
     current_title: &mut Option<String>,
+    selection: &mut worker::Selection,
     event: UiEvent,
 ) {
     match event {
@@ -244,8 +232,19 @@ fn apply(
             *current_title = None;
         }
         UiEvent::Loop(event) => chat_ui.on_event(event),
+        // 生效组合以 worker 为准（`channel.rs` 的约定：宿主不自己猜）
+        UiEvent::ModelChanged { provider, model } => {
+            *selection = worker::Selection::new(provider, model);
+        }
         UiEvent::Rejected(message) => chat_ui.rejected(message),
         UiEvent::Notice(message) => chat_ui.set_notice(message),
+        // 联网刷新（C2）是设置页的功能；TUI 不发起，收到就报个提示。
+        UiEvent::ModelsRefreshed { provider, models } => {
+            chat_ui.set_notice(format!("{provider} 模型清单已刷新（{} 个）", models.len()))
+        }
+        UiEvent::ModelsRefreshFailed { provider, message } => {
+            chat_ui.set_notice(format!("刷新 {provider} 模型失败：{message}"))
+        }
     }
 }
 
@@ -456,143 +455,8 @@ fn draw(
     render_status(f, chat_ui, status, outer[1], theme);
 }
 
-// —— worker：唯一拥有 `Chat` 与 `SessionRepo` ——
-
-async fn worker(
-    model: String,
-    service: ChatService,
-    repo: SessionRepo,
-    cancel_slot: Arc<std::sync::Mutex<Option<CancellationToken>>>,
-    mut cmd_rx: mpsc::Receiver<Cmd>,
-    ui_tx: mpsc::UnboundedSender<UiEvent>,
-) {
-    let mut chat = Chat::new(model);
-    // (session_id, title)；首次落盘时创建。
-    let mut session: Option<(String, String)> = None;
-    // 是否有一轮进行中（New / Load / Submit 互斥的依据）——以 cancel_slot 是否持有令牌为准。
-    let busy = || cancel_slot.lock().expect("cancel slot").is_some();
-    let _ = ui_tx.send(UiEvent::Sessions(repo_list(&repo).await));
-
-    while let Some(cmd) = cmd_rx.recv().await {
-        match cmd {
-            Cmd::New => {
-                if busy() {
-                    let _ = ui_tx.send(UiEvent::Notice("生成中，先取消再新建".into()));
-                    continue;
-                }
-                chat = Chat::new(chat.model.clone());
-                session = None;
-                let _ = ui_tx.send(UiEvent::Cleared);
-            }
-            Cmd::Load { id, title } => {
-                if busy() {
-                    let _ = ui_tx.send(UiEvent::Notice("生成中，先取消再切换".into()));
-                    continue;
-                }
-                let repo2 = repo.clone();
-                let id2 = id.clone();
-                let loaded = match tokio::task::spawn_blocking(move || repo2.load(&id2)).await {
-                    Ok(Ok(Some(chat))) => chat,
-                    Ok(Ok(None)) => {
-                        let _ = ui_tx.send(UiEvent::Notice("会话不存在或已被删除".into()));
-                        continue;
-                    }
-                    Ok(Err(error)) => {
-                        let _ = ui_tx.send(UiEvent::Notice(format!("读取会话失败：{error}")));
-                        continue;
-                    }
-                    Err(_) => {
-                        let _ = ui_tx.send(UiEvent::Notice("读取会话任务失败".into()));
-                        continue;
-                    }
-                };
-                chat = loaded;
-                session = Some((id, title.clone()));
-                let _ = ui_tx.send(UiEvent::SessionLoaded {
-                    title,
-                    chat: chat.clone(),
-                });
-            }
-            Cmd::Submit(text) => {
-                if busy() {
-                    let _ = ui_tx.send(UiEvent::Notice("生成中…".into()));
-                    continue;
-                }
-                let existing = session
-                    .as_ref()
-                    .map(|(id, title)| (id.clone(), title.clone()));
-                let (id, title) = match existing {
-                    Some(pair) => pair,
-                    None => {
-                        let id = new_session_id();
-                        let title = derive_title(&text);
-                        session = Some((id.clone(), title.clone()));
-                        (id, title)
-                    }
-                };
-
-                let token = CancellationToken::new();
-                *cancel_slot.lock().expect("cancel slot") = Some(token.clone());
-
-                match service.run_round(&mut chat, text, token) {
-                    Err(error) => {
-                        // fast-fail：用户输入已入史（见 run_round），提示后可继续。
-                        let _ = ui_tx.send(UiEvent::Rejected(error.to_string()));
-                    }
-                    Ok(round) => {
-                        tokio::pin!(round);
-                        while let Some(event) = round.next().await {
-                            if ui_tx.send(UiEvent::Loop(event)).is_err() {
-                                break; // UI 已退出
-                            }
-                        }
-                    }
-                }
-                *cancel_slot.lock().expect("cancel slot") = None;
-
-                // 轮末落盘（取消 / 错误也存：用户输入已在史中）。
-                let (repo2, chat2, id2, title2) = (repo.clone(), chat.clone(), id, title);
-                let now = now_ms();
-                let saved =
-                    tokio::task::spawn_blocking(move || repo2.save(&id2, &title2, &chat2, now))
-                        .await;
-                match saved {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        let _ = ui_tx.send(UiEvent::Notice(format!("保存会话失败：{error}")));
-                    }
-                    Err(_) => {
-                        let _ = ui_tx.send(UiEvent::Notice("保存会话任务失败".into()));
-                    }
-                }
-                let _ = ui_tx.send(UiEvent::Sessions(repo_list(&repo).await));
-            }
-        }
-    }
-}
-
-async fn repo_list(repo: &SessionRepo) -> Vec<SessionMeta> {
-    let repo2 = repo.clone();
-    tokio::task::spawn_blocking(move || repo2.list().unwrap_or_default())
-        .await
-        .unwrap_or_default()
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
-
-/// 会话 id：纳秒时间戳的十六进制（单用户本地场景足够唯一；正式方案随 `R1`）。
-fn new_session_id() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("s{nanos:024x}")
-}
+// worker 已上移到 `crate::worker`：命令通道与事件语义只能有一份，
+// 否则 TUI 与 GPUI 的行为会慢慢漂开（见 `worker.rs` 顶部注释）。
 
 // —— 终端生命周期 ——
 
@@ -601,11 +465,7 @@ fn init_terminal() -> io::Result<Terminal<CrosstermBackend<io::Stdout>>> {
     // 启用鼠标捕获（点击 / 滚轮）。必须与 `TerminalGuard` 的 `DisableMouseCapture`
     // 成对：crossterm 靠「Enable 时记录的初始模式」来恢复，直接 Disable 在 Windows 上
     // 会报「Initial console modes not set」。
-    execute!(
-        stdout(),
-        terminal::EnterAlternateScreen,
-        EnableMouseCapture
-    )?;
+    execute!(stdout(), terminal::EnterAlternateScreen, EnableMouseCapture)?;
     Terminal::new(CrosstermBackend::new(stdout()))
 }
 
@@ -631,9 +491,10 @@ mod tests {
     use std::sync::Mutex;
     use std::time::Duration;
 
-    use agent_chat::{RoundStop, ToolSet};
+    use agent_chat::{Chat, LoopEvent, RoundStop, SessionRepo, ToolSet};
     use agent_common::{DeltaKind, FinishReason, Role};
-    use agent_providers::{OpenAiCompatible, OpenAiConfig};
+    // provider 构造统一走 `worker::ProviderFactory`（下面 `spawn_worker`），这里不再直接用适配器
+    use agent_store::Store;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -690,25 +551,38 @@ mod tests {
 
     type Slot = Arc<Mutex<Option<CancellationToken>>>;
 
+    /// 测试用的**空配置**：`config: None` 会走平台标准目录，读到开发者本机的真实配置，
+    /// 于是本机配的代理 / 默认模型就会让测试结果随机器而变（曾因此挂掉两条用例）。
+    fn isolated_config(name: &str) -> String {
+        let path =
+            std::env::temp_dir().join(format!("agent-app-test-{}-{name}.toml", std::process::id()));
+        std::fs::write(&path, "").expect("写空配置");
+        path.display().to_string()
+    }
+
     fn spawn_worker(
         repo: &SessionRepo,
         base_url: String,
     ) -> (mpsc::Sender<Cmd>, mpsc::UnboundedReceiver<UiEvent>, Slot) {
-        let provider = OpenAiCompatible::new(OpenAiConfig {
-            id: "openai-compatible",
-            base_url,
+        // 测试也走 `ProviderFactory`：顺带把「切换 provider 时重建 provider」这条路跑一遍
+        let chat_args = ChatArgs {
+            provider: "openai-compatible".into(),
+            model: "fake-model".into(),
+            fallbacks: Vec::new(),
+            base_url: Some(base_url),
             api_key: Some("test-key".into()),
-            http: Default::default(),
-            models: Vec::new(),
-        })
-        .expect("provider builds");
-        let service = ChatService::new(Arc::new(provider), ToolSet::new());
+            config: Some(isolated_config("worker")),
+        };
+        let factory = worker::ProviderFactory::new(&chat_args, ToolSet::new());
+        let selection = worker::Selection::new(&chat_args.provider, &chat_args.model);
+        let built = factory.build(&selection).expect("provider builds");
         let slot: Slot = Arc::new(Mutex::new(None));
         let (cmd_tx, cmd_rx) = mpsc::channel(32);
         let (ui_tx, ui_rx) = mpsc::unbounded_channel();
-        tokio::spawn(worker(
-            "fake-model".into(),
-            service,
+        tokio::spawn(worker::run_worker(
+            selection,
+            built,
+            factory,
             repo.clone(),
             slot.clone(),
             cmd_rx,
@@ -718,16 +592,21 @@ mod tests {
     }
 
     /// 收事件直到 `cond` 命中（整体 5 秒超时），返回含终止事件在内的全部事件。
+    ///
+    /// 超时会把**已收到的事件打出来**：失败时最想知道的就是「到底收到了什么」。
     async fn collect_until(
         ui_rx: &mut mpsc::UnboundedReceiver<UiEvent>,
         mut cond: impl FnMut(&UiEvent) -> bool,
     ) -> Vec<UiEvent> {
-        let mut events = Vec::new();
+        let mut events: Vec<UiEvent> = Vec::new();
         loop {
-            let event = tokio::time::timeout(Duration::from_secs(5), ui_rx.recv())
-                .await
-                .expect("collect timeout")
-                .expect("worker alive");
+            let Ok(next) = tokio::time::timeout(Duration::from_secs(5), ui_rx.recv()).await else {
+                panic!(
+                    "collect_until 超时（5s）：已收到 {} 个事件 —— {events:#?}",
+                    events.len()
+                );
+            };
+            let event = next.expect("worker alive");
             let hit = cond(&event);
             events.push(event);
             if hit {
@@ -765,7 +644,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(texts, "你好");
+        assert_eq!(texts, "你好", "事件：{events:#?}");
         assert!(events.iter().any(|e| matches!(
             e,
             UiEvent::Loop(LoopEvent::RoundEnded {
@@ -784,6 +663,67 @@ mod tests {
         assert_eq!(loaded.messages.len(), 2);
         assert_eq!(loaded.messages[0].role, Role::User);
         assert_eq!(loaded.messages[1].text(), "你好");
+    }
+
+    #[tokio::test]
+    async fn select_model_switches_and_next_round_uses_it() {
+        let server = mount_stream(plain_stream()).await;
+        let repo = SessionRepo::open(Store::open_in_memory().unwrap()).unwrap();
+        let (cmd_tx, mut ui_rx, _slot) = spawn_worker(&repo, format!("{}/v1", server.uri()));
+
+        // 启动时播报一次生效组合（界面以 worker 为准）
+        let startup =
+            collect_until(&mut ui_rx, |e| matches!(e, UiEvent::ModelChanged { .. })).await;
+        assert!(
+            matches!(startup.last(), Some(UiEvent::ModelChanged { model, .. }) if model == "fake-model"),
+            "启动应当播报生效组合：{startup:?}"
+        );
+
+        // 切模型：worker 播报新组合
+        cmd_tx
+            .send(Cmd::SelectModel {
+                provider: "openai-compatible".into(),
+                model: "other-model".into(),
+            })
+            .await
+            .unwrap();
+        let switched = collect_until(
+            &mut ui_rx,
+            |e| matches!(e, UiEvent::ModelChanged { model, .. } if model == "other-model"),
+        )
+        .await;
+        assert!(
+            switched.iter().any(|e| matches!(
+                e,
+                UiEvent::ModelChanged { model, .. } if model == "other-model"
+            )),
+            "切换后应当播报新组合：{switched:?}"
+        );
+
+        // 下一轮真的用新模型 —— 看真实请求体（不是看 UI 显示）
+        cmd_tx.send(Cmd::Submit("你好".into())).await.unwrap();
+        let mut saw_loop = false;
+        let _ = collect_until(&mut ui_rx, |e| {
+            if matches!(e, UiEvent::Loop(_)) {
+                saw_loop = true;
+            }
+            saw_loop && matches!(e, UiEvent::Sessions(_))
+        })
+        .await;
+
+        let requests = server.received_requests().await.expect("wiremock 记录请求");
+        let bodies: Vec<String> = requests
+            .iter()
+            .map(|request| String::from_utf8_lossy(&request.body).to_string())
+            .collect();
+        assert!(
+            bodies.iter().any(|body| body.contains("other-model")),
+            "切换后的请求应当带新模型：{bodies:?}"
+        );
+        assert!(
+            !bodies.iter().any(|body| body.contains("fake-model")),
+            "切换后不该再出现旧模型：{bodies:?}"
+        );
     }
 
     #[tokio::test]

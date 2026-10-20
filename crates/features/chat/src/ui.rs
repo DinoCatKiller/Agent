@@ -204,6 +204,23 @@ impl ChatUi {
         self.total_usage
     }
 
+    /// 转录条目（渲染端只读）。直播时流式内容就是尾部那些尚未提交的条目，
+    /// 提交边界由 [`LoopEvent::ModelTurnEnded`] 推进（`README` 铁律 1）。
+    pub fn entries(&self) -> &[Entry] {
+        &self.entries
+    }
+
+    /// 光标在输入里的**字符**位置（不是字节）——渲染端定位光标用。
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    /// `None` = 跟随底部；`Some(offset)` = 用户上滚的行数。
+    /// 渲染端据此决定是否把视图吸到底部。
+    pub fn scroll(&self) -> Option<u16> {
+        self.scroll
+    }
+
     /// 用户提交一行（宿主在 submit 时调用；编排层随后也会把它写进历史）。
     /// 同时推进提交边界：取消只丢弃模型输出，不丢用户输入（与 REPL 语义一致）。
     pub fn push_user(&mut self, text: &str) {

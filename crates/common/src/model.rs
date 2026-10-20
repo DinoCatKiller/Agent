@@ -41,6 +41,16 @@ pub struct ModelSpec {
     pub pricing: Option<Pricing>,
     #[serde(default)]
     pub deprecated: bool,
+    /// `capabilities` 是否**权威可信**（C2）。
+    ///
+    /// - `true`：来自官方字典或用户显式声明 —— 路由层可据此做能力 fast-fail；
+    /// - `false`：只是「未知模型」的保守占位（适配器的 `conservative_spec`）——
+    ///   路由层**只**用它确认「id 在清单里」，**不得**据此拦截能力
+    ///   （否则会误杀本地 / 兼容端点，见 `P1`「别误杀本地模型」）。
+    ///
+    /// 这是**运行时来源标记**，不参与序列化（从配置反序列化时按 `false` 保守处理）。
+    #[serde(skip)]
+    pub capabilities_known: bool,
 }
 
 impl ModelSpec {

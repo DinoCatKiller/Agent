@@ -23,10 +23,11 @@ use crate::setup::{self, ChatArgs};
 const PROMPT: &str = "> ";
 
 pub async fn run(args: ChatArgs) -> i32 {
-    let Some(provider) = setup::build_provider(&args) else {
+    // REPL 不做联网刷新（C2 走界面），只用装配好的 provider。
+    let Some(built) = setup::build_provider(&args) else {
         return 2;
     };
-    let service = ChatService::new(provider, setup::demo_tools());
+    let service = ChatService::new(built.provider, setup::demo_tools());
     let mut chat = Chat::new(args.model.clone());
 
     println!(

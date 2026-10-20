@@ -27,8 +27,10 @@ agent-store = { path = "crates/kernel/store" }
 agent-routing = { path = "crates/kernel/routing" }
 agent-config = { path = "crates/kernel/config" }
 agent-telemetry = { path = "crates/kernel/telemetry" }
+agent-ui-kit = { path = "crates/kernel/ui-kit" }
 agent-chat = { path = "crates/features/chat" }
 agent-sessions = { path = "crates/features/sessions" }
+agent-settings = { path = "crates/features/settings" }
 
 # 外部依赖：只加「这一阶段真的用得上」的，见 `X1`
 serde = { version = "1", features = ["derive"] }
@@ -58,6 +60,9 @@ clap = { version = "4", features = ["derive"] }
 rustyline = "15"
 # 退避重试（`X6` A3 / `A6`）：只取指数退避 + 抖动策略，控制流自持（可接取消）
 backoff = "0.4"
+# 二期 GUI（`D3` 方案 A / `X2`）：GPUI 只经 `gpui-kit` 一个 crate 引入，
+# 它 pin 配套的 `gpui-pre` 版本并重命名为 `gpui`（自己另写 gpui 会解析到另一个包，见 `X2` §8）
+gpui-kit = "0.7.1"
 
 [profile.release]
 lto = "thin"

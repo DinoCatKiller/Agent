@@ -21,7 +21,7 @@
 
 | 项 | 说明 |
 |----|------|
-| `ConfigPaths::discover()` | 平台标准目录定位（Windows `%APPDATA%\CodingRocket\config.toml`） |
+| `ConfigPaths::discover()` | 平台标准目录定位（Windows `%APPDATA%\CodingRocket\config\config.toml`） |
 | `ConfigPaths::from_file(path)` | 显式指定（测试 / `--config`） |
 | `load` / `save` | TOML 读写；**文件不存在返回默认配置**（零配置即可运行） |
 | `AppConfig::base_url_for` / `model_for` | 「供应商级覆盖 → 顶层回退」两级查找 |

@@ -52,6 +52,13 @@ pub struct ProviderError {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
     /// 供应商原始错误体，排错与 fixtures 用。
+    ///
+    /// **为什么不装箱**：`serde_json::Value` 的大小随 `preserve_order` 特征变化 ——
+    /// `gpui-pre`（GPUI 官方预发布线）会打开它（object 容器从 `BTreeMap` 变 `IndexMap`，
+    /// `Value` 32B → 72B），于是本类型 112B → 152B。这是外部依赖的特征合一带来的，
+    /// 不是我们的错误类型失控，因此**不为它改变类型形状**：改成在 `clippy.toml` 把
+    /// `result_large_err` 的门槛显式设为 160（实测数据见 `X2` §8.1）。
+    /// 若某天本类型再胖过 160B，lint 会重新出现 —— 那时该查的是「又加了什么字段」。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<Value>,
     /// 底层原因（已字符串化，保证可序列化）。

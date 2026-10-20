@@ -88,6 +88,7 @@ crates/
     store/                SQLite 连接 / 迁移 / 事务（**不是**业务查询）
     config/               配置文件与钥匙串读写
     telemetry/            tracing 初始化 / token 成本
+    ui-kit/               UI 组件层：设计令牌 → GPUI 主题桥 + 组件库入口（`D4`；UI 依赖的唯一口子）
   features/               语义层：一个功能一个文件夹（垂直切片）
     chat/                 service.rs + repo.rs + ui.rs + 领域类型 + tests/
     sessions/             同上
@@ -99,7 +100,7 @@ crates/
 
 - `common` 不依赖任何人（契约纯净度靠这条保证）。
 - feature 之间可以互相依赖（Django 里 app 也互相 import），但**不可能成环**——crate 依赖图天生无环，这是 `D5` 选"每功能一个 crate"的核心理由。
-- `kernel/*` 不得依赖 `features/*`；UI 依赖（`gpui` 等）只允许出现在 `features/*` 与 `app`。
+- `kernel/*` 不得依赖 `features/*`；UI 依赖（`gpui` 等）只允许出现在 `kernel/ui-kit`、`features/*` 与 `app`（`ui-kit` 是 `D4` 的组件层，属机制，2026-10-12 拍板 → `S2` Q8）。
 - **落点判据（`D6` §1）**：这是「怎么发 HTTP / 怎么连库 / 怎么读钥匙串」（机制）→ `kernel/*`；这是「对话怎么进行、会话怎么命名」（语义）→ `features/<功能>/`。
 - feature 内部文件布局见 `D6` §3；**按需创建，不预建空文件**（`ui.rs` 等 `D3`，`repo.rs` 等真需要持久化）。
 - 规格文档归属映射见 `D5`。
@@ -112,7 +113,7 @@ crates/
 - 每个 adapter 必须可脱离网络单测（用 fixtures + mock transport）。
 - 所有对外调用必须支持取消（`tokio_util::sync::CancellationToken`）。
 - 上下文超限属于可恢复错误，应先裁剪/摘要再重试一次。
-- UI 线程禁止阻塞；UI 依赖只允许出现在 `features/*` 与 `app`（见 `D5`）。
+- UI 线程禁止阻塞；UI 依赖只允许出现在 `kernel/ui-kit`、`features/*` 与 `app`（见 `D5`）。
 
 ## 7. 未决项
 

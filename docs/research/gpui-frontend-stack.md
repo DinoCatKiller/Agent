@@ -18,7 +18,7 @@
 | 项 | 结论 |
 |----|------|
 | 定位 | 混合即时/保留模式的 GPU 加速 Rust UI 框架，Zed 编辑器的底层 UI 框架 |
-| 最新版本 | `gpui` **0.2.2**（2026-08-15 发布，Apache-2.0） |
+| 最新版本 | 索引上 `gpui` **0.2.2**（2026-08-15，Apache-2.0）；但 `gpui-kit` 实际依赖的是 **`gpui-pre` 0.3.x** —— 它用 `package = "gpui-pre"` 把它重命名为 `gpui`，**与 0.2.2 是两条线、两个包**（2026-10-11 实测修正，详见 §8） |
 | 稳定性 | **pre-1.0**，官方明说版本间常有破坏性变更，API 以 Zed 源码为准 |
 | 渲染栈 | `blade-graphics` + `naga`；布局 `taffy 0.9`；文本整形 `cosmic-text`（Linux）/ DirectWrite（Windows）/ `font-kit`（macOS） |
 | 生态定位 | 官方定位是「Zed 的 UI 层」，通用组件能力依赖社区补齐 |
@@ -32,6 +32,7 @@
 | Linux / FreeBSD | Wayland / X11 | `cosmic-text` | `wayland` 或 `x11`（至少一个） |
 
 - 构建要求：最新 stable Rust；Windows 需 Windows 10 SDK ≥ **10.0.20348.0**（Zed Windows 构建文档）。
+  **实测修正（2026-10-11）**：这条是 **Zed 自身**的构建要求，不是 `gpui-pre` 的。本机 MSVC 为 VS 2019 / 14.29.30133、Windows SDK 仅 10.0.10240 + 10.0.19041（均低于上面这条），**编译与链接全部通过**。
 - **文档冲突已确认**：`docs.rs` 的 Getting Started 仍写「需要 macOS 或 Linux」，而 `crates/gpui/README.md` 明确 Windows 无需 feature。实际依据以 **Zed 1.0（2026-04-29）已提供 Windows 稳定构建** 为准 —— Windows 可用，官方文档滞后。
 
 ## 3. 三种使用层级（选型时的拆分依据）
@@ -60,8 +61,9 @@ fn main() {
 
 | 项 | 结论 |
 |----|------|
-| 版本 | `gpui-component` **0.6.6**（Apache-2.0），上层整合包 `gpui-kit` 0.6.x |
-| 依赖策略 | 只依赖 `gpui-kit = "0.6"` 一个 crate；它会**固定匹配的 GPUI 版本**并重导出 |
+| 版本 | `gpui-component` **0.7.1**（Apache-2.0），上层整合包 `gpui-kit` **0.7.1**（实测采用版；索引另有 0.6.5 / 0.6.6 / 0.7.0） |
+| 依赖策略 | 只依赖 `gpui-kit = "0.7"` 一个 crate；它 pin 住配套的 `gpui-pre =0.3.8` 并重导出（`pub use ::gpui::*`） |
+| 入口 API | **用 `gpui_kit::open_window(opts, cx, \|window, cx\| cx.new(…))`**，别自己 `cx.open_window` + `Root::new` —— `Root` 在 `gpui_kit::base` 下，`open_window` 内部已经套好了（2026-10-11 实测） |
 | 分层 | `gpui-kit` = `gpui-base`（无样式行为基座）+ `gpui-component`（60+ 样式化组件）；另有 `gpui-shell`（Rust 承载的 JS 运行时） |
 | 组件能力 | 表单/导航/浮层/反馈/布局；数据表格（虚拟滚动、固定列、列宽可调、十万行级）；虚拟列表（支持不等高）；代码编辑器（Tree-sitter 高亮 + LSP 诊断/补全/悬停）；Dock 布局（可拖拽、可序列化） |
 | 富内容 | **原生 Markdown 与 HTML 渲染**、语法高亮、内置图表 —— 聊天消息渲染直接可用 |
@@ -113,9 +115,75 @@ fn main() {
 
 ## 7. 待办
 
-- [ ] Windows 环境实测：`gpui-kit` hello world 与中文 IME 输入
-- [ ] 实测流式 Markdown 增量渲染帧率
-- [ ] 确认 `gpui-kit` 与目标 Rust 版本（≥ 1.95）匹配
+- [x] Windows 环境实测：`gpui-kit` hello world —— ✅ 2026-10-11（见 §8；中文 IME 仍待人工验一次）
+- [ ] 实测流式 Markdown 增量渲染帧率（要等真实对话界面接上）
+- [x] 确认 `gpui-kit` 与目标 Rust 版本（≥ 1.95）匹配 —— ✅ 本机 rustc 1.97.1 通过
+
+## 8. 实测结论（2026-10-11，Windows / Windows 10 SDK 19041 / MSVC 14.29）
+
+探针：`tmp/gpui-spike`（一次性，不入库）。**依赖全绿，无一处需要绕行。**
+
+| 项 | 结果 |
+|----|------|
+| 依赖解析 | `gpui-kit 0.7.1` + `gpui-pre 0.3.8`，USTC 镜像可拉到，无需代理 |
+| 编译 + 链接 | ✅ 421 个 rlib，debug `target/` **4.13 GB**，冷编约 5 分钟 |
+| 起窗口 | ✅ `MainWindowHandle` 非空、`Responding=true`，debug 可执行文件 52.8 MB |
+| 组件层 | ✅ `component::button::Button`、`component::input::{Input, InputState}` 可用 |
+| tokio ↔ GPUI 桥 | ✅ 自研形态成立：`tokio::runtime::Runtime` 存 `Global`，任务侧 `mpsc` → GPUI 侧 `cx.spawn(async move \|this, cx\| …)` + `this.update(...)` 回写，实测 250ms/跳稳定 |
+| 版本陷阱 | `gpui-kit` 的 `gpui` 依赖是 **`gpui-pre`**（重命名）；自己单独写 `gpui = "0.2"` 会**解析到另一个包**，类型不通用。要用就写 `gpui = { package = "gpui-pre", version = "=0.3.8" }` 对齐 |
+| MSVC / SDK 下限 | VS 2019 + SDK 19041 **够用**，`X2` §2 的「SDK ≥ 10.0.20348」是 Zed 自身的要求，不是本 crate 的 |
+| 隐藏的全局副作用 | `gpui-pre` 自己声明 `serde_json/preserve_order`，而 feature 是**全图合一**的 → 全 workspace 的 `Value` 换布局，连锁尺寸变化见 §8.1 |
+
+### 8.1 `serde_json/preserve_order` 的连锁尺寸变化（实测 2026-10-12）
+
+`gpui-pre` 声明了 `serde_json/preserve_order`（object 容器由 `BTreeMap` 换成 `IndexMap`，
+为的是保住 JSON 的插入顺序）。cargo 的 feature 是**全图并集**、只能加不能减，
+所以这个换布局传导到全 workspace：
+
+| 类型 | 无 `preserve_order` | 有（引入 GPUI 后） |
+|------|-----|-----|
+| `serde_json::Value` | 32 B | 72 B |
+| `ToolCall`（内联 `arguments: Value`） | 104 B | 144 B |
+| `StreamEvent`（流式热路径，每个 token 搬一次） | 104 B | 144 B |
+| `ProviderError`（内联 `raw: Option<Value>`） | 112 B | **152 B** ❌ 越过 clippy `result_large_err` 的默认 128 B |
+
+**处置（2026-10-12）：不改变类型形状，改 `clippy.toml` 的门槛为 160。** 理由：
+
+1. 尺寸变化来自**外部依赖的特征合一**，不是我们的错误类型失控；为它给字段装箱，属于让外部变化改写我们的契约形状。
+2. **clippy 抓到的是小头**。它只对 `Err` 类型报警，所以点了 `ProviderError`（+40 B）；
+   而涨得同样多的 `ToolCall` / `StreamEvent`（+40 B，**每个 token 一次**）它**不报** —— 那些在 `Ok` 位置。
+3. 装箱方案评估过但未采纳：`ProviderError` 88 B、`StreamEvent` 只从 152 B 回到 144 B（8 B/事件），收益弱于「类型保持朴素」（少一层解引用、少一次堆分配）。
+
+**验证方法**（别只信「跑通了」）：门槛设 128 → 整工作区命中 **15 处**；设 160 → **0 处**。
+两个坑：① 必须用 `--workspace`——单包 `cargo clippy -p <crate>` 时 GPUI 不在子图里，
+`preserve_order` 根本没打开，lint **不会出现**；② `clippy.toml` **不在 cargo 的指纹里**，
+改完会重放上一次的缓存诊断，需 `cargo clean -p <crate>` 才能确认真生效（`Q1` §5 已记）。
+
+复跑方法：`tmp/size-probe`（不入库），把 `Cargo.toml` 里 `preserve_order` 注释/取消注释，
+跑两次 `cargo run` 对比。镜像结构体与真实类型尺寸已对齐校验。
+
+### 8.2 为什么依赖链路里是 `gpui-pre` 和第三方组件库
+
+常被问「为什么用社区版 GPUI」。查证后的答案是：**GPUI 本体是官方的，只有组件库是第三方的。**
+
+| 包 | 发布方 | 最新 | 更新节奏 |
+|----|--------|------|---------|
+| `gpui`（稳定名） | Zed 官方（repo `zed-industries/zed`，home `gpui.rs`） | 0.2.2 | 2025-10-22 之后再无发布 |
+| `gpui-pre`（预发布快照线） | 同样官方：author `Nathan Sobo <nathan@zed.dev>`，description 标注 `snapshot of zed@279fe07` | 0.3.9 | **每周一发**（0.3.5 9/14 → 0.3.9 10/12） |
+| `gpui-kit` / `gpui-component` / `gpui-base` | **第三方：longbridge**（repo `longbridge/gpui-kit`） | 0.7.1 | 跟随上游 |
+
+所以「稳定名 `gpui`」是一条**一年没更新**的旧线，Zed 自己在用的新东西走 `gpui-pre` 快照线。
+`gpui-kit` pin 死 `gpui-pre =0.3.8`，我们跟着它走 = 贴着**官方活跃线**，不是贴社区 fork。
+`X2` §5 提到的那几个社区 fork（`gpui-ce` / `gpui-unofficial`）**一个都没用**。
+
+第三方的是**组件层**（60+ 组件、Markdown/HTML 渲染、虚拟表格、Tree-sitter 编辑器），
+出自 longbridge —— 这正是 `D1` 决定「经 `gpui-kit` 间接依赖」的原因：官方没有可单独依赖的
+组件 crate（Zed 的组件在 zed 仓库内部），自己写等于把 `GUI` G-1 的全部工作量扛下来。
+
+代价与缓解：每周发版 + pre-1.0 → 破坏性变更持续存在。缓解就是 `D1`/`GUI` 定的那两条：
+**版本 pin 死**，且 **GPUI 调用只出现在 `kernel/ui-kit`** —— 升级是「改一个 crate」的事。
+
+待人工验：**中文 IME**（`InputState` 候选框 / 组合串在当前 Windows 输入法下是否正常）。
 
 ## 相关
 

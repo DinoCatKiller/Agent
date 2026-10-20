@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -47,18 +48,28 @@ impl AppConfig {
     }
 }
 
-/// 单个供应商的非敏感配置。
+/// 单个供应商条目的非敏感配置。
+///
+/// 条目 id 可以是**目录里的名字**（`ollama` / `openrouter`，见 `agent_providers::catalog`），
+/// 也可以是用户自己起的名字 —— 后者必须写 `adapter`，因为目录推断不出来。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ProviderConfig {
+    /// 用哪个适配器（`openai-compatible` / `anthropic`）。目录里有的 id 可省。
+    pub adapter: Option<String>,
     pub base_url: Option<String>,
     pub model: Option<String>,
+    /// 该端点已知的**模型 id 清单**（C2）：联网拉取 `GET /models` 的结果写这里，
+    /// 也允许用户手写。选择器的候选与本地能力协商都读它 —— 于是「拉到的模型」
+    /// 复用**已有的逐模型显隐偏好**（`models.toml`），不引入额外状态。
+    pub models: Vec<String>,
 }
 
 /// 配置文件位置。
 ///
-/// 默认走平台标准目录（Windows `%APPDATA%\CodingRocket\config.toml`、
-/// macOS `~/Library/Application Support/CodingRocket/`、Linux `~/.config/CodingRocket/`）；
+/// 默认走平台标准目录（Windows `%APPDATA%\CodingRocket\config\config.toml` ——
+/// 注意 `config` 子目录与文件名同名、macOS `~/Library/Application Support/CodingRocket/`、
+/// Linux `~/.config/CodingRocket/`）；
 /// 宿主可用 CLI 参数显式指定（[`ConfigPaths::from_file`]）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigPaths {
@@ -132,20 +143,48 @@ pub fn save(paths: &ConfigPaths, config: &AppConfig) -> Result<(), ConfigError> 
     })
 }
 
+/// 进程内的配置文件写锁（C2）。
+///
+/// **为什么需要**：配置的修改一律是「读全量 → 改本切片管的字段 → 写回」，`AppConfig` 用的是
+/// `BTreeMap` 而非原地更新。若两个写者并发（同一进程内：worker 写回拉取的模型清单 vs
+/// 设置界面保存设置 / 连接条目），后写者基于**过期快照**写回，会把先写者的改动整段抹掉。
+/// 进程内的 `Mutex` 串行化所有「读改写」即可消除这类丢失更新（跨进程不在范围：
+/// 同一份配置只会有一个 `CodingRocket` 在跑）。
+static FILE_LOCK: Mutex<()> = Mutex::new(());
+
+/// 「读全量 → 改 → 写回」的**唯一**入口：全程持进程内锁，杜绝并发写相互覆盖。
+///
+/// 所有需要修改配置的调用方（设置保存、连接条目、写回模型清单）都应走这里，
+/// 而不是各自 `load` + `save`。`edit` 里只改自己管的字段，其余原样保留。
+pub fn update(paths: &ConfigPaths, edit: impl FnOnce(&mut AppConfig)) -> Result<(), ConfigError> {
+    let _guard = FILE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut config = load(paths)?;
+    edit(&mut config);
+    save(paths, &config)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn temp_path(name: &str) -> PathBuf {
         let mut path = std::env::temp_dir();
-        path.push(format!("agent-config-test-{}-{name}.toml", std::process::id()));
+        path.push(format!(
+            "agent-config-test-{}-{name}.toml",
+            std::process::id()
+        ));
         path
     }
 
     #[test]
     fn missing_file_yields_default_config() {
         let paths = ConfigPaths::from_file(temp_path("missing"));
-        assert_eq!(load(&paths).expect("missing is not an error"), AppConfig::default());
+        assert_eq!(
+            load(&paths).expect("missing is not an error"),
+            AppConfig::default()
+        );
     }
 
     #[test]
@@ -161,8 +200,10 @@ mod tests {
         config.providers.insert(
             "anthropic".into(),
             ProviderConfig {
+                adapter: None,
                 base_url: Some("https://api.anthropic.com".into()),
                 model: None,
+                models: vec!["claude-3-5-sonnet".into()],
             },
         );
 
@@ -182,8 +223,10 @@ mod tests {
         config.providers.insert(
             "anthropic".into(),
             ProviderConfig {
+                adapter: None,
                 base_url: Some("https://api.anthropic.com".into()),
                 model: None,
+                models: Vec::new(),
             },
         );
 
@@ -203,7 +246,11 @@ mod tests {
     #[test]
     fn unknown_field_is_rejected() {
         let path = temp_path("unknown-field");
-        std::fs::write(&path, "default_model = \"m\"\napi_key = \"should-not-be-here\"\n").unwrap();
+        std::fs::write(
+            &path,
+            "default_model = \"m\"\napi_key = \"should-not-be-here\"\n",
+        )
+        .unwrap();
         let paths = ConfigPaths::from_file(&path);
         let error = load(&paths).expect_err("密钥写进配置文件必须报错");
         assert!(matches!(error, ConfigError::Parse { .. }));
