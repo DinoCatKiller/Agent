@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | ID | —（功能切片，非索引文档） |
-| 状态 | ✅ M4 落地：状态机 + 轮次编排（事件流）+ 工具边界 + 上下文裁剪；✅ M5 落地 `repo.rs` 会话持久化 + `ui.rs` 界面（一期 TUI 的对话侧）；✅ M6 落地工具并行执行（保序回填）；✅ 二期 GPUI 渲染端 `gpui.rs` + 通道契约 `channel.rs`（`gui` feature，2026-10-12） |
+| 状态 | ✅ M4 落地：状态机 + 轮次编排（事件流）+ 工具边界 + 上下文裁剪；✅ M5 落地 `repo.rs` 会话持久化 + `ui.rs` 界面（一期 TUI 的对话侧）；✅ M6 落地工具并行执行（保序回填）；✅ 二期 GPUI 渲染端 `gpui.rs` + 通道契约 `channel.rs`（`gui` feature，2026-10-12）；✅ **Ely 组件重构**（2026-10-21：`Sidebar` / `MessageList` / `MessageBubble` / `PromptInput`，顺带解决 `G-3`） |
 | 边界 | **语义**：一次对话怎么进行、状态怎么变、界面长什么样。含工具调用编排、上下文管理、业务表结构与界面状态机 |
-| 依赖 | `agent-common`（契约）｜ `agent-providers`（`Provider` / `CallContext`）｜ `agent-store`（连接 / 迁移机制）｜ `ratatui`（仅 `ui.rs` 渲染端）｜ `agent-ui-kit`（仅 `gui` feature，`gpui.rs` 渲染端 + 令牌主题） |
+| 依赖 | `agent-common`（契约）｜ `agent-providers`（`Provider` / `CallContext`）｜ `agent-store`（连接 / 迁移机制）｜ `ratatui`（仅 `ui.rs` 渲染端）｜ `agent-ui-kit`（仅 `gui` feature，`gpui.rs` 渲染端 + Ely 组件 / 令牌主题）｜ `jiff`（仅 `gui` feature，会话条目的时间戳） |
 | 不允许 | 依赖 `app`；被 `kernel/*` 依赖；**自己打开 / 管理连接**（HTTP 客户端与 SQLite 连接是机制，属 `kernel`） |
 | 何时读 | 改对话逻辑、加对话能力、写对话界面时 |
 
@@ -24,6 +24,8 @@ src/
                 + Theme（design/tokens.json 令牌，D4 一期）
   channel.rs    UI 无关的 Cmd / UiEvent 契约（两个渲染端共用，D3）
   gpui.rs       二期的界面 —— ChatView（GPUI 渲染端，复用同一个 ChatUi；仅 gui feature）
+                组件全部来自 Ely：Sidebar（会话栏）+ MessageList（虚拟列表）+ MessageBubble
+                + StreamingMarkdown + PromptInput + Popover（模型选择器）
 tests/round.rs  编排集成测试（假 provider，9 例，断网）
 docs/           规格：A5（工具调用）、A7（上下文与 Token）
 ```
@@ -43,6 +45,19 @@ UI 的接入约定（`D3`「事件流 + 命令通道」）：`ChatUi::on_event` 
 **二期 GPUI（`gui` feature）**：`ChatView` 消费同一套 `Cmd` / `UiEvent`（`channel.rs`），
 内部仍是同一个 `ChatUi`——两个渲染端的回滚、提交边界、工具状态因此完全一致。
 运行：`cargo run -p agent-app --features gui -- gui --provider … --model …`。
+
+渲染端**不自造组件**（Ely 覆盖了这里需要的全部形态），要点三条：
+
+- **会话栏**：`Sidebar` 只接受子元素（不实现 `Styled`），内层用普通 `div` 排布；
+  `ConversationList` 的分组标题硬编码英文，所以这里只用 `ConversationItem`、自己按
+  今天 / 昨天 / 最近 7 天 / 更早分组。`Conversation.at` 收 `jiff::Timestamp`。
+- **转录**：`MessageList` 是**虚拟列表**（`G-3` 的解），条目数给一次、闭包按索引渲染；
+  正文走 `StreamingMarkdown`，角色映射到 `Role::{User, Assistant, Error}`（Ely 没有 Tool）。
+- **输入区**：`PromptInput` 自带 Enter 提交与 busy→stop 的按钮语义；模型选择器用
+  `Popover::with_opener` 自持开关（不再手写 `model_menu_open` 标志位）。
+
+字号：`Theme::text_size(TextSize)` 返回 `Rems`，一帧取一次（`gpui.rs` 的 `Type`）再传给元素，
+不要在每个元素里现算。
 
 **运行中切模型**（`channel.rs` 的 `Cmd::SelectModel` / `UiEvent::ModelChanged`）：
 按 **(provider, model) 组合**切，不是只切模型——密钥按 provider 分别存（`R1`），

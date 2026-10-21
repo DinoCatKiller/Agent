@@ -4,7 +4,7 @@
 |---|---|
 | ID | `S1` |
 | 类型 | 状态 · **概览** |
-| 更新 | 2026-10-17 |
+| 更新 | 2026-10-21 |
 | 何时读 | **每次开工第一眼**，5 秒确认「现在做什么」 |
 | 规模 | ~0.5k token |
 
@@ -32,7 +32,23 @@
 本轮仍不做：`GUI` §3 的 L3 CSS 兼容层。
 `C2` 剩余：**`C2b`**（Anthropic 适配器镜像实现，可选）。
 
-### 并行任务：GPUI 界面重构（美观度 + 不合理处清理，2026-10-15 首轮）
+### 并行任务：Ely 组件库重构（视觉 + 结构，2026-10-21）
+
+把三个界面的组件层从「手写 `div` + gpui-component」换成 **Ely GPUI Component**
+（`ely-gpui-component`，与 `gpui-kit` 钉同一份 `gpui-pre`，类型互通）。
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | `ely` 重导出口 + `ely::init` 与资产源叠加（`ely::Assets::before(KitAssets)`）+ 令牌覆盖 Ely `Palette` 34 个语义槽 | `kernel/ui-kit` |
+| 2 | 顶栏换 `Tabs`（`Choice` + `on_change`），根焦点换 `FocusScope` | `app/gui.rs` |
+| 3 | 会话栏 `Sidebar` + `ConversationItem`（自行按天分组）；转录 `MessageList`（虚拟列表）+ `MessageBubble` + `StreamingMarkdown`；输入区 `PromptInput`；模型选择器 `Popover` | `features/chat/gpui.rs` |
+| 4 | 设置页换 `SettingsSection` / `SettingsRow` 排布，录入换 `TextInput` / `PasswordInput` / `SearchInput`，模型开关换 `Switch` | `features/settings/ui.rs` |
+
+顺带解决 `G-3`（长会话虚拟列表）：`MessageList` 只渲染可见区，转录不再每帧克隆全量元素。
+
+剩：**人工目检一轮**（重点看密度、字号档位、Ely 深色盘与令牌的色差）。
+
+### 上一轮：GPUI 界面走查（2026-10-15）
 
 按 impeccable / design-taste-frontend 两个 skill 的 GPUI 适配层走查三个界面
 （Shell 顶栏 / 对话页 / 设置页）。首轮做完静态层，验证到 L0（check + clippy + test 全绿）。
@@ -62,7 +78,6 @@ Spinner 节奏。动效只做了 Spinner 一处（"one authored moment"），其
 | `C2b` | Anthropic 适配器联网刷新镜像实现（可选） | `C2` 剩余切片 |
 | `B` 方案 | 设置保存后**立即生效**，不再要求重启 | 需先定「生成中不许保存」的交互 |
 | `GUI` §3 · L3 CSS 层 | CSS 运行时语义子集，吃现成样式资产 | 体量大，四级递进、每级有停止条件 |
-| `G-3` 长会话虚拟列表 | 上万条消息不卡 | 现有渲染端每帧克隆转录，得先换虚拟列表 |
 | `G-5` 打包分发 | MSI（`cargo-wix`）+ 体积核对 | 卡在 GPUI 体积，先量再决定（`S2` Q6） |
 | `M7` MCP 客户端 | 自研最小 stdio 客户端，列工具 + 调工具 | `RM` 最后一个里程碑，曾按「使用频率不高」暂缓 |
 

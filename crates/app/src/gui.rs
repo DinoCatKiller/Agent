@@ -17,9 +17,12 @@ use std::sync::Arc;
 use agent_chat::{ChatView, Cmd, ModelChoice, StatusInfo, UiEvent};
 use agent_settings::SettingsService;
 use agent_settings::ui::{RefreshModelsCallback, SettingsView};
-use agent_ui_kit::UiTheme;
-use agent_ui_kit::kit::assets::Assets;
-use agent_ui_kit::kit::prelude::FluentBuilder as _;
+use agent_ui_kit::ely;
+use agent_ui_kit::ely::forms::Choice;
+use agent_ui_kit::ely::navigation::Tabs;
+use agent_ui_kit::ely::primitives::{FocusScope, Icon, IconName};
+use agent_ui_kit::ely::theme::{ActiveTheme, IconSize, TextSize};
+use agent_ui_kit::kit::assets::Assets as KitAssets;
 use agent_ui_kit::kit::*;
 use tokio::sync::mpsc;
 
@@ -126,8 +129,12 @@ pub fn run(args: GuiArgs) -> i32 {
 
     // `.with_assets` 不是可选项：GPUI 默认的 asset source 是 `impl AssetSource for ()`
     // （空实现），不带它**所有 SVG 图标都画不出来**（勾、放大镜、下拉箭头全空白）。
-    // `Assets` 是组件库的默认图标包（106 个，够用且比 `AllAssets` 小）。
-    application().with_assets(Assets).run(move |cx| {
+    //
+    // 两份资产要**叠成一份**：Ely 的字体与图标在前，Kit 的图标在后。`ely::init` 会校验
+    // 资产源能加载 Ely 的每一个文件，漏了它直接报错（这正是 `Before` 的用途）。
+    application()
+        .with_assets(ely::Assets::before(KitAssets))
+        .run(move |cx| {
         // 组件库 + 设计令牌主题（必须在开窗之前）
         agent_ui_kit::init(cx);
         open_window(window_options(), cx, |window, cx| {
@@ -164,12 +171,13 @@ pub fn run(args: GuiArgs) -> i32 {
                 settings.update(cx, |view, _cx| view.set_on_refresh_models(on_refresh_models));
             }
 
-            let shell = cx.new(|_| Shell {
+            let shell = cx.new(|cx| Shell {
                 chat: None,
                 settings,
                 settings_error: settings_error.clone(),
                 tab: Tab::Chat,
                 open_models_page: false,
+                focus: cx.focus_handle(),
             });
 
             // 对话页那个胶囊底部的「管理模型」→ 切到设置页并落在模型分区。
@@ -351,11 +359,25 @@ fn window_options() -> WindowOptions {
 //
 // 放在 `app` 是因为它**跨功能**组装两个 `features/*` 的视图（`D6`：组装归宿主）。
 // 各功能自己不知道对方存在。
+//
+// 渲染全部走 Ely（`D4` 的组件层）：顶栏是 `navigation::Tabs`（自带滑动指示条、
+// 方向键切页、a11y 角色），整棵视图包在 `primitives::FocusScope` 的根作用域里 ——
+// 那是 Ely 接管 Tab / Shift-Tab 的前提（`FocusScope` 的 key context 才绑了这两个键）。
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
     Chat,
     Settings,
+}
+
+impl Tab {
+    /// `Tabs` 的取值（`Choice.value`）。
+    fn value(self) -> &'static str {
+        match self {
+            Tab::Chat => "chat",
+            Tab::Settings => "settings",
+        }
+    }
 }
 
 struct Shell {
@@ -368,27 +390,21 @@ struct Shell {
     tab: Tab,
     /// 对话页点了「管理模型」→ 下一帧切到设置页的模型分区（见 `on_manage_models`）。
     open_models_page: bool,
+    /// 根焦点作用域：焦点丢失时它接住，并把 Tab / Shift-Tab 绑给整棵视图。
+    focus: FocusHandle,
 }
 
 impl Render for Shell {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // 对话页刚点了「管理模型」：这里才切得到模型分区（`show_models` 要 `&mut Window`）。
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 对话页刚点了「管理模型」：这里才切得到模型分区。
         if self.open_models_page {
             self.open_models_page = false;
             if let Some(settings) = &self.settings {
-                settings.update(cx, |view, cx| view.show_models(window, cx));
+                settings.update(cx, |view, cx| view.show_models(cx));
             }
         }
 
-        let theme = UiTheme::global(cx);
-        let (bg, fg, dim, surface, accent) = (
-            theme.colors.background,
-            theme.colors.foreground,
-            theme.colors.muted_foreground,
-            theme.colors.surface,
-            theme.colors.accent,
-        );
-
+        let colors = cx.theme().colors.clone();
         let body = match self.tab {
             // `children` 而不是 `child`：`Option<Entity<_>>` 实现了 `IntoIterator`，
             // `None` 时什么都不画（`Option` 本身没有 `IntoElement` 实现，`child` 收不了它）。
@@ -399,7 +415,7 @@ impl Render for Shell {
                 .children(self.chat.clone()),
             Tab::Settings => match &self.settings {
                 Some(view) => div().flex().flex_1().min_h(px(0.)).child(view.clone()),
-                None => div().p_4().text_color(dim).child(
+                None => div().p_4().text_color(colors.fg_muted).child(
                     self.settings_error
                         .clone()
                         .unwrap_or_else(|| "设置页不可用".to_string()),
@@ -407,64 +423,15 @@ impl Render for Shell {
             },
         };
 
-        div()
+        FocusScope::new(&self.focus)
+            .root()
             .flex()
             .flex_col()
             .size_full()
-            .bg(bg)
-            .text_color(fg)
-            .text_sm()
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_4()
-                    .px_4()
-                    .h(px(40.))
-                    .bg(surface)
-                    // 词标：accent 圆点 + 产品名。系统标题栏只带标题，应用身份在这一行。
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap_2()
-                            .child(div().size(px(8.)).rounded_full().bg(accent))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(fg)
-                                    .child("CodingRocket"),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap_1()
-                            .child(tab_button(
-                                "tab-chat",
-                                "对话",
-                                self.tab == Tab::Chat,
-                                accent,
-                                fg,
-                                dim,
-                                cx.listener(|this, _, _, cx| this.select(Tab::Chat, cx)),
-                            ))
-                            .child(tab_button(
-                                "tab-settings",
-                                "设置",
-                                self.tab == Tab::Settings,
-                                accent,
-                                fg,
-                                dim,
-                                cx.listener(|this, _, window, cx| this.select_settings(window, cx)),
-                            )),
-                    ),
-            )
+            .bg(colors.bg)
+            .text_color(colors.fg)
+            .text_size(cx.theme().text_size(TextSize::Sm))
+            .child(self.header(cx))
             .child(body)
     }
 }
@@ -476,37 +443,67 @@ impl Shell {
     }
 
     /// 切到设置页时重新读盘：用户可能刚在外部改过（也可能刚把它改坏）。
-    fn select_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn select_settings(&mut self, cx: &mut Context<Self>) {
         self.tab = Tab::Settings;
         if let Some(view) = self.settings.clone() {
-            view.update(cx, |view, cx| view.reload(window, cx));
+            view.update(cx, |view, cx| view.reload(cx));
         }
         cx.notify();
     }
-}
 
-fn tab_button(
-    id: &'static str,
-    label: &'static str,
-    active: bool,
-    accent: Hsla,
-    fg: Hsla,
-    dim: Hsla,
-    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-) -> AnyElement {
-    div()
-        .id(ElementId::Name(id.into()))
-        .flex()
-        .flex_row()
-        .items_center()
-        .px_3()
-        .py_2()
-        .cursor_pointer()
-        .text_color(if active { fg } else { dim })
-        // 选中态：2px accent 实心底条 + 文字转亮（原来是纯变色，弱得几乎看不见）
-        .when(active, |d| d.border_b_2().border_color(accent))
-        .hover(|d| d.text_color(fg))
-        .on_click(on_click)
-        .child(label)
-        .into_any_element()
+    /// 顶栏：左侧是应用身份，右侧是 Ely 的标签条。
+    fn header(&self, cx: &mut Context<Self>) -> AnyElement {
+        let colors = cx.theme().colors.clone();
+        let text = cx.theme().text_size(TextSize::Sm);
+        let shell = cx.entity().downgrade();
+
+        div()
+            .flex()
+            .flex_none()
+            .flex_row()
+            .items_center()
+            .gap_6()
+            .px_4()
+            .h(px(44.))
+            .bg(colors.bg)
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Icon::new(IconName::Sparkles)
+                            .size(IconSize::Sm)
+                            .color(colors.accent),
+                    )
+                    .child(
+                        div()
+                            .text_size(text)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors.fg)
+                            .child("CodingRocket"),
+                    ),
+            )
+            .child(
+                Tabs::new(
+                    "shell-tabs",
+                    [
+                        Choice::new(Tab::Chat.value(), "对话").icon(IconName::MessageSquare),
+                        Choice::new(Tab::Settings.value(), "设置").icon(IconName::Settings),
+                    ],
+                    self.tab.value(),
+                )
+                .on_change(move |value, _window, cx| {
+                    let Some(shell) = shell.upgrade() else {
+                        return;
+                    };
+                    shell.update(cx, |shell, cx| match value.as_ref() {
+                        "settings" => shell.select_settings(cx),
+                        _ => shell.select(Tab::Chat, cx),
+                    });
+                }),
+            )
+            .into_any_element()
+    }
 }

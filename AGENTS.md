@@ -139,7 +139,7 @@
 
 | ID | 标题 | 路径 | 何时读 | 规模 | 状态 |
 |----|------|------|--------|------|------|
-| — | crate 门面 | [`crates/kernel/ui-kit/README.md`](crates/kernel/ui-kit/README.md) | 加组件、改配色 / 圆角 / 间距 / 字号、升 GPUI 时 | ~1.3k | ✅ 骨架 |
+| — | crate 门面 | [`crates/kernel/ui-kit/README.md`](crates/kernel/ui-kit/README.md) | 加组件、改配色 / 圆角 / 间距 / 字号、升 GPUI / Ely 时 | ~1.4k | ✅ Ely |
 
 ### `crates/app`
 

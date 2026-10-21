@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | ID | —（功能切片，非索引文档） |
-| 状态 | ✅ **A 语义落地**（2026-10-12）：设置模型 + 校验 + 读写编排 + 密钥录入 + GPUI 面板（`gui` feature）；✅ 「连接提供商」页（2026-10-16，切片 `C1c`）；✅ 「管理模型」页的「刷新模型」按钮（2026-10-19，切片 `C2d`）；⏳ 运行中热切换（B 方案）未做 |
+| 状态 | ✅ **A 语义落地**（2026-10-12）：设置模型 + 校验 + 读写编排 + 密钥录入 + GPUI 面板（`gui` feature）；✅ 「连接提供商」页（2026-10-16，切片 `C1c`）；✅ 「管理模型」页的「刷新模型」按钮（2026-10-19，切片 `C2d`）；✅ **Ely 组件重构**（2026-10-21：`SettingsSection` / `SettingsRow` / `TextInput` / `Switch`）；⏳ 运行中热切换（B 方案）未做 |
 | 边界 | **语义**：有哪些设置项、怎么校验、怎么呈现；密钥的录入体验 |
-| 依赖 | `agent-config`（**机制**：文件与钥匙串的读写）｜`agent-ui-kit`（仅 `gui` feature，设置面板） |
+| 依赖 | `agent-config`（**机制**：文件与钥匙串的读写）｜`agent-ui-kit`（仅 `gui` feature，设置面板 + Ely 组件） |
 | 不允许 | 直接读写钥匙串 / 配置文件；依赖 `app`；被 `kernel/*` 依赖 |
 | 何时读 | 加设置项、改密钥录入流程、改默认模型 / 代理 / 主题时 |
 
@@ -18,7 +18,7 @@
 |------|------|
 | [`src/settings.rs`](src/settings.rs) | `Settings`（5 个设置项）+ `Draft`（界面草稿）+ `validate()` |
 | [`src/service.rs`](src/service.rs) | `SettingsService`：读取 / 写回 / 连接条目 / 密钥增删查；`SecretBackend` 抽象 |
-| [`src/ui.rs`](src/ui.rs) | GPUI 设置面板 + 「连接提供商」页 + 「管理模型」页（含「刷新模型」按钮；**仅 `gui` feature**） |
+| [`src/ui.rs`](src/ui.rs) | GPUI 设置面板 + 「连接提供商」页 + 「管理模型」页（含「刷新模型」按钮；**仅 `gui` feature**）。组件来自 Ely：`SettingsSection` / `SettingsRow` 排布、`TextInput` / `PasswordInput` / `SearchInput` 录入、`Switch` 管模型显隐、`Button` / `IconButton` 做动作 |
 | [`tests/settings.rs`](tests/settings.rs) | 10 例：校验、归一化、保住用户手写内容、坏文件不覆盖、密钥不落文件、连接只改目标条目 |
 
 ## 四个必须知道的约束

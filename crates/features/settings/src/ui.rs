@@ -11,11 +11,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use agent_config::{Preferences, SecretString};
-use agent_ui_kit::UiTheme;
-use agent_ui_kit::component::button::{Button, ButtonVariants as _};
-use agent_ui_kit::component::input::{Input, InputEvent, InputState};
-use agent_ui_kit::component::switch::Switch;
-use agent_ui_kit::component::{Icon, IconName};
+use agent_ui_kit::ely::buttons::{Button, ButtonVariant};
+use agent_ui_kit::ely::forms::{Input, InputEvent, PasswordInput, SearchInput, Switch, TextInput};
+use agent_ui_kit::ely::primitives::IconName;
+use agent_ui_kit::ely::settings::{SettingsRow, SettingsSection};
+use agent_ui_kit::ely::theme::{ActiveTheme, ControlSize};
 use agent_ui_kit::kit::prelude::FluentBuilder as _;
 use agent_ui_kit::kit::*;
 
@@ -43,11 +43,11 @@ pub struct SettingsView {
     service: Arc<SettingsService>,
     /// 当前分区。
     page: Page,
-    provider: Entity<InputState>,
-    model: Entity<InputState>,
-    base_url: Entity<InputState>,
-    proxy: Entity<InputState>,
-    timeout: Entity<InputState>,
+    provider: Entity<TextInput>,
+    model: Entity<TextInput>,
+    base_url: Entity<TextInput>,
+    proxy: Entity<TextInput>,
+    timeout: Entity<TextInput>,
     /// **每个供应商一行密钥**：密钥在钥匙串里本来就是按 provider 存的
     /// （账号 `<provider>:api_key`，`R1`），所以界面也按 provider 分行。
     keys: Vec<ProviderKeyRow>,
@@ -59,16 +59,16 @@ pub struct SettingsView {
     /// 全部候选模型（宿主编排给的）——「模型」页要看到**全量**才能把关掉的再打开。
     models: Vec<(String, String)>,
     /// 「模型」页的搜索框。
-    model_search: Entity<InputState>,
+    model_search: Entity<TextInput>,
     /// 可连接的内置目录条目（宿主给的，`D6`）——「连接提供商」页列它。
     catalog: Vec<CatalogRow>,
     /// 「连接提供商」页的搜索框。
-    connect_search: Entity<InputState>,
+    connect_search: Entity<TextInput>,
     /// 当前选中、准备连接的目录条目 id。
     connect_selected: Option<String>,
-    connect_base_url: Entity<InputState>,
-    connect_model: Entity<InputState>,
-    connect_key: Entity<InputState>,
+    connect_base_url: Entity<TextInput>,
+    connect_model: Entity<TextInput>,
+    connect_key: Entity<TextInput>,
     /// 连接成功后通知宿主刷新模型选择器 —— 跨功能的线只由宿主接（`D6`）。
     ///
     /// 建本视图时对话页还没建出来，所以先给空回调，宿主随后用 [`Self::set_on_connected`] 注入。
@@ -126,7 +126,7 @@ pub struct CatalogRow {
 struct ProviderKeyRow {
     row: ProviderRow,
     /// 本次要写入的新密钥（明文只活在输入框与那一次调用里；**已存值不回显**）。
-    input: Entity<InputState>,
+    input: Entity<TextInput>,
     /// 生效来源：环境变量 > 钥匙串 > 未配置（`R1`）。
     source: KeySource,
 }
@@ -156,17 +156,11 @@ impl SettingsView {
 
         // 逐个显式建输入框，别用「捕获 `window` 的闭包」批量建 —— 那样会和下面循环里的闭包
         // 同时要求 `*window` 的唯一访问权（E0524）。
-        let provider_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(draft.default_provider.clone()));
-        let model_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(draft.default_model.clone()));
-        let base_url_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(draft.base_url.clone()));
-        let proxy_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(draft.proxy.clone()));
-        let timeout_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(draft.stream_idle_timeout_secs.clone())
-        });
+        let provider_input = text_input(window, cx, draft.default_provider.clone(), false);
+        let model_input = text_input(window, cx, draft.default_model.clone(), false);
+        let base_url_input = text_input(window, cx, draft.base_url.clone(), false);
+        let proxy_input = text_input(window, cx, draft.proxy.clone(), false);
+        let timeout_input = text_input(window, cx, draft.stream_idle_timeout_secs.clone(), false);
 
         let provider_options = providers.clone();
         let mut keys = Vec::new();
@@ -174,11 +168,7 @@ impl SettingsView {
             let source = service
                 .key_source(&row.id, row.env.as_deref())
                 .unwrap_or(KeySource::None);
-            let key_input = cx.new(|cx| {
-                InputState::new(window, cx)
-                    .masked(true)
-                    .placeholder("粘贴新密钥（已存的不回显）")
-            });
+            let key_input = text_input(window, cx, String::new(), true);
             keys.push(ProviderKeyRow {
                 row,
                 input: key_input,
@@ -187,33 +177,33 @@ impl SettingsView {
         }
 
         // 「模型」页的搜索框 + 其订阅（内容一变就重渲染 → 重新过滤）。
-        let model_search = cx.new(|cx| InputState::new(window, cx).placeholder("搜索模型…"));
+        let model_search = cx.new(|cx| TextInput::new(window, cx).placeholder("搜索模型…"));
         let search_sub = cx.subscribe_in(
             &model_search,
             window,
             |_this, _state, event: &InputEvent, _window, cx| {
-                if matches!(event, InputEvent::Change) {
+                if matches!(event, InputEvent::Changed) {
                     cx.notify();
                 }
             },
         );
 
         // 「连接提供商」页的搜索框与表单输入框：和上面一样，渲染期不新造 entity。
-        let connect_search = cx.new(|cx| InputState::new(window, cx).placeholder("搜索厂商…"));
+        let connect_search = cx.new(|cx| TextInput::new(window, cx).placeholder("搜索厂商…"));
         let connect_sub = cx.subscribe_in(
             &connect_search,
             window,
             |_this, _state, event: &InputEvent, _window, cx| {
-                if matches!(event, InputEvent::Change) {
+                if matches!(event, InputEvent::Changed) {
                     cx.notify();
                 }
             },
         );
-        let connect_base_url = cx.new(|cx| InputState::new(window, cx));
-        let connect_model = cx.new(|cx| InputState::new(window, cx));
+        let connect_base_url = cx.new(|cx| TextInput::new(window, cx));
+        let connect_model = cx.new(|cx| TextInput::new(window, cx));
         let connect_key = cx.new(|cx| {
-            InputState::new(window, cx)
-                .masked(true)
+            TextInput::new(window, cx)
+                .masked()
                 .placeholder("粘贴密钥（存系统钥匙串，不回显）")
         });
 
@@ -253,13 +243,13 @@ impl SettingsView {
     }
 
     /// 切到「模型」页（宿主在对话页点「管理模型」时调）。
-    pub fn show_models(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn show_models(&mut self, cx: &mut Context<Self>) {
         self.page = Page::Models;
         self.status = None;
         // 重新读一次：别的地方（手改文件）动过偏好，这里要跟上。
         self.hidden = self.service.preferences();
         self.model_search
-            .update(cx, |state, cx| state.set_value("", window, cx));
+            .update(cx, |state, cx| state.set_text("", cx));
         cx.notify();
     }
 
@@ -313,17 +303,17 @@ impl SettingsView {
     }
 
     /// 选中一条目录条目：预填内置端点，清空上一轮的模型与密钥输入。
-    fn select_connect_row(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+    fn select_connect_row(&mut self, id: String, cx: &mut Context<Self>) {
         let Some(row) = self.catalog.iter().find(|row| row.id == id).cloned() else {
             return;
         };
         self.connect_selected = Some(id);
         self.connect_base_url
-            .update(cx, |state, cx| state.set_value(row.base_url, window, cx));
+            .update(cx, |state, cx| state.set_text(row.base_url, cx));
         self.connect_model
-            .update(cx, |state, cx| state.set_value("", window, cx));
+            .update(cx, |state, cx| state.set_text("", cx));
         self.connect_key
-            .update(cx, |state, cx| state.set_value("", window, cx));
+            .update(cx, |state, cx| state.set_text("", cx));
         cx.notify();
     }
 
@@ -338,9 +328,9 @@ impl SettingsView {
             return;
         };
 
-        let base_url = self.connect_base_url.read(cx).value().trim().to_string();
-        let model = self.connect_model.read(cx).value().trim().to_string();
-        let key = self.connect_key.read(cx).value().trim().to_string();
+        let base_url = self.connect_base_url.read(cx).text().trim().to_string();
+        let model = self.connect_model.read(cx).text().trim().to_string();
+        let key = self.connect_key.read(cx).text().trim().to_string();
         let base = (!base_url.is_empty()).then_some(base_url.as_str());
         let mdl = (!model.is_empty()).then_some(model.as_str());
 
@@ -371,7 +361,7 @@ impl SettingsView {
         self.remember_connected(&row, window, cx);
         self.connect_selected = None;
         self.connect_key
-            .update(cx, |state, cx| state.set_value("", window, cx));
+            .update(cx, |state, cx| state.set_text("", cx));
         self.status = Some(match key_error {
             Some(error) => Status {
                 message: format!("已连接 {}{note}：{error}。可稍后重试密钥。", row.name),
@@ -404,8 +394,8 @@ impl SettingsView {
             key_required: row.key_required,
         };
         let input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .masked(true)
+            TextInput::new(window, cx)
+                .masked()
                 .placeholder("粘贴新密钥（已存的不回显）")
         });
         self.providers.push(provider.clone());
@@ -451,14 +441,14 @@ impl SettingsView {
     }
 
     /// 用 chip 选默认供应商（写进输入框，保存时随其余配置一起落盘）。
-    fn pick_provider(&mut self, provider: String, window: &mut Window, cx: &mut Context<Self>) {
+    fn pick_provider(&mut self, provider: String, cx: &mut Context<Self>) {
         self.provider
-            .update(cx, |state, cx| state.set_value(provider, window, cx));
+            .update(cx, |state, cx| state.set_text(provider, cx));
         cx.notify();
     }
 
     /// 重新从磁盘读（切到本页、或用户手改过文件之后）。
-    pub fn reload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn reload(&mut self, cx: &mut Context<Self>) {
         self.status = None;
         let settings = match self.service.load() {
             Ok(settings) => {
@@ -471,7 +461,7 @@ impl SettingsView {
             }
         };
         let draft = Draft::from_settings(&settings);
-        let pairs: [(Entity<InputState>, String); 5] = [
+        let pairs: [(Entity<TextInput>, String); 5] = [
             (self.provider.clone(), draft.default_provider),
             (self.model.clone(), draft.default_model),
             (self.base_url.clone(), draft.base_url),
@@ -479,14 +469,14 @@ impl SettingsView {
             (self.timeout.clone(), draft.stream_idle_timeout_secs),
         ];
         for (state, value) in pairs {
-            state.update(cx, |state, cx| state.set_value(value, window, cx));
+            state.update(cx, |state, cx| state.set_text(value, cx));
         }
         self.refresh_key_sources();
         cx.notify();
     }
 
     /// 保存：校验 → 写配置 → （填了新密钥才）写钥匙串。
-    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn save(&mut self, cx: &mut Context<Self>) {
         if let Some(error) = &self.load_error {
             self.status = Some(Status {
                 message: format!("配置文件读不动，先修好再保存：{error}"),
@@ -497,11 +487,11 @@ impl SettingsView {
         }
 
         let draft = Draft {
-            default_provider: self.provider.read(cx).value().to_string(),
-            default_model: self.model.read(cx).value().to_string(),
-            base_url: self.base_url.read(cx).value().to_string(),
-            proxy: self.proxy.read(cx).value().to_string(),
-            stream_idle_timeout_secs: self.timeout.read(cx).value().to_string(),
+            default_provider: self.provider.read(cx).text().to_string(),
+            default_model: self.model.read(cx).text().to_string(),
+            base_url: self.base_url.read(cx).text().to_string(),
+            proxy: self.proxy.read(cx).text().to_string(),
+            stream_idle_timeout_secs: self.timeout.read(cx).text().to_string(),
         };
 
         let settings = match draft.to_settings() {
@@ -537,14 +527,14 @@ impl SettingsView {
                 let row = &self.keys[index];
                 (row.row.id.clone(), row.input.clone())
             };
-            let raw = state.read(cx).value().trim().to_string();
+            let raw = state.read(cx).text().trim().to_string();
             if raw.is_empty() {
                 continue;
             }
             match self.service.save_key(&provider, &SecretString::from(raw)) {
                 Ok(()) => {
                     key_note = "，密钥已存入系统钥匙串".to_string();
-                    state.update(cx, |state, cx| state.set_value("", window, cx));
+                    state.update(cx, |state, cx| state.set_text("", cx));
                 }
                 Err(error) => {
                     self.status = Some(Status {
@@ -605,9 +595,10 @@ impl SettingsView {
     /// 关掉是**加法语义**：偏好文件里只记被隐藏的那些，新模型默认可见。
     /// 「刷新」联网拉取该端点的模型清单并写回配置 —— 结果由宿主回灌（`on_refresh_models` + `set_models`）。
     fn models_page(&self, cx: &mut Context<Self>, fg: Hsla, dim: Hsla, err: Hsla) -> AnyElement {
-        let query = self.model_search.read(cx).value().trim().to_lowercase();
+        let query = self.model_search.read(cx).text().trim().to_lowercase();
+        let view = cx.entity().downgrade();
         // 按**已连接条目**分组（不是按候选清单）：刚连上、还没拉到模型时也要能点「刷新」。
-        let mut rows = div().flex().flex_col().gap_1();
+        let mut sections = div().flex().flex_col().gap_3();
         let mut shown = 0usize;
         for provider in &self.providers {
             let provider_hit = query.is_empty()
@@ -631,76 +622,82 @@ impl SettingsView {
             }
             shown += 1;
 
-            // 组头：条目名 + 「刷新」按钮（联网拉这个端点的模型清单，C2d）。
+            let mut section = SettingsSection::new(format!("{} / {}", provider.name, provider.id))
+                .description("「刷新」联网拉取该条目的模型清单；失败不动现有清单");
+
+            // 组内第一行：联网刷新（C2d）。
             let header_provider = provider.id.clone();
-            rows = rows.child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .pt_2()
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(dim)
-                            .child(format!("{} / {}", provider.name, provider.id)),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        Button::new(ElementId::Name(
-                            format!("refresh-models::{}", provider.id).into(),
-                        ))
-                        .ghost()
-                        .compact()
+            section = section.row(
+                SettingsRow::new("刷新模型清单")
+                    .description("拉到的模型默认显示，结果写回配置")
+                    .control(
+                        Button::new(
+                            ElementId::Name(format!("refresh-models::{}", provider.id).into()),
+                            "刷新",
+                        )
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
                         .icon(IconName::RefreshCw)
-                        .label("刷新")
-                        .tooltip("联网拉取该条目的模型清单（写回配置；失败不动现有清单）")
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.request_refresh(header_provider.clone(), cx)
-                        })),
+                        .on_click({
+                            let view = view.clone();
+                            move |_, _, cx| {
+                                let Some(view) = view.upgrade() else {
+                                    return;
+                                };
+                                view.update(cx, |this, cx| {
+                                    this.request_refresh(header_provider.clone(), cx)
+                                });
+                            }
+                        }),
                     ),
             );
 
             if models.is_empty() {
-                rows = rows.child(
-                    div()
-                        .text_xs()
-                        .text_color(dim)
-                        .child("（还没有已知模型：点「刷新」联网拉取，或连接时手填）"),
+                section = section.row(
+                    SettingsRow::new("还没有已知模型")
+                        .description("点「刷新」联网拉取，或连接时手填"),
                 );
             }
             for model in models {
                 let visible = !self.hidden.is_hidden(&provider.id, &model);
                 let (row_provider, row_model) = (provider.id.clone(), model.clone());
-                rows = rows.child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap_3()
-                        .child(div().flex_1().truncate().child(model.clone()))
-                        .child(
-                            Switch::new(ElementId::Name(
+                section = section.row(
+                    SettingsRow::new(model.clone()).control(
+                        Switch::new(
+                            ElementId::Name(
                                 format!("model-switch::{}::{}", provider.id, model).into(),
-                            ))
-                            .checked(visible)
-                            .on_change(cx.listener(
-                                move |this, wanted: &bool, _, cx| {
+                            ),
+                            visible,
+                        )
+                        .on_change({
+                            let view = view.clone();
+                            move |wanted, _window, cx| {
+                                let Some(view) = view.upgrade() else {
+                                    return;
+                                };
+                                view.update(cx, |this, cx| {
                                     this.toggle_model(
                                         row_provider.clone(),
                                         row_model.clone(),
-                                        *wanted,
+                                        wanted,
                                         cx,
                                     )
-                                },
-                            )),
-                        ),
+                                });
+                            }
+                        }),
+                    ),
                 );
             }
+            sections = sections.child(section);
         }
         if shown == 0 {
-            rows = rows.child(div().py_2().text_color(dim).child("没有匹配的模型"));
+            sections = sections.child(
+                div()
+                    .py_2()
+                    .text_xs()
+                    .text_color(dim)
+                    .child("没有匹配的模型"),
+            );
         }
 
         let hidden_count: usize = self.hidden.hidden_models.values().map(Vec::len).sum();
@@ -711,7 +708,7 @@ impl SettingsView {
             .gap_3()
             .p_4()
             .size_full()
-            .max_w(px(560.))
+            .max_w(px(720.))
             .child(
                 div()
                     .flex()
@@ -719,11 +716,10 @@ impl SettingsView {
                     .items_center()
                     .gap_2()
                     .child(
-                        Button::new("models-back")
-                            .ghost()
-                            .compact()
+                        Button::new("models-back", "设置")
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
                             .icon(IconName::ChevronLeft)
-                            .label("设置")
                             .on_click(cx.listener(|this, _, _, cx| this.show_general(cx))),
                     )
                     .child(
@@ -735,11 +731,10 @@ impl SettingsView {
                     )
                     .child(div().flex_1())
                     .child(
-                        Button::new("connect-provider")
-                            .outline()
+                        Button::new("connect-provider", "连接提供商")
+                            .variant(ButtonVariant::Outline)
+                            .size(ControlSize::Sm)
                             .icon(IconName::Plus)
-                            .label("连接提供商")
-                            .tooltip("从内置目录挑一个厂商，填密钥即可")
                             .on_click(cx.listener(|this, _, _, cx| this.show_connect(cx))),
                     ),
             )
@@ -750,19 +745,14 @@ impl SettingsView {
                     .gap_1()
                     .text_xs()
                     .text_color(dim)
-                    .child("自定义模型选择器中显示的模型。")
-                    .child("「刷新」联网拉取该端点的模型清单（新模型默认显示）。")
+                    .child("控制模型选择器里显示哪些模型。")
                     .child(format!(
                         "偏好文件：{}（已隐藏 {hidden_count} 个）",
                         self.preferences_file
                     )),
             )
-            .child(
-                Input::new(&self.model_search)
-                    .prefix(Icon::new(IconName::Search).text_color(dim))
-                    .cleanable(true),
-            )
-            .child(rows)
+            .child(SearchInput::new("models-search", &self.model_search))
+            .child(sections)
             .children(self.status.as_ref().map(|status| {
                 div()
                     .text_xs()
@@ -784,10 +774,10 @@ impl SettingsView {
         dim: Hsla,
         err: Hsla,
         accent: Hsla,
-        secondary: Hsla,
+        hover: Hsla,
     ) -> AnyElement {
-        let query = self.connect_search.read(cx).value().trim().to_lowercase();
-        let mut list = div().flex().flex_col().gap_1();
+        let query = self.connect_search.read(cx).text().trim().to_lowercase();
+        let mut list = div().flex().flex_col().gap_0p5();
         for row in &self.catalog {
             let hit = query.is_empty()
                 || row.id.to_lowercase().contains(&query)
@@ -810,11 +800,11 @@ impl SettingsView {
                     .py_1()
                     .rounded_md()
                     .cursor_pointer()
-                    .when(selected, |item| item.bg(secondary))
-                    .hover(|item| item.bg(secondary))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.select_connect_row(id.clone(), window, cx)
-                    }))
+                    .when(selected, |item| item.bg(hover))
+                    .hover(|item| item.bg(hover))
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.select_connect_row(id.clone(), cx)),
+                    )
                     .child(
                         div()
                             .flex()
@@ -833,7 +823,7 @@ impl SettingsView {
             );
         }
         if self.catalog.is_empty() {
-            list = list.child(div().py_2().text_color(dim).child("目录为空"));
+            list = list.child(div().py_2().text_xs().text_color(dim).child("目录为空"));
         }
 
         let form = self
@@ -841,52 +831,38 @@ impl SettingsView {
             .as_ref()
             .and_then(|id| self.catalog.iter().find(|row| &row.id == id).cloned())
             .map(|row| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(dim)
-                            .child(format!("连接 {}（适配器 {}）", row.name, row.adapter)),
-                    )
-                    .child(field(
+                SettingsSection::new(format!("连接 {}（适配器 {}）", row.name, row.adapter))
+                    .description(connect_key_hint(&row))
+                    .row(field(
                         "Base URL（留空用内置默认）",
                         &self.connect_base_url,
-                        dim,
+                        false,
                     ))
-                    .child(field(
+                    .row(field(
                         "模型（可选，自定义端点时填）",
                         &self.connect_model,
-                        dim,
+                        false,
                     ))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(dim)
-                                    .child(connect_key_hint(&row)),
-                            )
-                            .child(Input::new(&self.connect_key)),
-                    )
-                    .child(
+                    .row(field("API Key", &self.connect_key, true))
+                    .row(
                         div()
                             .flex()
                             .flex_row()
                             .items_center()
                             .gap_2()
-                            .child(Button::new("connect-do").primary().label("连接").on_click(
-                                cx.listener(|this, _, window, cx| this.connect(window, cx)),
-                            ))
+                            .pt_1()
                             .child(
-                                Button::new("connect-cancel")
-                                    .ghost()
-                                    .label("取消")
+                                Button::new("connect-do", "连接")
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ControlSize::Sm)
+                                    .on_click(
+                                        cx.listener(|this, _, window, cx| this.connect(window, cx)),
+                                    ),
+                            )
+                            .child(
+                                Button::new("connect-cancel", "取消")
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ControlSize::Sm)
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.connect_selected = None;
                                         cx.notify();
@@ -901,7 +877,7 @@ impl SettingsView {
             .gap_3()
             .p_4()
             .size_full()
-            .max_w(px(560.))
+            .max_w(px(720.))
             .child(
                 div()
                     .flex()
@@ -909,11 +885,10 @@ impl SettingsView {
                     .items_center()
                     .gap_2()
                     .child(
-                        Button::new("connect-back")
-                            .ghost()
-                            .compact()
+                        Button::new("connect-back", "设置")
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
                             .icon(IconName::ChevronLeft)
-                            .label("设置")
                             .on_click(cx.listener(|this, _, _, cx| this.show_general(cx))),
                     )
                     .child(
@@ -934,11 +909,7 @@ impl SettingsView {
                     .child("从内置目录里挑一个厂商，填密钥即可；适配器由目录决定，你不用管。")
                     .child(format!("配置文件：{}", self.config_file)),
             )
-            .child(
-                Input::new(&self.connect_search)
-                    .prefix(Icon::new(IconName::Search).text_color(dim))
-                    .cleanable(true),
-            )
+            .child(SearchInput::new("connect-search", &self.connect_search))
             .child(list)
             .children(form)
             .children(self.status.as_ref().map(|status| {
@@ -953,38 +924,35 @@ impl SettingsView {
 
 impl Render for SettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = UiTheme::global(cx);
-        let (fg, dim, err, border, accent, secondary) = (
-            theme.colors.foreground,
-            theme.colors.muted_foreground,
-            theme.colors.destructive,
-            theme.colors.border,
-            theme.colors.accent,
-            theme.colors.secondary,
-        );
+        let colors = cx.theme().colors.clone();
+        let (fg, dim, err) = (colors.fg, colors.fg_muted, colors.danger);
 
-        let mut form = div()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .p_4()
-            .max_w(px(560.))
-            .child(self.provider_field(cx, dim, accent, border))
-            .child(field("默认模型", &self.model, dim))
-            .child(field("Base URL（留空用内置默认）", &self.base_url, dim))
-            .child(field("代理（http/https/socks5）", &self.proxy, dim))
-            .child(field("流式空闲超时（秒）", &self.timeout, dim));
+        match self.page {
+            Page::Models => self.models_page(cx, fg, dim, err),
+            Page::Connect => self.connect_page(cx, fg, dim, err, colors.accent, colors.hover),
+            Page::General => self.general_page(cx, fg, dim, err),
+        }
+    }
+}
 
-        // 密钥：**每个供应商一行**（钥匙串里本来就是按 provider 存的）。只显示来源，不回显已存值
-        form = form.child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .text_xs()
-                .text_color(dim)
-                .child("API Key（每行单独保存；留空 = 不动它现在那把）"),
-        );
+impl SettingsView {
+    /// 「通用」页：连接参数 + 每供应商一行密钥 + 动作条。
+    fn general_page(&self, cx: &mut Context<Self>, fg: Hsla, dim: Hsla, err: Hsla) -> AnyElement {
+        let connection = SettingsSection::new("连接")
+            .description("保存只写盘，重启后生效")
+            .row(
+                SettingsRow::new("默认供应商")
+                    .description("点 chip 选，或手输自定义适配器名")
+                    .control(self.provider_field(cx)),
+            )
+            .row(field("默认模型", &self.model, false))
+            .row(field("Base URL（留空用内置默认）", &self.base_url, false))
+            .row(field("代理（http/https/socks5）", &self.proxy, false))
+            .row(field("流式空闲超时（秒）", &self.timeout, false));
+
+        // 密钥：**每个供应商一行**（钥匙串里本来就是按 provider 存的）。只显示来源，不回显已存值。
+        let mut keys = SettingsSection::new("API Key")
+            .description("每行单独保存；留空 = 不动它现在那把；已存的不回显");
         for index in 0..self.keys.len() {
             let (provider, name, env, required, state, source) = {
                 let row = &self.keys[index];
@@ -997,126 +965,102 @@ impl Render for SettingsView {
                     row.source,
                 )
             };
-            form = form.child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    // 第一行：展示名 + id + 清除。hint 一句话太长，独占第三行。
-                    .child(
+            let title = format!("{name}（{provider}）");
+            let clear = Button::new(
+                ElementId::Name(format!("clear-key-{provider}").into()),
+                "清除",
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Sm)
+            .on_click(cx.listener(move |this, _, _, cx| this.clear_key(provider.clone(), cx)));
+            keys = keys.row(
+                SettingsRow::new(title)
+                    .description(key_hint(source, env.as_deref(), required))
+                    .control(
                         div()
                             .flex()
                             .flex_row()
                             .items_center()
                             .gap_2()
-                            .child(div().text_sm().text_color(fg).child(name))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(dim)
-                                    .child(format!("({provider})")),
-                            )
-                            .child(div().flex_1())
-                            .child(
-                                Button::new(ElementId::Name(
-                                    format!("clear-key-{provider}").into(),
-                                ))
-                                .ghost()
-                                .compact()
-                                .label("清除")
-                                .on_click(cx.listener(
-                                    move |this, _, _, cx| this.clear_key(provider.clone(), cx),
-                                )),
-                            ),
-                    )
-                    .child(Input::new(&state))
-                    .child(div().text_xs().text_color(dim).child(key_hint(
-                        source,
-                        env.as_deref(),
-                        required,
-                    ))),
+                            .child(div().w(px(220.)).child(PasswordInput::new(&state)))
+                            .child(clear),
+                    ),
             );
         }
 
-        form = form.child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .child(
-                    Button::new("save-settings")
-                        .label("保存")
-                        .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
-                )
-                .child(
-                    Button::new("reload-settings")
-                        .label("重新载入")
-                        .on_click(cx.listener(|this, _, window, cx| this.reload(window, cx))),
-                )
-                .child(
-                    // 模型分区也放个入口：不然它只能在对话页的胶囊弹层里找到
-                    Button::new("open-models")
-                        .ghost()
-                        .icon(IconName::Settings2)
-                        .label("管理模型")
-                        .on_click(cx.listener(|this, _, window, cx| this.show_models(window, cx))),
-                )
-                .child(
-                    Button::new("connect-provider-general")
-                        .ghost()
-                        .icon(IconName::Plus)
-                        .label("连接提供商")
-                        .on_click(cx.listener(|this, _, _, cx| this.show_connect(cx))),
-                ),
-        );
+        let actions = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .child(
+                Button::new("save-settings", "保存")
+                    .variant(ButtonVariant::Primary)
+                    .size(ControlSize::Sm)
+                    .on_click(cx.listener(|this, _, _, cx| this.save(cx))),
+            )
+            .child(
+                Button::new("reload-settings", "重新载入")
+                    .variant(ButtonVariant::Secondary)
+                    .size(ControlSize::Sm)
+                    .on_click(cx.listener(|this, _, _, cx| this.reload(cx))),
+            )
+            .child(
+                // 模型分区也放个入口：不然它只能在对话页的胶囊弹层里找到
+                Button::new("open-models", "管理模型")
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .icon(IconName::Settings)
+                    .on_click(cx.listener(|this, _, _, cx| this.show_models(cx))),
+            )
+            .child(
+                Button::new("connect-provider-general", "连接提供商")
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .icon(IconName::Plus)
+                    .on_click(cx.listener(|this, _, _, cx| this.show_connect(cx))),
+            );
 
-        if let Some(status) = &self.status {
-            form = form.child(
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .size_full()
+            .p_4()
+            .max_w(px(720.))
+            .child(
+                div()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(fg)
+                    .child("设置"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .text_xs()
+                    .text_color(dim)
+                    .child(format!("配置文件：{}", self.config_file))
+                    .child("保存只写盘，重启后生效"),
+            )
+            .child(connection)
+            .child(keys)
+            .child(actions)
+            .children(self.status.as_ref().map(|status| {
                 div()
                     .text_xs()
                     .text_color(if status.error { err } else { fg })
-                    .child(status.message.clone()),
-            );
-        }
-        if let Some(error) = &self.load_error {
-            form = form.child(
+                    .child(status.message.clone())
+            }))
+            .children(self.load_error.as_ref().map(|error| {
                 div()
                     .text_xs()
                     .text_color(err)
-                    .child(format!("配置文件读不动：{error}")),
-            );
-        }
-
-        match self.page {
-            Page::Models => self.models_page(cx, fg, dim, err),
-            Page::Connect => self.connect_page(cx, fg, dim, err, accent, secondary),
-            Page::General => div()
-                .flex()
-                .flex_col()
-                .gap_3()
-                .size_full()
-                .p_4()
-                .child(
-                    div()
-                        .text_lg()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(fg)
-                        .child("设置"),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .text_xs()
-                        .text_color(dim)
-                        .child(format!("配置文件：{}", self.config_file))
-                        .child("保存只写盘，重启后生效"),
-                )
-                .child(form)
-                .into_any_element(),
-        }
+                    .child(format!("配置文件读不动：{error}"))
+            }))
+            .into_any_element()
     }
 }
 
@@ -1125,14 +1069,9 @@ impl SettingsView {
     ///
     /// 为什么要 chip：`default_provider` 现在**真的生效**（`R1` §1.1），
     /// 手滑写成未知名字会让 `gui`（没有命令行参数的启动方式）直接起不来。
-    fn provider_field(
-        &self,
-        cx: &mut Context<Self>,
-        dim: Hsla,
-        accent: Hsla,
-        border: Hsla,
-    ) -> AnyElement {
-        let current = self.provider.read(cx).value().trim().to_string();
+    fn provider_field(&self, cx: &mut Context<Self>) -> AnyElement {
+        let colors = cx.theme().colors.clone();
+        let current = self.provider.read(cx).text().trim().to_string();
         let mut chips = div().flex().flex_row().flex_wrap().items_center().gap_1();
         for row in self.providers.clone() {
             let selected = row.id == current;
@@ -1147,12 +1086,20 @@ impl SettingsView {
                     .cursor_pointer()
                     .text_xs()
                     .border_1()
-                    .border_color(if selected { accent } else { border })
-                    .text_color(if selected { accent } else { dim })
-                    .hover(|d| d.text_color(accent))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.pick_provider(label.clone(), window, cx)
-                    }))
+                    .border_color(if selected {
+                        colors.accent
+                    } else {
+                        colors.border
+                    })
+                    .text_color(if selected {
+                        colors.accent
+                    } else {
+                        colors.fg_muted
+                    })
+                    .hover(|d| d.text_color(colors.accent))
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.pick_provider(label.clone(), cx)),
+                    )
                     // chip 上写**展示名**，点下去写进输入框的是 id ——
                     // 用户不用记 `openai-compatible` 这种内部名字。
                     .child(shown),
@@ -1163,22 +1110,33 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap_1()
-            .child(div().text_xs().text_color(dim).child("默认供应商"))
+            .w(px(240.))
             .child(chips)
             .child(Input::new(&self.provider))
             .into_any_element()
     }
 }
 
-/// 一行「标签 + 输入框」。
-fn field(label: &str, state: &Entity<InputState>, dim: Hsla) -> AnyElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(div().text_xs().text_color(dim).child(label.to_string()))
-        .child(Input::new(state))
-        .into_any_element()
+/// 建一个带初值的 `TextInput`（Ely 没有 `default_value` 构造链）。
+fn text_input(window: &mut Window, cx: &mut App, value: String, masked: bool) -> Entity<TextInput> {
+    cx.new(|cx| {
+        let mut input = TextInput::new(window, cx);
+        if masked {
+            input = input.masked().placeholder("粘贴新密钥（已存的不回显）");
+        }
+        input.set_text(value, cx);
+        input
+    })
+}
+
+/// 一行「标签 + 输入框」（Ely 的 `SettingsRow`）。
+fn field(label: &str, state: &Entity<TextInput>, masked: bool) -> SettingsRow {
+    let input: AnyElement = if masked {
+        PasswordInput::new(state).into_any_element()
+    } else {
+        Input::new(state).into_any_element()
+    };
+    SettingsRow::new(label).control(div().w(px(260.)).child(input))
 }
 
 /// 「连接提供商」页的密钥提示：连接前没有「来源」，只讲**该不该填**。
