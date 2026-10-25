@@ -214,6 +214,11 @@ impl ChatView {
             UiEvent::ModelsRefreshFailed { provider, message } => self
                 .ui
                 .set_notice(format!("刷新 {provider} 模型失败：{message}")),
+            // 「保存生效」（B 方案）由设置页发起；组合没变、界面无需变化 ——
+            // 候选重算与设置页状态条都在宿主侧（gui.rs 的事件桥）。
+            UiEvent::SettingsApplied { .. } => {}
+            // 同上：设置页会就地显示失败；这里报提示给对话页兜底。
+            UiEvent::SettingsApplyFailed { message } => self.ui.set_notice(message),
         }
         self.snapshot();
         cx.notify();

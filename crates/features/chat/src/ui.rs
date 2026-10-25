@@ -223,9 +223,14 @@ impl ChatUi {
 
     /// 用户提交一行（宿主在 submit 时调用；编排层随后也会把它写进历史）。
     /// 同时推进提交边界：取消只丢弃模型输出，不丢用户输入（与 REPL 语义一致）。
+    ///
+    /// 这也是「生成中」的**起点**：宿主发 `Cmd::Submit` 前调用本方法，置位
+    /// [`Self::generating`]；终点是 `close_turn` / `rollback`（轮末、取消、错误、
+    /// fast-fail 都会走到）。此前旗标从未置位，宿主的生成中拦截与退出等待全是死代码。
     pub fn push_user(&mut self, text: &str) {
         self.entries.push(Entry::User(text.to_string()));
         self.committed = self.entries.len();
+        self.generating = true;
     }
 
     /// 消费一个编排事件（直播）。
@@ -804,6 +809,34 @@ mod tests {
 
         assert!(!ui.generating());
         assert!(matches!(&ui.entries[2], Entry::Note(t) if t.contains("1 次")));
+    }
+
+    #[test]
+    fn generating_starts_at_submit_and_ends_on_every_terminal_path() {
+        let mut ui = ChatUi::new();
+        assert!(!ui.generating());
+        ui.push_user("hi");
+        assert!(ui.generating(), "提交（push_user）即生成中");
+        ui.on_event(LoopEvent::Delta {
+            kind: DeltaKind::Text,
+            text: "答".into(),
+        });
+        assert!(ui.generating());
+        ui.on_event(LoopEvent::RoundEnded {
+            stop: RoundStop::Finished(FinishReason::Stop),
+            turns: 1,
+            round_usage: Usage {
+                input_tokens: 1,
+                output_tokens: 2,
+            },
+        });
+        assert!(!ui.generating());
+
+        // fast-fail（Rejected）也要收旗，否则旗标永久卡死
+        ui.push_user("再来");
+        assert!(ui.generating());
+        ui.rejected("缺能力".into());
+        assert!(!ui.generating());
     }
 
     #[test]

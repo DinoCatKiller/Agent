@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use agent_chat::{ChatView, Cmd, ModelChoice, StatusInfo, UiEvent};
 use agent_settings::SettingsService;
-use agent_settings::ui::{RefreshModelsCallback, SettingsView};
+use agent_settings::ui::{ApplySettingsCallback, RefreshModelsCallback, SettingsView};
 use agent_ui_kit::ely;
 use agent_ui_kit::ely::forms::Choice;
 use agent_ui_kit::ely::navigation::Tabs;
@@ -171,6 +171,20 @@ pub fn run(args: GuiArgs) -> i32 {
                 settings.update(cx, |view, _cx| view.set_on_refresh_models(on_refresh_models));
             }
 
+            // 「保存后生效」（B 方案）：设置页保存成功后把 `Cmd::ApplySettings` 发回 worker，
+            // 用**当前组合**重建 provider（重读磁盘的密钥 / 端点 / 代理 / 超时）。
+            // 生成中发去也只是排队（worker 轮内不处理命令），本轮结束自动生效。
+            // 结果由下方事件桥回灌设置页（`SettingsApplied` / `SettingsApplyFailed`）。
+            let on_apply_settings: ApplySettingsCallback = {
+                let cmd_tx = cmd_tx.clone();
+                Rc::new(move |_cx: &mut App| {
+                    let _ = cmd_tx.try_send(Cmd::ApplySettings);
+                })
+            };
+            if let Some(settings) = settings.as_ref() {
+                settings.update(cx, |view, _cx| view.set_on_apply_settings(on_apply_settings));
+            }
+
             let shell = cx.new(|cx| Shell {
                 chat: None,
                 settings,
@@ -217,11 +231,14 @@ pub fn run(args: GuiArgs) -> i32 {
             });
             shell.update(cx, |shell, _cx| shell.chat = Some(chat.clone()));
 
-            // 「连接提供商」成功后：重算可见候选并推给对话页（**无需重启**，切片 C1c A 方案）。
+            // 「连接提供商」成功后：重算可见候选并推给对话页（**无需重启**，切片 C1c A 方案）；
+            // 再补一发 `Cmd::ApplySettings`（B 方案）——重连的若是**当前生效**的条目
+            // （改密钥 / 端点），worker 重建后立刻用上新值；连的是新条目则重建无感。
             // 与 `on_manage_models` 同一条规矩：跨功能的线只由宿主接（`D6`）。
             if let Some(settings) = settings_handle.as_ref() {
                 let shell = shell.downgrade();
                 let args = chat_args.clone();
+                let cmd_tx = cmd_tx.clone();
                 // 注意：这里是**同步**回调（`set_on_connected` 的契约是 `Fn(&mut App)`），
                 // 会就地读配置 + 偏好。可接受：连接是低频的用户动作、读的是两个小文件；
                 // 高频路径（刷新模型）已放到后台执行器，见下方事件泵。
@@ -247,6 +264,8 @@ pub fn run(args: GuiArgs) -> i32 {
                             );
                         });
                     });
+                    // 生效命令（B 方案）：worker 轮内不处理命令，生成中发去也只是排队。
+                    let _ = cmd_tx.try_send(Cmd::ApplySettings);
                 });
                 settings.update(cx, |view, _cx| view.set_on_connected(on_connected));
             }
@@ -254,9 +273,9 @@ pub fn run(args: GuiArgs) -> i32 {
             // 桥：worker 的事件流 → 视图。`rx.recv().await` 在 GPUI 的执行器里轮询
             // （`X2` §8 已验证过这个形态）。
             //
-            // 除对话页外，联网刷新的结果还要回灌**设置页**（`C2d`）：按钮在那边，
-            // 成功 / 失败得就地看到。成功还要重算候选（新拉到的模型并进选择器）——
-            // 这两条跨功能的线只由宿主接（`D6`）。
+            // 除对话页外，联网刷新（`C2d`）与「保存生效」（B 方案）的结果都要回灌**设置页**：
+            // 按钮与保存动作在那边，成功 / 失败得就地看到；成功还要重算候选 ——
+            // 这几条跨功能的线只由宿主接（`D6`）。
             let settings_for_events = settings_handle.clone();
             let args_for_events = chat_args.clone();
             chat.update(cx, |_view, cx| {
@@ -265,24 +284,12 @@ pub fn run(args: GuiArgs) -> i32 {
                         match &event {
                             UiEvent::ModelsRefreshed { provider, models } => {
                                 let (provider, count) = (provider.clone(), models.len());
-                                // 重算候选 = 读配置 + 读偏好（两次文件读，硬约束 5：UI 线程禁阻塞）。
-                                // 放到**后台执行器**算，算完再回 UI 线程写视图。
-                                // worker 已把拉到的 id 写回配置，这里读得到。
+                                // 重算候选：worker 已把拉到的 id 写回配置，这里读得到。
+                                // 文件读放**后台执行器**（硬约束 5：UI 线程禁阻塞）。
                                 let args_bg = args_for_events.clone();
                                 let (all, visible) = cx
                                     .background_executor()
-                                    .spawn(async move {
-                                        let all = setup::model_choices(&args_bg);
-                                        let prefs =
-                                            setup::load_preferences(args_bg.config.as_deref());
-                                        let visible = setup::visible_choices(
-                                            &all,
-                                            &prefs,
-                                            &args_bg.provider,
-                                            &args_bg.model,
-                                        );
-                                        (all, visible)
-                                    })
+                                    .spawn(async move { recompute_choices(&args_bg) })
                                     .await;
                                 let all_for_settings = all;
                                 if let Some(settings) = settings_for_events.as_ref() {
@@ -320,6 +327,47 @@ pub fn run(args: GuiArgs) -> i32 {
                                     });
                                 }
                             }
+                            UiEvent::SettingsApplied { provider, model } => {
+                                // 配置可能变了（默认模型、条目端点…）：同 ModelsRefreshed
+                                // 重算候选；设置页状态条就地确认（B 方案）。
+                                let (provider, model) = (provider.clone(), model.clone());
+                                let args_bg = args_for_events.clone();
+                                let (all, visible) = cx
+                                    .background_executor()
+                                    .spawn(async move { recompute_choices(&args_bg) })
+                                    .await;
+                                let all_for_settings = all;
+                                if let Some(settings) = settings_for_events.as_ref() {
+                                    settings.update(cx, |view, cx| {
+                                        view.set_models(all_for_settings);
+                                        view.set_status(
+                                            format!("已生效：{provider} / {model}"),
+                                            false,
+                                        );
+                                        cx.notify();
+                                    });
+                                }
+                                let choices = visible
+                                    .into_iter()
+                                    .map(|(provider, model)| ModelChoice { provider, model })
+                                    .collect();
+                                if this
+                                    .update(cx, |view, cx| view.set_candidates(choices, cx))
+                                    .is_err()
+                                {
+                                    break; // 视图已销毁
+                                }
+                            }
+                            UiEvent::SettingsApplyFailed { message } => {
+                                // worker 的 message 已自带「旧连接保留」，这里原样转达。
+                                let message = message.clone();
+                                if let Some(settings) = settings_for_events.as_ref() {
+                                    settings.update(cx, |view, cx| {
+                                        view.set_status(message, true);
+                                        cx.notify();
+                                    });
+                                }
+                            }
                             _ => {}
                         }
                         if this.update(cx, |view, cx| view.apply(event, cx)).is_err() {
@@ -353,6 +401,19 @@ fn window_options() -> WindowOptions {
         }),
         ..Default::default()
     }
+}
+
+/// 重算候选清单（读配置 + 读偏好，两次文件读）：只该跑在**后台执行器**
+/// （硬约束 5：UI 线程禁阻塞）。`ModelsRefreshed`（C2d）与 `SettingsApplied`（B 方案）
+/// 两条回灌路径共用。
+///
+/// 返回 `(全量, 可见)`：全量给设置页的「管理模型」（关掉的还要能再打开），
+/// 可见给对话页的选择器。
+fn recompute_choices(args: &ChatArgs) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    let all = setup::model_choices(args);
+    let prefs = setup::load_preferences(args.config.as_deref());
+    let visible = setup::visible_choices(&all, &prefs, &args.provider, &args.model);
+    (all, visible)
 }
 
 // —— 外壳：标签页（对话 / 设置） ——

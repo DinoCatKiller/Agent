@@ -151,7 +151,9 @@ cargo test -p agent-config -- --ignored
 - [x] `app` 接入：`--config` 参数、密钥三级优先级、端点两级查找、代理与空闲超时可配。
 - [x] 用例：配置往返 / 缺文件为默认 / 未知字段被拒且不回显 / 密钥 Debug 打码 / 环境变量名。
 - [ ] 加密文件降级（无钥匙串环境）—— 见上节。
-- [x] `features/settings` 的设置界面（写配置 + 存钥匙串）—— ✅ 2026-10-12（`A` 语义：保存写盘、**重启生效**）。
+- [x] `features/settings` 的设置界面（写配置 + 存钥匙串）—— ✅ 2026-10-12（`A` 语义：保存写盘、
+      重启生效）；✅ 2026-10-25 改为 **B 方案：保存后立即生效**（`Cmd::ApplySettings` → worker 重建
+      provider；生效在 `app` 侧，本 crate 的读写接口不变）。
       本 crate 为此**补了一个出口**：`account_for`（钥匙串账号命名 `<provider>:api_key`）原先
       `pub` 但未 re-export，外部要写密钥只能自己拼一份账号名——那会让这个约定出现两个家。
 - [x] **UI 偏好独立文件** `models.toml`（2026-10-13，切片 `B`）：`prefs` 模块 + `Preferences`。

@@ -76,6 +76,12 @@ UI 的接入约定（`D3`「事件流 + 命令通道」）：`ChatUi::on_event` 
 本模块只负责**报提示**（`Notice` / 状态栏文案）——「刷新怎么拉、写回哪里、候选怎么算」都是装配层的
 知识（`D6`：跨功能的线与供应商细节不进 `features/*`）。
 
+**设置保存后立即生效**（`channel.rs` 的 `Cmd::ApplySettings` / `UiEvent::SettingsApplied`，B 方案，
+2026-10-25）：设置页保存成功后宿主发 `ApplySettings`，worker 用**当前组合**重建 provider
+（重读磁盘的密钥 / 端点 / 代理 / 超时）。本模块只提供契约与兜底提示——「保存」与「发起」在
+`features/settings`，重建在 `app` 的 worker。**生成中该命令排队**（worker 轮内不处理命令，
+轮末自动生效）；`SettingsApplyFailed` 时旧连接原样保留。
+
 两条铁律（改这里之前必读）：
 
 1. **只在 `End` 后入史**：增量攒在 `TurnDraft`，取消 / 出错丢弃即回滚（截断是 `End{Truncated}`，照常入史——那是用户看到的输出）。`ui.rs` 的显示回滚与它对齐：`ModelTurnEnded` 是提交边界。

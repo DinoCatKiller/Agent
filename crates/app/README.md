@@ -40,7 +40,9 @@ cargo run -p agent-app --features gui -- gui --provider openai-compatible --mode
 # 对话页底部有**模型选择器**：内置清单的 chip（`openai·gpt-4o` 这样）+ 手输模型名
 #   （自定义端点用）。点 chip = 切 (provider, model)，**生成中不可切**，切换即时生效。
 # 设置页每行是**一个供应商的 API Key**（钥匙串按 `<provider>:api_key` 存）；
-#   配置项（默认供应商 / 模型 / 端点 / 代理 / 超时）按 `A` 语义**重启后生效**。
+#   配置项（默认供应商 / 模型 / 端点 / 代理 / 超时）**保存后立即生效**（B 方案）：
+#   保存成功 → `Cmd::ApplySettings` 打给 worker → 用当前组合重建 provider（重读磁盘）；
+#   正在生成时该命令排队，本轮结束自动生效；结果回灌设置页状态条。
 # 设置页的「连接提供商」：从内置目录挑厂商 → 写 `[providers.<id>]` + 存钥匙串
 #   → **立刻**出现在模型选择器里（不用重启；落点是 `features/settings`，映射在 `setup::catalog_rows`）。
 # 联网刷新模型清单（C2）：设置页「管理模型」里每个条目一个「刷新」按钮 →
@@ -90,8 +92,8 @@ REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、�
 
 ## 它不能做什么
 
-- ❌ 设置**保存后立即生效**：`A` 语义 = 重启生效（`S1` 切片 5），B 方案的热切换未做。
-  （唯一例外：「连接提供商」只**新增**条目、不动生效中的那对 `(provider, model)`，故宿主会立刻刷新选择器。）
+- ❌ 生成中的**轮内**热切换：切换 / 设置生效都等本轮结束（UI 拦截或命令排队），不打断正在
+  生成的一轮（当前 provider 由 `Arc` 持有，轮内切换不安全）。
 - ❌ 无钥匙串服务时的加密文件降级（`R1` 已识别该降级路径，未实现）。
 - ❌ 密钥永不入库、不打日志（硬约束 5）。
 
@@ -102,7 +104,8 @@ src/main.rs     clap 命令定义 + 分发（self-check 保留在 main 内）
 src/setup.rs    装配共用：配置 / 密钥 / 供应商构造 / demo 工具（所有命令共用）
                 —— `build_provider` 返回 `BuiltProvider`（`ErasedProvider` + 可选 `RefreshableModels` 刷新句柄，同一 `Arc`；C2）
 src/worker.rs   会话宿主：唯一拥有 `Chat` + `SessionRepo`（TUI 与 GUI **共用**，语义只有一份）
-                —— 处理 `Cmd::SelectModel`（切 (provider, model)）与 `Cmd::RefreshModels`（联网刷新清单，C2）
+                —— 处理 `Cmd::SelectModel`（切 (provider, model)）、`Cmd::RefreshModels`（联网刷新清单，C2）
+                与 `Cmd::ApplySettings`（保存后按当前组合重建 provider，B 方案）
 src/repl.rs     chat 命令：rustyline 输入 + 消费 LoopEvent 打印（事件消费的参考实现）
 src/tui.rs      tui 命令：终端生命周期 + 事件泵（键鼠）
 src/gui.rs      gui 命令（`gui` feature）：窗口 + 后台 tokio runtime + 事件桥

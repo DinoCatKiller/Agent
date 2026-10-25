@@ -1,7 +1,10 @@
 //! GPUI 设置面板（`gui` feature）。
 //!
-//! 语义按 `A` 方案：**保存只写盘，下次启动生效**（`S1` 切片 5 拍板）。界面因此只做三件事：
-//! 读出来显示、校验后写回、把「需要重启」讲清楚。
+//! 语义按 B 方案：**保存落盘后立即生效**——保存成功时宿主把 `Cmd::ApplySettings` 发回
+//! worker，用当前生效组合重建 provider（重读磁盘的密钥 / 端点 / 代理 / 超时）；
+//! 正在生成时命令排队，本轮结束自动生效。结果由 worker 经 `SettingsApplied` /
+//! `SettingsApplyFailed` 回灌 [`Self::set_status`]。界面只做四件事：
+//! 读出来显示、校验后写回、发起「生效」、如实转达结果。
 //!
 //! 两条安全线（`R1` / 硬约束 5）：
 //! - 已存的密钥**不回显**，界面只显示「来源」；输入框里是本次要写入的新值。
@@ -37,6 +40,12 @@ enum Page {
 ///
 /// 提成别名只是为了让字段与注入点的签名不撞 clippy 的 `type_complexity`；语义见字段注释。
 pub type RefreshModelsCallback = Rc<dyn Fn(&str, &mut App)>;
+
+/// 「保存后生效」回调（B 方案）：宿主接到它后把 `Cmd::ApplySettings` 发回 worker。
+///
+/// 与 [`RefreshModelsCallback`] 同一条规矩：`features/*` 不碰命令通道（`D6`），
+/// 本视图只发起；结果由 worker 经 `SettingsApplied` / `SettingsApplyFailed` 回灌。
+pub type ApplySettingsCallback = Rc<dyn Fn(&mut App)>;
 
 /// 面板状态。
 pub struct SettingsView {
@@ -78,6 +87,9 @@ pub struct SettingsView {
     /// 与 [`Self::on_connected`] 同一条规矩：先给空回调，宿主用
     /// [`Self::set_on_refresh_models`] 注入 —— `features/*` 不碰命令通道（`D6`）。
     on_refresh_models: RefreshModelsCallback,
+    /// 「保存后生效」回调（B 方案）：宿主把它转成 `Cmd::ApplySettings` 发回 worker，
+    /// worker 用当前组合重建 provider。注入规矩同 [`Self::on_refresh_models`]。
+    on_apply_settings: ApplySettingsCallback,
     /// 偏好快照（哪些模型被关掉了）。开关是**受控**的：点一下 → 落盘 → 更新这里。
     hidden: Preferences,
     /// `Some` = 配置文件读不动（坏 TOML 等）：此时**禁止保存**。
@@ -232,6 +244,7 @@ impl SettingsView {
             connect_key,
             on_connected,
             on_refresh_models: Rc::new(|_, _| {}),
+            on_apply_settings: Rc::new(|_| {}),
             hidden,
             load_error,
             status: None,
@@ -275,6 +288,11 @@ impl SettingsView {
     /// 由宿主注入「刷新模型」回调（`C2d`）：本视图只发起，拉取与写回都在 worker 侧。
     pub fn set_on_refresh_models(&mut self, on_refresh_models: RefreshModelsCallback) {
         self.on_refresh_models = on_refresh_models;
+    }
+
+    /// 由宿主注入「保存后生效」回调（B 方案）：本视图只发起，重建在 worker 侧。
+    pub fn set_on_apply_settings(&mut self, on_apply_settings: ApplySettingsCallback) {
+        self.on_apply_settings = on_apply_settings;
     }
 
     /// 宿主把刷新后的**全量**候选灌回来（`C2d`，收 `ModelsRefreshed` 后）。
@@ -475,7 +493,7 @@ impl SettingsView {
         cx.notify();
     }
 
-    /// 保存：校验 → 写配置 → （填了新密钥才）写钥匙串。
+    /// 保存：校验 → 写配置 → （填了新密钥才）写钥匙串 → 通知宿主发起「生效」（B 方案）。
     fn save(&mut self, cx: &mut Context<Self>) {
         if let Some(error) = &self.load_error {
             self.status = Some(Status {
@@ -549,9 +567,13 @@ impl SettingsView {
 
         self.refresh_key_sources();
         self.status = Some(Status {
-            message: format!("已保存{key_note}（**重启后生效**）"),
+            message: format!("已保存{key_note}，正在生效…"),
             error: false,
         });
+        // 生效命令交给宿主转回 worker（B 方案）：重建 provider、重读磁盘。
+        // 结果不在这里猜 —— worker 完成后经 `SettingsApplied` / `SettingsApplyFailed`
+        // 回灌 [`Self::set_status`]；生成中发去也只是排队，本轮结束自动生效。
+        (self.on_apply_settings.clone())(cx);
         cx.notify();
     }
 
@@ -939,7 +961,7 @@ impl SettingsView {
     /// 「通用」页：连接参数 + 每供应商一行密钥 + 动作条。
     fn general_page(&self, cx: &mut Context<Self>, fg: Hsla, dim: Hsla, err: Hsla) -> AnyElement {
         let connection = SettingsSection::new("连接")
-            .description("保存只写盘，重启后生效")
+            .description("保存后立即生效；若正在生成，本轮结束后自动生效")
             .row(
                 SettingsRow::new("默认供应商")
                     .description("点 chip 选，或手输自定义适配器名")
@@ -1043,7 +1065,7 @@ impl SettingsView {
                     .text_xs()
                     .text_color(dim)
                     .child(format!("配置文件：{}", self.config_file))
-                    .child("保存只写盘，重启后生效"),
+                    .child("保存后立即生效；若正在生成，本轮结束后自动生效"),
             )
             .child(connection)
             .child(keys)

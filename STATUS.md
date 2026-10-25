@@ -4,7 +4,7 @@
 |---|---|
 | ID | `S1` |
 | 类型 | 状态 · **概览** |
-| 更新 | 2026-10-21 |
+| 更新 | 2026-10-25 |
 | 何时读 | **每次开工第一眼**，5 秒确认「现在做什么」 |
 | 规模 | ~0.5k token |
 
@@ -13,97 +13,62 @@
 
 ## 当前任务
 
-**模型选择器改造（对齐 opencode 的交互）** ｜ 状态：✅ 完成（切片 `A` → `C1c` + `C2a`/`C2b`/`C2c`/`C2d` 全部落地）
+**设置保存后立即生效（B 方案）** ｜ 状态：✅ 完成（2026-10-25）
 
-把对话页的「一排 chip + 手输框」换成「胶囊 + 搜索弹层 + 管理模型页」，
-并把供应商从「用户得填适配器名」改成「填厂商名」；随后补「联网拉模型清单」。
+把「保存只写盘、重启后生效」改为「保存落盘 → worker 用**当前组合**重建 provider」
+（重读磁盘：密钥 / 端点 / 代理 / 流空闲超时），复用 `Cmd::SelectModel` 的重建通路。
+
+关键发现：worker 轮内不处理命令（`worker.rs` 的 `CancelSlot` 注释），生成中发来的命令
+本来就**排队、轮末生效**——「生成中不许保存」的旧决策随之消解：保存总是允许，
+生效自动延迟到轮末（与切模型等其它命令的排队语义一致），不需要禁用保存按钮、
+不需要 pending 标志、不需要把忙闲信号穿到设置页。
 
 | # | 切片 | 落点 | 状态 |
 |---|------|------|------|
-| A | 胶囊 + 搜索弹层（搜索 / 按供应商分组 / 当前项打勾 / 底部入口）；清单改为「配置声明 ∪ 内置目录 ∪ 当前生效」 | `features/chat` `/` `app` | ✅ 2026-10-13 |
-| B | 「管理模型」页（搜索 + 每模型开关）+ **独立偏好文件** `models.toml` | `features/settings` `/` `kernel/config` | ✅ 2026-10-13 |
-| C1a | 内置供应商目录（`R5`）+ 密钥寻址改由目录给 | `kernel/providers` `/` `kernel/config` | ✅ 2026-10-13 |
-| C1b | 条目化：`ProviderConfig.adapter`、`build_provider` 读表、`R1` §1/§2 改写 | `app` `/` `kernel/config` | ✅ 2026-10-13 |
-| C1c | 「连接提供商」页：从目录里挑 → 写条目 + 存密钥 → 立刻出现在选择器里 | `features/settings` `/` `app` | ✅ 2026-10-16 |
-| C2a | 适配器联网拉取：`GET /models` + 能力字典合并 + 共享缓存 + `RefreshableModels` 契约 | `kernel/providers` | ✅ 2026-10-17 |
-| C2c | worker 命令通道新增 `Cmd::RefreshModels` + 候选重算 + 写回 `providers.<id>.models` | `app` / `features/chat` | ✅ 2026-10-17 |
-| C2d | 「管理模型」页每个条目一个「刷新」按钮 + 失败降级提示（`ModelsRefreshFailed` → 回灌设置页） | `features/settings` / `app` | ✅ 2026-10-19 |
-| C2b | Anthropic 镜像实现：`GET /v1/models?limit=1000` + `RefreshableModels` + 并集缓存 | `kernel/providers` | ✅ 2026-10-21 |
+| 1 | 契约：`Cmd::ApplySettings` + `UiEvent::SettingsApplied` / `SettingsApplyFailed` | `features/chat` `channel.rs` | ✅ 2026-10-25 |
+| 2 | worker 处理 `ApplySettings`：`factory.build(&current)` 重建（失败旧连接保留）；**故意不做 busy 检查**——排队即延迟 | `app/worker.rs` | ✅ 2026-10-25 |
+| 3 | 设置页保存收尾发起生效（`ApplySettingsCallback` 回调）+ 三处「重启后生效」文案改掉 | `features/settings` | ✅ 2026-10-25 |
+| 4 | 宿主接线：注入回调、`on_connected` 补发（重连当前条目立即生效）、事件桥回灌（候选重算抽成 `recompute_choices` 共用） | `app/gui.rs` | ✅ 2026-10-25 |
+| 5 | 端到端测试 ×3：重建后下一轮可用 / 生成中排队轮末生效 / 失败旧连接可用 | `app/tui.rs` tests | ✅ 2026-10-25 |
+
+顺带修一个真 bug：`ChatUi.generating` 从未被置 `true`（只有轮末各终点清 `false`）——
+以 `push_user`（发 `Cmd::Submit` 前的既有调用）为轮首锚点置位。GUI 的生成中拦截
+（切会话 / 新建 / 切模型三处守卫）与 TUI「退出前等本轮收尾」由此**恢复设计意图**。
 
 本轮仍不做：`GUI` §3 的 L3 CSS 兼容层。
-`C2` 切片已全部落地。
-
-### 并行任务：Ely 组件库重构（视觉 + 结构，2026-10-21）
-
-把三个界面的组件层从「手写 `div` + gpui-component」换成 **Ely GPUI Component**
-（`ely-gpui-component`，与 `gpui-kit` 钉同一份 `gpui-pre`，类型互通）。
-
-| # | 改动 | 落点 |
-|---|------|------|
-| 1 | `ely` 重导出口 + `ely::init` 与资产源叠加（`ely::Assets::before(KitAssets)`）+ 令牌覆盖 Ely `Palette` 34 个语义槽 | `kernel/ui-kit` |
-| 2 | 顶栏换 `Tabs`（`Choice` + `on_change`），根焦点换 `FocusScope` | `app/gui.rs` |
-| 3 | 会话栏 `Sidebar` + `ConversationItem`（自行按天分组）；转录 `MessageList`（虚拟列表）+ `MessageBubble` + `StreamingMarkdown`；输入区 `PromptInput`；模型选择器 `Popover` | `features/chat/gpui.rs` |
-| 4 | 设置页换 `SettingsSection` / `SettingsRow` 排布，录入换 `TextInput` / `PasswordInput` / `SearchInput`，模型开关换 `Switch` | `features/settings/ui.rs` |
-
-顺带解决 `G-3`（长会话虚拟列表）：`MessageList` 只渲染可见区，转录不再每帧克隆全量元素。
-
-剩：**人工目检一轮**（重点看密度、字号档位、Ely 深色盘与令牌的色差）。
-
-### 上一轮：GPUI 界面走查（2026-10-15）
-
-按 impeccable / design-taste-frontend 两个 skill 的 GPUI 适配层走查三个界面
-（Shell 顶栏 / 对话页 / 设置页）。首轮做完静态层，验证到 L0（check + clippy + test 全绿）。
-
-| # | 改动 | 落点 |
-|---|------|------|
-| 1 | `mutedFg` #6b7280 → #9aa3b5：灰字在 surface 上从 ≈2.9:1 提到 ≈5.7:1（过 4.5:1） | `design/tokens.json` |
-| 2 | 删全部 1px 分隔线（顶栏 / 侧栏 / 输入区 / 设置页 ×2 / 弹层），改 surface↔bg 色阶分层 | `app/gui.rs`、`features/chat/gpui.rs`、`features/settings/ui.rs` |
-| 3 | 转录条目分层：用户右对齐气泡、助理 Bot 图标 + base 字号全墨正文、思考小字暗紫、工具用 SquareTerminal 图标（删 ⚙ emoji）+ 状态签 | `features/chat/gpui.rs` |
-| 4 | 状态栏去重（provider/model 原来出现两次）、生成中 Spinner、取消按钮改 outline | 同上 |
-| 5 | 会话选中态改 accent 淡彩底（原来与 hover 同色、不可辨）；侧栏空态改可操作文案 | 同上 |
-| 6 | 顶栏品牌词标 + tab 选中 2px accent 底条；设置页标题升级、密钥行三行结构、连接提供商文案用户化 | `app/gui.rs`、`features/settings/ui.rs` |
-
-剩：**人工目检一轮**（远程会话截屏取不到真实桌面，老问题）——重点看转录密度、气泡宽度、
-Spinner 节奏。动效只做了 Spinner 一处（"one authored moment"），其余动效待确认后再加。
-
-顺带修掉两个真问题（都是「不裸跑就发现不了」那类）：
-
-1. **GPUI 起窗口时没注册 asset source** → 所有 SVG 图标原本**都是空白**（勾 / 放大镜 / 下拉箭头）。
-2. **`api_key_env` 把非 anthropic 一律映射到 `OPENAI_API_KEY`** → 接了 Ollama 会**拿你的 OpenAI 密钥去发**。
-   现在变量名由目录按条目给出，`ollama` 这类没有约定名的条目只看钥匙串（有单测钉住）。
 
 ## 待办池（本轮之后）
 
 | 候选 | 一句话 | 备注 |
 |------|--------|------|
-| `B` 方案 | 设置保存后**立即生效**，不再要求重启 | 需先定「生成中不许保存」的交互 |
 | `GUI` §3 · L3 CSS 层 | CSS 运行时语义子集，吃现成样式资产 | 体量大，四级递进、每级有停止条件 |
 | `G-5` 打包分发 | MSI（`cargo-wix`）+ 体积核对 | 卡在 GPUI 体积，先量再决定（`S2` Q6） |
 | `M7` MCP 客户端 | 自研最小 stdio 客户端，列工具 + 调工具 | `RM` 最后一个里程碑，曾按「使用频率不高」暂缓 |
+| `G-4` 交互补齐 | 快捷键（Actions）、命令面板、多窗口 | `GUI` §2 唯一未动的一项 |
 
 ## 阻塞
 
 无。
 
 > **两件待人工**：① `tmp/gpui-spike` 的中文 IME 实测（`X2` §7 最后一条）；
-> ② GUI 窗口的观感 —— 截屏在远程会话下取不到真实桌面，只能肉眼看。
-> 另：**本地有 5 个未推送的提交**（`A` → `C1a`），`gh` token 失效后一直没推（`gh auth login -h github.com` 即可恢复）。
+> ② GUI 窗口的观感（Ely 重构 + 本轮改动后）—— 截屏在远程会话下取不到真实桌面，只能肉眼看。
+> 另：本地有未推送的提交（`gh` token 失效后一直没推，`gh auth login -h github.com` 即可恢复）。
 
 ## 上一阶段
 
-- **运行中切模型 + 多份密钥（2026-10-12）**：补齐「配置多个密钥、随手切模型」。
-  ①`channel.rs` 加 `Cmd::SelectModel` / `UiEvent::ModelChanged`——按 **(provider, model) 组合**切
-  （密钥按 provider 存，换家必须重建 provider），生成中拒绝、界面不做乐观更新（以 worker 播报为准）；
-  ②worker 持有 `ProviderFactory`，切换时重建；`--api-key` **只对启动时那个 provider 有效**
-  （否则会把 A 家的密钥送给 B 家）；③GPUI 加模型选择器（内置清单 chip + 手输模型名）；
-  ④设置界面改为**每供应商一行密钥**；`Draft` 去掉密钥字段。
-  顺带修两处：测试夹具读了开发者本机真实配置（治本：测试用空配置，`config` 显式指向临时文件）；
-  文档里的配置路径少写一层（真实是 `%APPDATA%\CodingRocket\config\config.toml`）。
-- **二期 GUI 启动轮（2026-10-12）**：`D3` 方案 A 落地 —— ①可行性探针（编译 / 起窗口 / tokio 桥全通，`X2` §8）；②新建 `kernel/ui-kit`（令牌 → GPUI 主题桥）；③`features/chat` 的 GPUI 渲染端（`gpui.rs` + `channel.rs`，通道契约上移到切片）；④`app` 的 `gui` 子命令（`gui.rs` + 抽出的 `worker.rs`，`gui` feature 默认关）；⑤设置界面（`features/settings` 三件套，`A` 语义）。顺带修掉两处「只写不读」：`default_provider` / `default_model` 现在真生效（`R1` §1.1），自定义端点不再死在 `no route for model`。
-- **补规格文档（2026-10-11）**：`R3`（可观测性与成本 —— 结论是新建 `kernel/telemetry` 骨架）、`Q2`（效果评测与回归）、`Q3`（安全与合规）。均先立约定，实现随各自触发条件。
-- **定名落地（2026-10-11）**：只改用户可见那一层 —— 可执行文件名 `agent-app` → **`codingrocket`**；crate 包名维持 `agent-*`（内部技术名）。
-- **`R1` 完成（2026-10-11）**：新建 `kernel/config`（TOML 配置文件 + 系统钥匙串）；`app` 接入 `--config` 与密钥三级优先级。
-- **`A6` 完成（2026-10-11）**：候选内退避重试接进降级链（`Router::with_retry`），流式窗口仍是「首事件之前」。
+- **模型选择器改造（对齐 opencode 的交互，2026-10-13 → 10-21）**：切片 `A` → `C1c` + `C2a`/`C2b`/`C2c`/`C2d`
+  全部落地——胶囊 + 搜索弹层、「管理模型」页 + 独立偏好文件 `models.toml`、内置供应商目录（`R5`）、
+  条目化配置（用户只填厂商名）、「连接提供商」页、双适配器联网拉模型清单
+  （`RefreshableModels`：OpenAI `GET /models` + Anthropic `GET /v1/models?limit=1000`，
+  并集缓存、失败不清空）、worker 通道 + 逐条目刷新按钮。
+- **Ely 组件库重构（2026-10-21）**：三界面组件层换成 Ely GPUI Component；`MessageList`
+  虚拟列表解决 `G-3`（长会话性能）。
+- **GPUI 界面走查（2026-10-15）**：色阶分层、消息层级、对比度修复；顺带修「SVG 资产源未注册
+  → 图标全空白」与「`api_key_env` 把 Ollama 的密钥错发给 OpenAI」两个真问题。
+- **运行中切模型 + 多份密钥（2026-10-12）**：`Cmd::SelectModel` / `UiEvent::ModelChanged` 按
+  (provider, model) 组合切，worker 持 `ProviderFactory` 重建；GPUI 模型选择器；每供应商一行密钥。
+- **二期 GUI 启动轮（2026-10-12）**：`D3` 方案 A 落地——探针、`kernel/ui-kit`、`features/chat`
+  的 GPUI 渲染端（通道契约上移到切片）、`app` 的 `gui` 子命令、设置界面三件套。
 
 ## 相关
 
