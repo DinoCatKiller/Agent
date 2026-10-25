@@ -13,7 +13,8 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use agent_common::{
     Capability, ContentPart, DeltaKind, ErrorCategory, FinishReason, ModelRequest, ModelResponse,
@@ -25,6 +26,7 @@ use agent_transport::{
 };
 use async_stream::stream;
 use futures::StreamExt;
+use futures::future::BoxFuture;
 use reqwest::RequestBuilder;
 use serde_json::{Map, Value, json};
 
@@ -35,6 +37,31 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 /// Anthropic 请求 `max_tokens` **必填**；调用方未给时的兜底值（`P2` 已知坑）。
 pub const DEFAULT_MAX_TOKENS: u32 = 4096;
+
+/// 单次 `GET /v1/models` 拉取的超时（`C2b`）：传输层 `HttpConfig` 默认不带请求超时，
+/// 不设会让 worker 的刷新循环被一个不响应的端点永久占住（与 `openai` 的 `C2a` 同口径）。
+const MODELS_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// 由一个模型 id 得出 `ModelSpec`（`C2b` 的字典合并口径，与 [`crate::openai::model_spec_for`] 同构）。
+///
+/// - 命中 [`anthropic_default_models`] → 沿用官方规格（窗口 / 能力），只把 `provider` 改成
+///   `provider_id`（官方条目默认写 `anthropic`，兼容端点也走本适配器）；
+///   官方规格 `capabilities_known = true`，可据此 fast-fail。
+/// - 未命中（未知 / 兼容实现模型）→ **保守默认**（[`crate::conservative_spec`]）：
+///   仅 `Text`、128k 上下文、4096 最大输出，且 `capabilities_known = false` ——
+///   保守不等于拦截（`P2`：别误杀兼容端点模型）。
+pub fn anthropic_model_spec_for(provider_id: &str, id: &str) -> ModelSpec {
+    match anthropic_default_models()
+        .into_iter()
+        .find(|spec| spec.id == id)
+    {
+        Some(mut spec) => {
+            spec.provider = provider_id.to_string();
+            spec
+        }
+        None => crate::conservative_spec(provider_id, id),
+    }
+}
 
 /// Anthropic 适配器配置。
 ///
@@ -117,7 +144,9 @@ pub struct AnthropicCompatible {
     client: Arc<HttpClient>,
     base_url: String,
     api_key: Option<String>,
-    models: Vec<ModelSpec>,
+    /// 模型缓存（`C2b`）：`Arc<RwLock<..>>` 让刷新句柄与主实例**共享同一份**，
+    /// 刷新成功后 `list_models()` 自动读到最新值；失败时缓存保持原状。
+    models: Arc<RwLock<Vec<ModelSpec>>>,
 }
 
 /// 手写 `Debug`：`api_key` 脱敏（同 [`AnthropicConfig`]）。
@@ -142,12 +171,23 @@ impl AnthropicCompatible {
             client: Arc::new(client),
             base_url: config.base_url,
             api_key: config.api_key,
-            models: config.models,
+            models: Arc::new(RwLock::new(config.models)),
         })
     }
 
     fn messages_url(&self) -> String {
         format!("{}/v1/messages", self.base_url.trim_end_matches('/'))
+    }
+
+    /// `GET {base_url}/v1/models`（`C2b` 联网拉取）。与 `/v1/messages` 同版本头鉴权。
+    ///
+    /// 带 `limit=1000`：Anthropic Models API **默认只回 20 条**且分页，不带参数会静默截断
+    /// 清单（兼容实现忽略该参数，无副作用）。
+    fn models_url(&self) -> String {
+        format!(
+            "{}/v1/models?limit=1000",
+            self.base_url.trim_end_matches('/')
+        )
     }
 
     fn with_auth(&self, builder: RequestBuilder) -> RequestBuilder {
@@ -160,7 +200,65 @@ impl AnthropicCompatible {
 
     /// 能力协商 fast-fail（`A2` §1 / `Q1` 用例 12）：发请求**之前**拒绝不支持的组合。
     pub fn check_capabilities(&self, req: &ModelRequest) -> Result<(), ProviderError> {
-        crate::check_model_capabilities(self.id, &self.models, req)
+        let models = self.models.read().unwrap_or_else(|e| e.into_inner());
+        crate::check_model_capabilities(self.id, &models, req)
+    }
+
+    /// 联网拉取模型清单（`C2b`）：`GET /v1/models` → 与内置字典合并后返回。
+    ///
+    /// 合并策略与 `openai`（`C2a`）同口径：拉到的 id 命中内置字典沿用官方规格；未命中的
+    /// 未知模型回落保守默认（仅 `Text`、128k 上下文、4096 最大输出，`capabilities_known = false`），
+    /// 放行不拦截（`P2`：别误杀兼容端点模型）。
+    /// **只拉取、不写缓存**：写缓存由 [`crate::RefreshableModels::refresh_models`] 负责，
+    /// 由它保证「失败不清空」的契约。
+    ///
+    /// **健壮性**：单次请求自带 [`MODELS_FETCH_TIMEOUT`] 超时（传输层默认无请求超时，否则一个
+    /// 不响应的端点会永久占住 worker 的刷新循环）；响应体**必须**含非空 `data` 数组，否则按失败
+    /// 处理 —— 宁可保留旧缓存，也不要用空清单把候选与协商一起清掉。
+    pub async fn fetch_models(&self) -> Result<Vec<ModelSpec>, ProviderError> {
+        use tokio_util::sync::CancellationToken;
+        let request = self
+            .with_auth(self.client.client().get(self.models_url()))
+            .timeout(MODELS_FETCH_TIMEOUT);
+        let response = self
+            .client
+            .send(request, &CancellationToken::new())
+            .await
+            .map_err(|e| crate::map_transport_error(self.id, &e))?;
+        let status = response.status();
+        if !status.is_success() {
+            let raw = response.json::<Value>().await.unwrap_or(Value::Null);
+            return Err(map_http_error(self.id, status.as_u16(), raw));
+        }
+        let raw: Value = response.json().await.map_err(|e| {
+            ProviderError::new(self.id, ErrorCategory::Unknown).with_message(e.to_string())
+        })?;
+        let ids: Vec<String> = match raw.get("data").and_then(Value::as_array) {
+            Some(arr) => arr
+                .iter()
+                .filter_map(|m| m.get("id").and_then(Value::as_str).map(str::to_string))
+                .collect(),
+            None => {
+                return Err(ProviderError::new(self.id, ErrorCategory::Unknown)
+                    .with_message("GET /v1/models 响应缺少 `data` 数组（保留已有模型清单）"));
+            }
+        };
+        if ids.is_empty() {
+            return Err(ProviderError::new(self.id, ErrorCategory::Unknown)
+                .with_message("GET /v1/models 返回空清单（保留已有模型清单）"));
+        }
+        Ok(self.merge_with_dictionary(ids))
+    }
+
+    /// 拉到的 id 与内置字典合并（`C2b`）：命中沿用官方规格（`capabilities_known = true`），
+    /// 未知回落保守默认（`capabilities_known = false`，不据此拦截能力）。
+    fn merge_with_dictionary(&self, ids: Vec<String>) -> Vec<ModelSpec> {
+        let mut merged: Vec<ModelSpec> = ids
+            .into_iter()
+            .map(|id| anthropic_model_spec_for(self.id, &id))
+            .collect();
+        merged.sort_by(|a, b| a.id.cmp(&b.id));
+        merged
     }
 
     /// 归一化 `ModelRequest` → Anthropic Messages 请求体。`pub` 供契约测试断言（`Q1` 用例 4）。
@@ -375,7 +473,10 @@ impl Provider for AnthropicCompatible {
     }
 
     fn list_models(&self) -> Vec<ModelSpec> {
-        self.models.clone()
+        self.models
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     async fn chat(
@@ -450,6 +551,32 @@ impl Provider for AnthropicCompatible {
     fn count_tokens(&self, req: &ModelRequest) -> Option<u32> {
         let chars: usize = req.messages.iter().map(|m| m.text().chars().count()).sum();
         Some((chars / 4) as u32)
+    }
+}
+
+/// `C2b`：联网刷新模型清单。刷新句柄与主实例共享同一缓存 `Arc<RwLock<..>>`，
+/// 成功时与已有缓存**取并集**、失败不动 —— 保证拉取失败不清空现有可用清单
+/// （与 `openai` 的 `C2a` 同口径）。
+impl crate::RefreshableModels for AnthropicCompatible {
+    fn refresh_models(&self) -> BoxFuture<'static, Result<Vec<ModelSpec>, ProviderError>> {
+        let this = self.clone();
+        Box::pin(async move {
+            let fetched = this.fetch_models().await?;
+            // 走到这里说明拉取成功：与已有缓存取并集再写回。
+            // **取并集而非覆盖**：部分兼容端点 `/v1/models` 只回自己认识的一批，覆盖会让
+            // 用户手写 / 当前选中的模型「突然不在清单里」而被路由层拦下；拉到的同 id 覆盖旧的。
+            let mut cache = this.models.write().unwrap_or_else(|e| e.into_inner());
+            let mut merged: BTreeMap<String, ModelSpec> = cache
+                .iter()
+                .map(|spec| (spec.id.clone(), spec.clone()))
+                .collect();
+            for spec in fetched {
+                merged.insert(spec.id.clone(), spec);
+            }
+            let merged: Vec<ModelSpec> = merged.into_values().collect();
+            *cache = merged.clone();
+            Ok(merged)
+        })
     }
 }
 

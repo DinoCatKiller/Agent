@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| 状态 | ✅ 两个适配器已落地（M3：OpenAI 兼容族 `P1`、Anthropic `P2`，同一套 12 条用例各自全绿） |
+| 状态 | ✅ 两个适配器已落地（M3：OpenAI 兼容族 `P1`、Anthropic `P2`，同一套契约用例各自全绿） |
 | 边界 | 定义 `Provider` trait 与注册表；持有各家的协议实现。**不含** Agent 循环、路由策略、UI |
 | 上游 | `agent-common` |
 | 下游 | `features/*`（如 `chat`，编排核心）/ `kernel/routing`（通过 `ProviderRegistry`） |
@@ -24,10 +24,10 @@
 | `required_capabilities()` | 从 `ModelRequest` 推导所需能力，供路由阶段 fast-fail（4 个单测覆盖） |
 | `CallContext` | `request_id` + `cancel: CancellationToken` |
 | [`openai`](src/openai.rs) | OpenAI 兼容适配器：`OpenAiCompatible` + `OpenAiFramePolicy`（SSE→归一化、工具分片拼装、错误映射覆盖 `A2` §5），契约测试全绿（`Q1` 12 用例 + `C2` 拉取 / 保守规格用例） |
-| [`anthropic`](src/anthropic.rs) | Anthropic Messages 适配器：`AnthropicCompatible` + `AnthropicFramePolicy`（命名事件 SSE→归一化、`tool_use` 拼装、role 交替合并、错误映射覆盖 `A2` §5），契约测试全绿（`P2`） |
+| [`anthropic`](src/anthropic.rs) | Anthropic Messages 适配器：`AnthropicCompatible` + `AnthropicFramePolicy`（命名事件 SSE→归一化、`tool_use` 拼装、role 交替合并、错误映射覆盖 `A2` §5），契约测试全绿（`P2`；与 `openai` 同套用例 + `C2b` 拉取用例） |
 | `check_model_capabilities()` / `map_transport_error()` | 各适配器共用的能力协商 fast-fail 与传输错误映射（`lib.rs`，crate 私有） |
-| `RefreshableModels` | **联网刷新模型清单**契约（`C2a`）：`refresh_models() -> BoxFuture<..>`（object-safe，不引入 `async-trait`）。实现本 trait = 支持联网刷新；不实现的适配器宿主按「不支持」处理。`openai` 适配器实现之——`GET /models` 拉取后**成功才**并入内部缓存，失败保留原状 |
-| `model_spec_for()` / `conservative_spec()` | id → `ModelSpec` 的**字典合并口径**（`C2a`）：命中内置字典沿用官方规格（`capabilities_known = true`），未命中回落保守默认（仅 `Text`、128k 上下文、4096 最大输出，`capabilities_known = false`，路由层不据此拦能力）。`model_spec_for` 供 `openai` 拉取时用，`conservative_spec` 供各适配器与装配层共用 |
+| `RefreshableModels` | **联网刷新模型清单**契约（`C2`）：`refresh_models() -> BoxFuture<..>`（object-safe，不引入 `async-trait`）。实现本 trait = 支持联网刷新；不实现的适配器宿主按「不支持」处理。`openai`（`C2a`）与 `anthropic`（`C2b`）都实现之——`GET /models`（Anthropic 为 `/v1/models`）拉取后**成功才**并集进内部缓存，失败保留原状 |
+| `model_spec_for()` / `conservative_spec()` | id → `ModelSpec` 的**字典合并口径**（`C2a`）：命中内置字典沿用官方规格（`capabilities_known = true`），未命中回落保守默认（仅 `Text`、128k 上下文、4096 最大输出，`capabilities_known = false`，路由层不据此拦能力）。`model_spec_for`（OpenAI 族）/ `anthropic_model_spec_for`（Anthropic）供各适配器拉取时用，`conservative_spec` 供各适配器与装配层共用 |
 
 ## 两个必须知道的设计决定
 
@@ -43,7 +43,7 @@
 2. 写适配器：实现 `Provider`（`chat` 与 `stream` 都要）+ 用 `Arc<Client>` 包住连接。
 3. 声明 `ModelSpec` 清单（上下文窗口、能力、价格）。
 4. 错误映射表覆盖 `A2` §5 的全部类别。
-5. 按 `Q1` 的 12 条用例建 fixtures 契约测试。
+5. 按 `Q1` 的用例清单建 fixtures 契约测试。
 6. 在 [`AGENTS.md`](../../../AGENTS.md) §2 地图登记该供应商文档并把状态改成 ✅。
 
 ## 相关

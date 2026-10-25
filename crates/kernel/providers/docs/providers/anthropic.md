@@ -38,6 +38,8 @@ Anthropic Messages 协议：`x-api-key` 鉴权、SSE **命名事件**流（`even
 
 价格字段留空（波动大，由配置层覆盖）。清单是**接入时快照**：带日期的 id 不含糊，新模型由配置层注入自己的 `ModelSpec`。能力清单刻意**不含** `JsonMode` / `JsonSchema`（协议无 `response_format`，见 §3）。
 
+联网刷新（`C2b`）：`GET /v1/models?limit=1000`（与 `/v1/messages` 同头鉴权）。该端点**默认只回 20 条**且分页（`has_more` / `last_id`），故显式带 `limit=1000`；仍超过 1000 条的部署只能拿到首页——因为刷新是**并集**写入，截断只会少拿新条目，不会清掉已有清单。响应体必须含非空 `data`，否则按失败处理（保留旧缓存）。
+
 ## 3. 字段映射差异
 
 | 我们（A2） | Anthropic | 备注 |

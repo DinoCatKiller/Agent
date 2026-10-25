@@ -13,7 +13,7 @@
 
 ## 当前任务
 
-**模型选择器改造（对齐 opencode 的交互）** ｜ 状态：✅ 完成（切片 `A` → `C1c` + `C2a`/`C2c`/`C2d` 落地；`C2b` 可选）
+**模型选择器改造（对齐 opencode 的交互）** ｜ 状态：✅ 完成（切片 `A` → `C1c` + `C2a`/`C2b`/`C2c`/`C2d` 全部落地）
 
 把对话页的「一排 chip + 手输框」换成「胶囊 + 搜索弹层 + 管理模型页」，
 并把供应商从「用户得填适配器名」改成「填厂商名」；随后补「联网拉模型清单」。
@@ -28,9 +28,10 @@
 | C2a | 适配器联网拉取：`GET /models` + 能力字典合并 + 共享缓存 + `RefreshableModels` 契约 | `kernel/providers` | ✅ 2026-10-17 |
 | C2c | worker 命令通道新增 `Cmd::RefreshModels` + 候选重算 + 写回 `providers.<id>.models` | `app` / `features/chat` | ✅ 2026-10-17 |
 | C2d | 「管理模型」页每个条目一个「刷新」按钮 + 失败降级提示（`ModelsRefreshFailed` → 回灌设置页） | `features/settings` / `app` | ✅ 2026-10-19 |
+| C2b | Anthropic 镜像实现：`GET /v1/models?limit=1000` + `RefreshableModels` + 并集缓存 | `kernel/providers` | ✅ 2026-10-21 |
 
 本轮仍不做：`GUI` §3 的 L3 CSS 兼容层。
-`C2` 剩余：**`C2b`**（Anthropic 适配器镜像实现，可选）。
+`C2` 切片已全部落地。
 
 ### 并行任务：Ely 组件库重构（视觉 + 结构，2026-10-21）
 
@@ -75,7 +76,6 @@ Spinner 节奏。动效只做了 Spinner 一处（"one authored moment"），其
 
 | 候选 | 一句话 | 备注 |
 |------|--------|------|
-| `C2b` | Anthropic 适配器联网刷新镜像实现（可选） | `C2` 剩余切片 |
 | `B` 方案 | 设置保存后**立即生效**，不再要求重启 | 需先定「生成中不许保存」的交互 |
 | `GUI` §3 · L3 CSS 层 | CSS 运行时语义子集，吃现成样式资产 | 体量大，四级递进、每级有停止条件 |
 | `G-5` 打包分发 | MSI（`cargo-wix`）+ 体积核对 | 卡在 GPUI 体积，先量再决定（`S2` Q6） |
