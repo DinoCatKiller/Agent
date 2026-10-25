@@ -401,6 +401,10 @@ pub fn persist_provider_models(
 }
 
 /// 可切换的条目 id：两个通用适配器 ∪ 配置里**已连接**的 ∪ 当前生效的。
+///
+/// 唯一调用方 [`model_choices`] / [`provider_rows`] 都是 `gui` 专属，随它们收进 feature
+///（gui 默认关，不收门就是默认构建里的死代码）。
+#[cfg(feature = "gui")]
 fn entry_ids(config: &AppConfig, args: &ChatArgs) -> Vec<String> {
     let mut ids: Vec<String> = agent_providers::catalog::ADAPTERS
         .iter()
