@@ -32,6 +32,15 @@ pub enum Cmd {
     /// （拉取出错 / 写回失败 / 该条目不支持刷新，`C2d`）——
     /// **拉取失败不清空现有清单**（`C2a` 的契约）。
     RefreshModels { provider: String },
+    /// 设置已保存，要求用**当前生效组合**重建 provider（B 方案：重读磁盘——
+    /// 密钥、端点、代理、流空闲超时，全部以刚落盘的为准）。
+    ///
+    /// 与 [`Cmd::SelectModel`] 同一条重建通路，但没有新组合：组合不变，
+    /// 所以成功后不发 [`UiEvent::ModelChanged`]。
+    ///
+    /// **生成中发来会排队**：worker 轮内不处理命令，本命令要等本轮结束才被处理——
+    /// 即「保存总是成功，生效自动延迟到轮末」，与切模型等其它命令的排队语义一致。
+    ApplySettings,
 }
 
 /// worker → UI 的事件通道。
@@ -67,4 +76,14 @@ pub enum UiEvent {
     /// 与 [`UiEvent::Notice`] 分开，是为了让**发起刷新的设置页**能就地显示失败 ——
     /// 泛化的 `Notice` 分不清「是不是刷新失败」。**现有清单原样不动**（失败不清空，`C2a`）。
     ModelsRefreshFailed { provider: String, message: String },
+    /// 设置已生效（B 方案）：worker 已用当前组合重建 provider（保存 →
+    /// [`Cmd::ApplySettings`] 的回执）。
+    ///
+    /// 宿主据此**重算候选**（配置可能变了：默认模型、条目端点…）并回灌设置页状态条。
+    SettingsApplied { provider: String, model: String },
+    /// 设置生效失败（B 方案）：构造 provider 失败（缺密钥 / 未知供应商 / 坏端点）。
+    ///
+    /// 与 [`UiEvent::ModelsRefreshFailed`] 同一个理由单独列出：要让**发起保存的设置页**
+    /// 就地看到失败。**旧连接原样保留**——失败的只是重建，当前 provider 还能用。
+    SettingsApplyFailed { message: String },
 }

@@ -232,7 +232,7 @@ fn hex_or(key: &str, raw: &str, fallback: &str) -> Hsla {
 }
 
 /// 只接受 `#rrggbb`（可省 `#`）。8 位十六进制（带 alpha）暂不支持。
-fn hex(s: &str) -> Option<Hsla> {
+pub(crate) fn hex(s: &str) -> Option<Hsla> {
     let digits = s.trim().trim_start_matches('#');
     if digits.len() != 6 {
         return None;

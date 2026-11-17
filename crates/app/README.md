@@ -1,7 +1,7 @@
 # agent-app · 二进制入口
 
 > **包名 vs 可执行文件**：crate 包名是 `agent-app`（内部技术名，`S2` Q7），编译出的可执行文件是
-> **`codingrocket`**（`cargo build -p agent-app` → `codingrocket.exe`）。下面命令里的 `-p agent-app`
+> **`codingrocket`**（`just build` → `target/debug/codingrocket.exe`）。下面命令里的 `-p agent-app`
 > 接的是**包名**，不受影响。
 
 | | |
@@ -15,32 +15,35 @@
 ## 现在能做什么
 
 ```powershell
+# 所有命令统一走根 justfile；`just --list` 看全部
 # 帮助（clap 生成，含每个子命令的选项说明）
-cargo run -p agent-app -- --help
+just run -- --help
 
 # 契约层自检（7 段，断网）
-cargo run -p agent-app -- self-check
+just smoke
 
 # 对话 REPL（M4）。`--provider` / `--model` 都可省 —— 省了从配置文件取（R1）
-cargo run -p agent-app -- chat --provider openai-compatible --model gpt-4o
-cargo run -p agent-app -- chat          # 完全靠配置文件里的默认值也能起来（见下「解析顺序」）
+just chat --provider openai-compatible --model gpt-4o
+just chat          # 完全靠配置文件里的默认值也能起来（见下「解析顺序」）
 # 可选：--base-url（vLLM / 本地服务，传入后不做模型清单拦截）
 #       --api-key（缺省按「环境变量 → 系统钥匙串」解析，R1）
 #       --config PATH（配置文件；缺省走平台标准目录，R1）
 #       --model a,b（逗号分隔 = 失败降级链；A6：同一候选先退避重试 3 次，用尽才换下一家）
 
 # 一期 TUI（M5，`D3`）
-cargo run -p agent-app -- tui --provider openai-compatible --model gpt-4o
+just tui --provider openai-compatible --model gpt-4o
 # 可选：--db PATH（会话库路径，缺省 ./agent-sessions.db）
 
-# 二期 GUI（`D3` 方案 A）：**注意 `--features gui`**，默认构建不含 GPUI（详见下方「为什么 GUI 在 feature 后面」）
-cargo run -p agent-app --features gui -- gui --provider openai-compatible --model gpt-4o
+# 二期 GUI（`D3` 方案 A）：just 自动带 `--features gui`（详见下方「为什么 GUI 在 feature 后面」）
+just gui --provider openai-compatible --model gpt-4o
 # 同 tui 的 --db / --config / --api-key / --base-url；窗口 1100x760，标题 CodingRocket
 # 窗口内两个标签页：**对话**（`features/chat` 的 ChatView）与**设置**（`features/settings`）。
 # 对话页底部有**模型选择器**：内置清单的 chip（`openai·gpt-4o` 这样）+ 手输模型名
 #   （自定义端点用）。点 chip = 切 (provider, model)，**生成中不可切**，切换即时生效。
 # 设置页每行是**一个供应商的 API Key**（钥匙串按 `<provider>:api_key` 存）；
-#   配置项（默认供应商 / 模型 / 端点 / 代理 / 超时）按 `A` 语义**重启后生效**。
+#   配置项（默认供应商 / 模型 / 端点 / 代理 / 超时）**保存后立即生效**（B 方案）：
+#   保存成功 → `Cmd::ApplySettings` 打给 worker → 用当前组合重建 provider（重读磁盘）；
+#   正在生成时该命令排队，本轮结束自动生效；结果回灌设置页状态条。
 # 设置页的「连接提供商」：从内置目录挑厂商 → 写 `[providers.<id>]` + 存钥匙串
 #   → **立刻**出现在模型选择器里（不用重启；落点是 `features/settings`，映射在 `setup::catalog_rows`）。
 # 联网刷新模型清单（C2）：设置页「管理模型」里每个条目一个「刷新」按钮 →
@@ -90,8 +93,8 @@ REPL 内（`rustyline`，`X6` A2）：直接输入对话；↑↓ 翻历史、�
 
 ## 它不能做什么
 
-- ❌ 设置**保存后立即生效**：`A` 语义 = 重启生效（`S1` 切片 5），B 方案的热切换未做。
-  （唯一例外：「连接提供商」只**新增**条目、不动生效中的那对 `(provider, model)`，故宿主会立刻刷新选择器。）
+- ❌ 生成中的**轮内**热切换：切换 / 设置生效都等本轮结束（UI 拦截或命令排队），不打断正在
+  生成的一轮（当前 provider 由 `Arc` 持有，轮内切换不安全）。
 - ❌ 无钥匙串服务时的加密文件降级（`R1` 已识别该降级路径，未实现）。
 - ❌ 密钥永不入库、不打日志（硬约束 5）。
 
@@ -102,7 +105,8 @@ src/main.rs     clap 命令定义 + 分发（self-check 保留在 main 内）
 src/setup.rs    装配共用：配置 / 密钥 / 供应商构造 / demo 工具（所有命令共用）
                 —— `build_provider` 返回 `BuiltProvider`（`ErasedProvider` + 可选 `RefreshableModels` 刷新句柄，同一 `Arc`；C2）
 src/worker.rs   会话宿主：唯一拥有 `Chat` + `SessionRepo`（TUI 与 GUI **共用**，语义只有一份）
-                —— 处理 `Cmd::SelectModel`（切 (provider, model)）与 `Cmd::RefreshModels`（联网刷新清单，C2）
+                —— 处理 `Cmd::SelectModel`（切 (provider, model)）、`Cmd::RefreshModels`（联网刷新清单，C2）
+                与 `Cmd::ApplySettings`（保存后按当前组合重建 provider，B 方案）
 src/repl.rs     chat 命令：rustyline 输入 + 消费 LoopEvent 打印（事件消费的参考实现）
 src/tui.rs      tui 命令：终端生命周期 + 事件泵（键鼠）
 src/gui.rs      gui 命令（`gui` feature）：窗口 + 后台 tokio runtime + 事件桥

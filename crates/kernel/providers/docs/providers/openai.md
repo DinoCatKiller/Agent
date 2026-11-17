@@ -34,6 +34,8 @@ OpenAI Chat Completions 协议：Bearer 鉴权、SSE data-only 流（`[DONE]` �
 
 价格字段留空（波动大，由配置层覆盖）。兼容实现（DeepSeek 等）**不传这份清单**，由配置层注入自己的 `ModelSpec`。
 
+联网刷新（`C2a`）：`GET {base_url}/models` → 读 `data[].id`，与上面的字典合并（未命中回落保守规格）。响应 `data` 缺失或为空按失败处理，保留旧缓存；成功后与已有缓存**取并集**（同 id 以拉取结果为准）。
+
 ## 3. 字段映射差异
 
 | 我们（A2） | OpenAI | 备注 |

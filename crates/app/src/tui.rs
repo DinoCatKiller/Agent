@@ -245,6 +245,10 @@ fn apply(
         UiEvent::ModelsRefreshFailed { provider, message } => {
             chat_ui.set_notice(format!("刷新 {provider} 模型失败：{message}"))
         }
+        // 「保存生效」（B 方案）同样是设置页的功能；TUI 无设置页、不会发起，
+        // 这两个变体理论上到不了这里 —— 显式分支只为 match 穷尽。
+        UiEvent::SettingsApplied { .. } => {}
+        UiEvent::SettingsApplyFailed { message } => chat_ui.set_notice(message),
     }
 }
 
@@ -564,6 +568,16 @@ mod tests {
         repo: &SessionRepo,
         base_url: String,
     ) -> (mpsc::Sender<Cmd>, mpsc::UnboundedReceiver<UiEvent>, Slot) {
+        spawn_worker_with_config(repo, base_url, "worker")
+    }
+
+    /// 同 [`spawn_worker`]，但配置文件名可指定 —— 需要**中途改写配置**的测试
+    /// 必须用独立的名字：同一进程的测试并行跑，共用一个文件会互相覆写（竞态）。
+    fn spawn_worker_with_config(
+        repo: &SessionRepo,
+        base_url: String,
+        config_name: &str,
+    ) -> (mpsc::Sender<Cmd>, mpsc::UnboundedReceiver<UiEvent>, Slot) {
         // 测试也走 `ProviderFactory`：顺带把「切换 provider 时重建 provider」这条路跑一遍
         let chat_args = ChatArgs {
             provider: "openai-compatible".into(),
@@ -571,7 +585,7 @@ mod tests {
             fallbacks: Vec::new(),
             base_url: Some(base_url),
             api_key: Some("test-key".into()),
-            config: Some(isolated_config("worker")),
+            config: Some(isolated_config(config_name)),
         };
         let factory = worker::ProviderFactory::new(&chat_args, ToolSet::new());
         let selection = worker::Selection::new(&chat_args.provider, &chat_args.model);
@@ -724,6 +738,116 @@ mod tests {
             !bodies.iter().any(|body| body.contains("fake-model")),
             "切换后不该再出现旧模型：{bodies:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn apply_settings_rebuilds_provider_and_next_round_works() {
+        let server = mount_stream(plain_stream()).await;
+        let repo = SessionRepo::open(Store::open_in_memory().unwrap()).unwrap();
+        let (cmd_tx, mut ui_rx, _slot) = spawn_worker(&repo, format!("{}/v1", server.uri()));
+        collect_until(&mut ui_rx, |e| matches!(e, UiEvent::ModelChanged { .. })).await;
+
+        // 保存设置 → ApplySettings（B 方案）：worker 用**当前组合**重建并回执
+        cmd_tx.send(Cmd::ApplySettings).await.unwrap();
+        let applied =
+            collect_until(&mut ui_rx, |e| matches!(e, UiEvent::SettingsApplied { .. })).await;
+        assert!(
+            matches!(
+                applied.last(),
+                Some(UiEvent::SettingsApplied { provider, model })
+                    if provider == "openai-compatible" && model == "fake-model"
+            ),
+            "应当回执当前组合：{applied:?}"
+        );
+
+        // 重建后的 provider 真的可用：下一轮照常走 mock server
+        cmd_tx.send(Cmd::Submit("你好".into())).await.unwrap();
+        let mut saw_loop = false;
+        collect_until(&mut ui_rx, |e| {
+            if matches!(e, UiEvent::Loop(_)) {
+                saw_loop = true;
+            }
+            saw_loop && matches!(e, UiEvent::Sessions(_))
+        })
+        .await;
+        let requests = server.received_requests().await.expect("wiremock 记录请求");
+        assert!(
+            requests
+                .iter()
+                .any(|request| String::from_utf8_lossy(&request.body).contains("fake-model")),
+            "重建后的请求应当仍带当前模型"
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_settings_during_generation_applies_after_turn_end() {
+        // 整个响应延迟 800ms：保证 ApplySettings 发出时本轮**确实**还在生成中。
+        // worker 轮内不处理命令，本命令只能排队 —— 轮末才生效。
+        let server = mount_stream_delayed(plain_stream(), Some(Duration::from_millis(800))).await;
+        let repo = SessionRepo::open(Store::open_in_memory().unwrap()).unwrap();
+        let (cmd_tx, mut ui_rx, _slot) = spawn_worker(&repo, format!("{}/v1", server.uri()));
+        collect_until(&mut ui_rx, |e| matches!(e, UiEvent::ModelChanged { .. })).await;
+
+        cmd_tx.send(Cmd::Submit("你好".into())).await.unwrap();
+        cmd_tx.send(Cmd::ApplySettings).await.unwrap();
+
+        let events =
+            collect_until(&mut ui_rx, |e| matches!(e, UiEvent::SettingsApplied { .. })).await;
+        let loop_at = events.iter().rposition(|e| matches!(e, UiEvent::Loop(_)));
+        let sessions_at = events
+            .iter()
+            .rposition(|e| matches!(e, UiEvent::Sessions(_)));
+        let applied_at = events
+            .iter()
+            .rposition(|e| matches!(e, UiEvent::SettingsApplied { .. }));
+        assert!(
+            match (loop_at, sessions_at, applied_at) {
+                (Some(loop_at), Some(sessions_at), Some(applied_at)) => {
+                    loop_at < applied_at && sessions_at < applied_at
+                }
+                _ => false,
+            },
+            "SettingsApplied 必须晚于本轮的流式事件与轮末落盘刷新（排队到轮末才生效）：{events:#?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_settings_failure_keeps_old_provider_working() {
+        let server = mount_stream(plain_stream()).await;
+        let repo = SessionRepo::open(Store::open_in_memory().unwrap()).unwrap();
+        // 独立配置名：本测试要**中途写坏**它，不能与其它并行测试共用文件
+        let (cmd_tx, mut ui_rx, _slot) =
+            spawn_worker_with_config(&repo, format!("{}/v1", server.uri()), "apply-fail");
+        collect_until(&mut ui_rx, |e| matches!(e, UiEvent::ModelChanged { .. })).await;
+
+        // 把配置写坏：给当前条目声明一个**不存在的适配器** → 重建必然失败
+        let path = isolated_config("apply-fail");
+        std::fs::write(
+            &path,
+            "[providers.openai-compatible]\nadapter = \"no-such-adapter\"\n",
+        )
+        .expect("写坏配置");
+
+        cmd_tx.send(Cmd::ApplySettings).await.unwrap();
+        let failed = collect_until(&mut ui_rx, |e| {
+            matches!(e, UiEvent::SettingsApplyFailed { .. })
+        })
+        .await;
+        assert!(
+            matches!(failed.last(), Some(UiEvent::SettingsApplyFailed { message }) if message.contains("重建")),
+            "应当回执失败原因：{failed:?}"
+        );
+
+        // 旧连接原样可用：下一轮照常走 mock server（失败的只是这次重建）
+        cmd_tx.send(Cmd::Submit("你好".into())).await.unwrap();
+        let mut saw_loop = false;
+        collect_until(&mut ui_rx, |e| {
+            if matches!(e, UiEvent::Loop(_)) {
+                saw_loop = true;
+            }
+            saw_loop && matches!(e, UiEvent::Sessions(_))
+        })
+        .await;
     }
 
     #[tokio::test]

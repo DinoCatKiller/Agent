@@ -1,4 +1,4 @@
-//! OpenAI 兼容适配器契约测试（`Q1` §3 的 12 条用例，断网可测，G-3）。
+//! OpenAI 兼容适配器契约测试（`Q1` §3 的用例清单，断网可测，G-3）。
 //!
 //! - 流式用例：读 fixture 的**原始 SSE 字节** → `parse_sse` + `OpenAiFramePolicy` 纯解析，
 //!   比对 `expected_events.jsonl`（不经过 HTTP）。

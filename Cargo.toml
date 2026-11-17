@@ -63,6 +63,13 @@ backoff = "0.4"
 # 二期 GUI（`D3` 方案 A / `X2`）：GPUI 只经 `gpui-kit` 一个 crate 引入，
 # 它 pin 配套的 `gpui-pre` 版本并重命名为 `gpui`（自己另写 gpui 会解析到另一个包，见 `X2` §8）
 gpui-kit = "0.7.1"
+# 界面组件库（`D4`）：Ely GPUI Component。它钉 `gpui-pre =0.3.8`，与 `gpui-kit` 0.7.1 同一份快照，
+# 因此两边的 view / Entity / Hsla 类型可互通（共存方式见 `agent-ui-kit` 的 `ely` 模块）。
+# 仓库未发布到 crates.io（`publish = false`），只能走 git。
+ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components" }
+# Ely 的会话列表按 `jiff::Timestamp` 记时间（`Conversation.at`）。只给 GUI 渲染端用，
+# 版本必须与 Ely 自己解析到的同一份（0.2），否则 `Timestamp` 会是两个类型。
+jiff = "0.2"
 
 [profile.release]
 lto = "thin"

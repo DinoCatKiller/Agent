@@ -10,6 +10,7 @@ pub mod openai;
 
 pub use anthropic::{
     AnthropicCompatible, AnthropicConfig, AnthropicFramePolicy, anthropic_default_models,
+    anthropic_model_spec_for,
 };
 // 内置供应商目录：厂商 → 适配器 + 端点 + 密钥变量名（用户不必知道适配器这回事）。
 pub use catalog::{
@@ -124,7 +125,7 @@ impl<P: Provider> ErasedProvider for P {
     }
 }
 
-/// 联网刷新模型清单的契约（C2a）。
+/// 联网刷新模型清单的契约（`C2`：`openai` 见 `C2a`、`anthropic` 见 `C2b`）。
 ///
 /// Object-safe 设计：`refresh_models` 返回 [`BoxFuture`] 擦除 owned future，
 /// 不引入 `async-trait` 第三方依赖。这是一个**可选能力**：不支持的适配器

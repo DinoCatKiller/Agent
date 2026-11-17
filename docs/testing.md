@@ -15,7 +15,7 @@
 - 硬目标：**断网可跑全绿**（G-3）。任何测试不得依赖真实 API key 与网络。
 - 每个适配器必须通过**同一套** fixtures 用例清单，这是「可替换」的验收方式。
 - fixtures 存**原始响应字节**（不是转换后的结构），才能真正回归解析逻辑。
-- 提交前：`cargo fmt --check` + `cargo clippy -- -D warnings` + `cargo test --workspace`。
+- 提交前：`just check`（= `fmt-check` + `lint` + `test` + `smoke`，命令定义见根 `justfile`）。
 
 ## 1. 测试分层
 
@@ -70,12 +70,15 @@ crates/kernel/providers/tests/fixtures/
 
 ## 5. 门禁
 
-| 命令 | 用途 |
-|------|------|
-| `cargo test --workspace` | 全部测试 |
-| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 静态检查（CI 必过）。**`--all-features` 不能省**：`gui` 那条分支（GPUI 渲染端）默认不编译，少了它就不会被检查 |
-| `cargo fmt --check` | 格式 |
-| `cargo run -p agent-app -- self-check` | 契约冒烟 |
+| 命令 | 底层 cargo | 用途 |
+|------|-----------|------|
+| `just check` | 下面四项 | 一键门禁，提交前跑这个 |
+| `just test` | `cargo test --workspace` | 全部测试 |
+| `just lint` | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 静态检查（CI 必过）。**`--all-features` 不能省**：`gui` 那条分支（GPUI 渲染端）默认不编译，少了它就不会被检查 |
+| `just fmt-check` | `cargo fmt --all -- --check` | 格式 |
+| `just smoke` | `cargo run -p agent-app -- self-check` | 契约冒烟 |
+
+> 命令只在根 `justfile` 定义一次，本表只是索引；`just --list` 是唯一权威清单。
 
 > **`clippy.toml` 的两个坑**（2026-10-12 实测，详见 `X2` §8.1）：
 > 1. **门禁必须用 `--workspace`。** 有些 lint 只在**整图 feature 合一**后才出现 ——

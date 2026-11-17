@@ -44,6 +44,7 @@ README.md                 人类入口（本文件）
 AGENTS.md                 agent 入口 + 唯一地图
 STATUS.md                 当前阶段与下一步
 OPEN-QUESTIONS.md         未决问题
+justfile                  全部命令入口（`just --list`）
 docs/
   _template.md            文档模板
   goals.md                目标、技术路线、自研边界
@@ -67,8 +68,11 @@ crates/
 
 ## 快速验证
 
+所有命令统一走根 [`justfile`](justfile)，`just --list` 看全部：
+
 ```powershell
-cargo test --workspace                            # 4 个单测
-cargo clippy --workspace --all-targets -- -D warnings
-cargo run -p agent-app -- self-check              # 契约层冒烟
+just check        # 门禁：fmt-check + clippy + test + self-check
+just smoke        # 契约层冒烟（断网）
+just tui          # 一期终端界面（参数透传：just tui --provider … --model …）
+just gui          # 二期图形界面（自动带 --features gui）
 ```

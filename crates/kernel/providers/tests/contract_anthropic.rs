@@ -1,4 +1,4 @@
-//! Anthropic 适配器契约测试（`Q1` §3 的 12 条用例，断网可测，G-3）。
+//! Anthropic 适配器契约测试（`Q1` §3 的用例清单，断网可测，G-3）。
 //!
 //! 与 `contract_openai.rs` **同一套**用例清单与 fixtures 结构 —— 这是「可替换」的验收方式。
 //!
@@ -6,7 +6,7 @@
 //!   比对 `expected_events.jsonl`（不经过 HTTP）。
 //! - 错误映射：读 `errors/*.json` 错误体 → `map_http_error` 断言类别与可重试。
 //! - 用例 4 / 12：请求体映射与能力 fast-fail，纯函数直接断言。
-//! - 端到端（wiremock）：`chat` 全链路 + 401 映射，本地假服务器。
+//! - 端到端（wiremock）：`chat` 全链路 + 401 映射，本地假服务器；外加 `C2b` 的联网拉取模型清单。
 
 use std::fs;
 use std::path::PathBuf;
@@ -17,7 +17,8 @@ use agent_common::{
 };
 use agent_providers::anthropic::{map_http_error, parse_message_response};
 use agent_providers::{
-    AnthropicCompatible, AnthropicConfig, AnthropicFramePolicy, Provider, anthropic_default_models,
+    AnthropicCompatible, AnthropicConfig, AnthropicFramePolicy, Provider, RefreshableModels,
+    anthropic_default_models,
 };
 use agent_transport::{TransportError, finalize, parse_sse};
 use bytes::Bytes;
@@ -351,5 +352,117 @@ mod e2e {
         assert_eq!(err.category, ErrorCategory::Auth);
         assert!(!err.retryable);
         assert!(err.raw.is_some(), "原始错误体保留用于排错");
+    }
+
+    // —— C2b：联网拉取模型清单（`GET /v1/models` 端到端）——
+
+    #[tokio::test]
+    async fn fetch_models_merges_dictionary_unknowns() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .and(header("anthropic-version", "2023-06-01"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"{"data":[
+                    {"type":"model","id":"claude-sonnet-4-5-20250929"},
+                    {"type":"model","id":"claude-compat-local-7b"}
+                ],"has_more":false}"#,
+                "application/json",
+            ))
+            .mount(&server)
+            .await;
+
+        let provider = provider_with(Vec::new(), server.uri());
+        let fetched = provider.fetch_models().await.expect("fetch succeeds");
+        let known = fetched
+            .iter()
+            .find(|m| m.id == "claude-sonnet-4-5-20250929")
+            .expect("字典命中的模型被保留");
+        assert_eq!(known.context_window, 200_000, "命中字典沿用官方规格");
+        assert!(known.capabilities.contains(&Capability::Vision));
+        assert_eq!(known.provider, "test", "归属当前适配器");
+        let unknown = fetched
+            .iter()
+            .find(|m| m.id == "claude-compat-local-7b")
+            .expect("未知模型不被丢弃");
+        assert_eq!(unknown.context_window, 128_000, "未知模型回落保守默认");
+        assert_eq!(unknown.max_output, 4096);
+        assert_eq!(unknown.capabilities, vec![Capability::Text]);
+    }
+
+    #[tokio::test]
+    async fn fetch_models_error_keeps_cache() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(
+                ResponseTemplate::new(500)
+                    .set_body_raw(read_fixture("errors", "500.json"), "application/json"),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_with(vec![text_model()], server.uri());
+        let err = provider.fetch_models().await.expect_err("500 必须失败");
+        assert_eq!(err.category, ErrorCategory::Server);
+        // C2b 契约：拉取失败不清空现有缓存
+        assert_eq!(provider.list_models().len(), 1);
+        assert_eq!(provider.list_models()[0].id, "text-only");
+    }
+
+    // C2（`R2`）：200 但 `data` 缺失 / 为空 —— 按失败处理，**不清空缓存**
+    #[tokio::test]
+    async fn refresh_models_empty_data_keeps_cache() {
+        for body in [
+            r#"{"data":[],"has_more":false}"#,
+            r#"{"has_more":false}"#,
+            r#"{"data":[{"type":"model"}]}"#,
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/v1/models"))
+                .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+                .mount(&server)
+                .await;
+
+            let provider = provider_with(vec![text_model()], server.uri());
+            assert!(
+                provider.refresh_models().await.is_err(),
+                "空 / 畸形清单必须按失败处理：{body}"
+            );
+            assert_eq!(provider.list_models().len(), 1, "缓存不能被清空：{body}");
+            assert_eq!(provider.list_models()[0].id, "text-only");
+        }
+    }
+
+    // C2（`R2`）：刷新与已有缓存**取并集** —— 端点没回的模型（用户手写 / 当前选中）不被丢掉
+    #[tokio::test]
+    async fn refresh_models_unions_with_existing_cache() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"{"data":[{"type":"model","id":"claude-sonnet-4-5-20250929"}],"has_more":false}"#,
+                "application/json",
+            ))
+            .mount(&server)
+            .await;
+
+        let provider = provider_with(vec![text_model()], server.uri());
+        let merged = provider.refresh_models().await.expect("refresh succeeds");
+        let ids: Vec<&str> = merged.iter().map(|m| m.id.as_str()).collect();
+        assert!(
+            ids.contains(&"claude-sonnet-4-5-20250929"),
+            "拉到的模型进入清单：{ids:?}"
+        );
+        assert!(
+            ids.contains(&"text-only"),
+            "已有缓存（当前选中 / 手写）不被覆盖丢掉：{ids:?}"
+        );
+        assert_eq!(
+            provider.list_models().len(),
+            merged.len(),
+            "缓存与返回值一致"
+        );
     }
 }

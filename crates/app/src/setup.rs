@@ -26,7 +26,8 @@ use agent_settings::ui::{CatalogRow, ProviderRow};
 ///
 /// 两者是**同一个** `Arc`（引用计数共享），于是刷新成功后
 /// `ErasedProvider::list_models()` 与路由层读到的就是同一份缓存（`C2a`）。
-/// `refresh` 为 `None` = 该适配器不支持联网刷新（当前只有 `anthropic`）。
+/// `refresh` 为 `None` = 该适配器不支持联网刷新（当前 `openai-compatible` 与 `anthropic`
+/// 都实现了 —— `C2a` / `C2b`；保留 `Option` 供将来新增的适配器与解析失败）。
 pub struct BuiltProvider {
     pub provider: Arc<dyn ErasedProvider>,
     pub refresh: Option<Arc<dyn RefreshableModels>>,
@@ -158,7 +159,8 @@ pub fn build_provider(args: &ChatArgs) -> Option<BuiltProvider> {
 
     // 刷新句柄与 provider **共享同一个实例**（C2a）：刷新成功后路由层与
     // `list_models()` 读到的就是同一份缓存，不需要穿透路由层。
-    let mut refresh: Option<Arc<dyn RefreshableModels>> = None;
+    // 两个分支各自赋值一次，不做「先 None 再覆盖」——否则 clippy 判 `unused_assignments`。
+    let refresh: Option<Arc<dyn RefreshableModels>>;
     let provider: Arc<dyn ErasedProvider> = match resolved.adapter {
         "openai-compatible" => {
             let adapter: Arc<OpenAiCompatible> = Arc::new(
@@ -176,16 +178,20 @@ pub fn build_provider(args: &ChatArgs) -> Option<BuiltProvider> {
             refresh = Some(adapter.clone());
             adapter
         }
-        _ => Arc::new(
-            AnthropicCompatible::new(AnthropicConfig {
-                id: "anthropic",
-                base_url,
-                api_key: expose(&api_key),
-                http,
-                models,
-            })
-            .ok()?,
-        ),
+        _ => {
+            let adapter: Arc<AnthropicCompatible> = Arc::new(
+                AnthropicCompatible::new(AnthropicConfig {
+                    id: "anthropic",
+                    base_url,
+                    api_key: expose(&api_key),
+                    http,
+                    models,
+                })
+                .ok()?,
+            );
+            refresh = Some(adapter.clone());
+            adapter
+        }
     };
     if api_key.is_none() {
         match resolved.api_key_env {
@@ -313,19 +319,11 @@ fn builtin_models(adapter: &str) -> Vec<agent_common::ModelSpec> {
 
 /// 「模型 id → 规格」的**唯一口径**（C2）：先查该适配器的内置清单，未命中回落保守默认。
 ///
-/// 与拉取时（`C2a` 的 `model_spec_for`）同源，于是「拉到的」与「手写的」表现一致。
+/// 与拉取时（`openai` 的 `model_spec_for` / `anthropic` 的 `anthropic_model_spec_for`，
+/// `C2a` / `C2b`）**同源**，于是「拉到的」与「手写的」表现一致。
 fn declared_spec(adapter: &str, id: &str) -> agent_common::ModelSpec {
     if adapter == "anthropic" {
-        match agent_providers::anthropic_default_models()
-            .into_iter()
-            .find(|spec| spec.id == id)
-        {
-            Some(mut spec) => {
-                spec.provider = adapter.to_string();
-                spec
-            }
-            None => agent_providers::conservative_spec(adapter, id),
-        }
+        agent_providers::anthropic_model_spec_for(adapter, id)
     } else {
         agent_providers::model_spec_for(adapter, id)
     }
@@ -403,6 +401,10 @@ pub fn persist_provider_models(
 }
 
 /// 可切换的条目 id：两个通用适配器 ∪ 配置里**已连接**的 ∪ 当前生效的。
+///
+/// 唯一调用方 [`model_choices`] / [`provider_rows`] 都是 `gui` 专属，随它们收进 feature
+///（gui 默认关，不收门就是默认构建里的死代码）。
+#[cfg(feature = "gui")]
 fn entry_ids(config: &AppConfig, args: &ChatArgs) -> Vec<String> {
     let mut ids: Vec<String> = agent_providers::catalog::ADAPTERS
         .iter()

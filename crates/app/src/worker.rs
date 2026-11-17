@@ -346,6 +346,34 @@ pub async fn run_worker(
                     }
                 }
             }
+            Cmd::ApplySettings => {
+                // **故意不做 busy 检查**（B 方案）：worker 轮内不接收命令（见 `CancelSlot`
+                // 的文档注释），能处理到这里时必然不在生成中；生成期间发来的命令在通道里
+                // 排队，轮末按序处理——「排队」本身就是延迟生效，不需要额外机制。
+                // 与 [`Cmd::SelectModel`] 同一条重建通路，但组合不变：
+                // 重读磁盘拿新密钥 / 端点 / 代理 / 超时，`chat.model` 与 `current` 都不动。
+                match factory.build(&current) {
+                    Some(built) => {
+                        let setup::BuiltProvider { provider, refresh } = built;
+                        service = ChatService::new(provider, factory.tools());
+                        current_refresh = refresh;
+                        let _ = ui_tx.send(UiEvent::SettingsApplied {
+                            provider: current.provider.clone(),
+                            model: current.model.clone(),
+                        });
+                    }
+                    None => {
+                        // 构造失败的原因 `build_provider` 已打印（缺密钥 / 未知供应商 / 坏端点）。
+                        // 旧 service / current_refresh 原样保留：失败的只是这次重建，当前连接还可用。
+                        let _ = ui_tx.send(UiEvent::SettingsApplyFailed {
+                            message: format!(
+                                "按新设置重建 {} 失败：供应商未知或构造 provider 失败（旧连接保留）",
+                                current.label()
+                            ),
+                        });
+                    }
+                }
+            }
         }
     }
 }
