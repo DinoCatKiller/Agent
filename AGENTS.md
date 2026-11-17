@@ -186,3 +186,4 @@
 5. 密钥 / 真实 endpoint 不入库；对外接口流式优先；UI 线程禁止阻塞。
 6. **文档跟代码走**：改某个 crate 的行为，同批次更新它的 `README.md` / `docs/`。
 7. 新建 crate 时同步建它的 `README.md`，并回填 §2 地图。
+8. **命令统一走根 [`justfile`](justfile)**：`just --list` 是唯一清单；文档只引用 `just <recipe>`，不再各写一套 cargo 命令。

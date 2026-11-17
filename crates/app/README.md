@@ -1,7 +1,7 @@
 # agent-app · 二进制入口
 
 > **包名 vs 可执行文件**：crate 包名是 `agent-app`（内部技术名，`S2` Q7），编译出的可执行文件是
-> **`codingrocket`**（`cargo build -p agent-app` → `codingrocket.exe`）。下面命令里的 `-p agent-app`
+> **`codingrocket`**（`just build` → `target/debug/codingrocket.exe`）。下面命令里的 `-p agent-app`
 > 接的是**包名**，不受影响。
 
 | | |
@@ -15,26 +15,27 @@
 ## 现在能做什么
 
 ```powershell
+# 所有命令统一走根 justfile；`just --list` 看全部
 # 帮助（clap 生成，含每个子命令的选项说明）
-cargo run -p agent-app -- --help
+just run -- --help
 
 # 契约层自检（7 段，断网）
-cargo run -p agent-app -- self-check
+just smoke
 
 # 对话 REPL（M4）。`--provider` / `--model` 都可省 —— 省了从配置文件取（R1）
-cargo run -p agent-app -- chat --provider openai-compatible --model gpt-4o
-cargo run -p agent-app -- chat          # 完全靠配置文件里的默认值也能起来（见下「解析顺序」）
+just chat --provider openai-compatible --model gpt-4o
+just chat          # 完全靠配置文件里的默认值也能起来（见下「解析顺序」）
 # 可选：--base-url（vLLM / 本地服务，传入后不做模型清单拦截）
 #       --api-key（缺省按「环境变量 → 系统钥匙串」解析，R1）
 #       --config PATH（配置文件；缺省走平台标准目录，R1）
 #       --model a,b（逗号分隔 = 失败降级链；A6：同一候选先退避重试 3 次，用尽才换下一家）
 
 # 一期 TUI（M5，`D3`）
-cargo run -p agent-app -- tui --provider openai-compatible --model gpt-4o
+just tui --provider openai-compatible --model gpt-4o
 # 可选：--db PATH（会话库路径，缺省 ./agent-sessions.db）
 
-# 二期 GUI（`D3` 方案 A）：**注意 `--features gui`**，默认构建不含 GPUI（详见下方「为什么 GUI 在 feature 后面」）
-cargo run -p agent-app --features gui -- gui --provider openai-compatible --model gpt-4o
+# 二期 GUI（`D3` 方案 A）：just 自动带 `--features gui`（详见下方「为什么 GUI 在 feature 后面」）
+just gui --provider openai-compatible --model gpt-4o
 # 同 tui 的 --db / --config / --api-key / --base-url；窗口 1100x760，标题 CodingRocket
 # 窗口内两个标签页：**对话**（`features/chat` 的 ChatView）与**设置**（`features/settings`）。
 # 对话页底部有**模型选择器**：内置清单的 chip（`openai·gpt-4o` 这样）+ 手输模型名

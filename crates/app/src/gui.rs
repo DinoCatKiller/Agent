@@ -403,13 +403,16 @@ fn window_options() -> WindowOptions {
     }
 }
 
+/// `(provider, model)` 候选对（`setup::model_choices` 的返回类型）。
+type ModelChoices = Vec<(String, String)>;
+
 /// 重算候选清单（读配置 + 读偏好，两次文件读）：只该跑在**后台执行器**
 /// （硬约束 5：UI 线程禁阻塞）。`ModelsRefreshed`（C2d）与 `SettingsApplied`（B 方案）
 /// 两条回灌路径共用。
 ///
 /// 返回 `(全量, 可见)`：全量给设置页的「管理模型」（关掉的还要能再打开），
 /// 可见给对话页的选择器。
-fn recompute_choices(args: &ChatArgs) -> (Vec<(String, String)>, Vec<(String, String)>) {
+fn recompute_choices(args: &ChatArgs) -> (ModelChoices, ModelChoices) {
     let all = setup::model_choices(args);
     let prefs = setup::load_preferences(args.config.as_deref());
     let visible = setup::visible_choices(&all, &prefs, &args.provider, &args.model);

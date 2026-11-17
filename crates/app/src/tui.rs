@@ -794,7 +794,9 @@ mod tests {
         let events =
             collect_until(&mut ui_rx, |e| matches!(e, UiEvent::SettingsApplied { .. })).await;
         let loop_at = events.iter().rposition(|e| matches!(e, UiEvent::Loop(_)));
-        let sessions_at = events.iter().rposition(|e| matches!(e, UiEvent::Sessions(_)));
+        let sessions_at = events
+            .iter()
+            .rposition(|e| matches!(e, UiEvent::Sessions(_)));
         let applied_at = events
             .iter()
             .rposition(|e| matches!(e, UiEvent::SettingsApplied { .. }));
@@ -827,8 +829,10 @@ mod tests {
         .expect("写坏配置");
 
         cmd_tx.send(Cmd::ApplySettings).await.unwrap();
-        let failed =
-            collect_until(&mut ui_rx, |e| matches!(e, UiEvent::SettingsApplyFailed { .. })).await;
+        let failed = collect_until(&mut ui_rx, |e| {
+            matches!(e, UiEvent::SettingsApplyFailed { .. })
+        })
+        .await;
         assert!(
             matches!(failed.last(), Some(UiEvent::SettingsApplyFailed { message }) if message.contains("重建")),
             "应当回执失败原因：{failed:?}"
